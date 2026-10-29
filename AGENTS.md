@@ -111,7 +111,8 @@ Keychain.
 `scripts/ui-test-cycle.sh` (`ChangelogUITests`) is the test cycle: it
 builds ad-hoc signed, grants photos, location and the microphone, sets the
 simulator in Minneapolis, and drives a note, a photo, Here, a voice memo,
-Activity and Settings, and a share from Photos against the dev server,
-checking `/v1/activity` that each made exactly one note. Name tests after
+Upcoming (a date added and deleted), Activity and Settings, and a share
+from Photos against the dev server, checking `/v1/activity` that each made
+exactly one note (and `/v1/upcoming` the date). Name tests after
 the simulator to run only those. A simulator records with the Mac's
 microphone, which can fail to answer; the voice memo test skips then.
