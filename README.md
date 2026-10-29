@@ -63,9 +63,9 @@ it serves the API against a fictional account and prints a token), choose "Dev s
 sign-in screen of a debug build, and paste the token.
 
 A test cycle drives the app on a simulator against that dev server
-(started with `--fake-places`): a note, a photo, Here, a voice memo,
-Activity and Settings, and a share from Photos, each checked against what
-the server filed.
+(started with `--fake-places`): a note, a photo, Here, a voice memo, a
+date in Upcoming, Activity and Settings, and a share from Photos, each
+checked against what the server kept.
 
 ```sh
 CHANGELOG_DEV_TOKEN=rn_... scripts/ui-test-cycle.sh "iPhone 17"

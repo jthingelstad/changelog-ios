@@ -114,6 +114,36 @@ final class ChangelogUITests: XCTestCase {
     XCTAssertTrue(build.label.contains(", build "), build.label)
   }
 
+  /// A birthday added in Upcoming saves once, and a swipe deletes it.
+  @MainActor func testUpcoming() async throws {
+    let app = launch()
+    hideKeyboard(app)
+    app.tabBars.buttons["Upcoming"].tap()
+    let add = app.buttons["Add a date"]
+    expect(add, "Upcoming can add a date", in: app)
+    add.tap()
+    let title = "Ada \(UUID().uuidString.prefix(6).lowercased())"
+    let field = app.textFields["Title"]
+    expect(field, "the editor opens", in: app)
+    field.tap()
+    field.typeText(title)
+    app.buttons["Save"].tap()
+    let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
+    expect(row, "the date is in the list", in: app)
+    let saved = try await dates(titled: title)
+    XCTAssertEqual(saved, 1, "saved once")
+    row.swipeLeft()
+    app.buttons["Delete"].firstMatch.tap()
+    // The confirmation's Delete, not the swipe's.
+    let confirm = app.sheets.buttons["Delete"].exists ? app.sheets.buttons["Delete"]
+      : app.buttons.matching(identifier: "Delete").element(boundBy: app.buttons.matching(identifier: "Delete").count - 1)
+    expect(confirm, "deleting asks first", in: app)
+    confirm.tap()
+    XCTAssertTrue(row.waitForNonExistence(timeout: 15), "the date leaves the list")
+    let left = try await dates(titled: title)
+    XCTAssertEqual(left, 0, "deleted on the server")
+  }
+
   /// A photo shared from the Photos app files once, from the extension.
   @MainActor func testShareFromPhotos() async throws {
     // Signs the app in, so the extension finds the token and the server.
@@ -219,6 +249,23 @@ final class ChangelogUITests: XCTestCase {
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     let (data, _) = try await URLSession.shared.data(for: request)
     return try JSONDecoder().decode(Page.self, from: data).items.filter { $0.kind == "note.added" }
+  }
+
+  private struct Dates: Decodable {
+    struct Entry: Decodable { let title: String }
+    let entries: [Entry]
+  }
+
+  /// How many Upcoming dates on the dev server have this title.
+  @MainActor private func dates(titled title: String) async throws -> Int {
+    try await Self.dates(titled: title, server: server, token: token)
+  }
+
+  private static func dates(titled title: String, server: String, token: String) async throws -> Int {
+    var request = URLRequest(url: URL(string: "\(server)/v1/upcoming")!)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, _) = try await URLSession.shared.data(for: request)
+    return try JSONDecoder().decode(Dates.self, from: data).entries.filter { $0.title == title }.count
   }
 
   /// The notes filed since `before`, once there are some, after a moment
