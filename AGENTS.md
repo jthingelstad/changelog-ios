@@ -124,4 +124,7 @@ phone: run it only when Jamie asks. Each target has a
 `PrivacyInfo.xcprivacy` naming why it uses Apple's required-reason APIs
 (defaults, file dates); a new use of one of those goes there too, or App
 Store Connect refuses the build. `ITSAppUsesNonExemptEncryption` is false:
-the app's only encryption is HTTPS.
+the app's only encryption is HTTPS. `docs/PHONE-TEST.md` is the pass by
+hand each build gets on a real phone (and an Android version's list of
+what it must do); `docs/DISTRIBUTION.md` is the way to outside testers and
+the App Store, each step Jamie's call.
