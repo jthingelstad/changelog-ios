@@ -246,4 +246,35 @@ private func folder() -> URL {
     #expect(fixed.files == [posted])
     #expect(fixed.text == "Shorter")
   }
+
+  @Test func aPreparedNoteThatCantBeSavedIsNotSent() async throws {
+    let dir = folder()
+    let outbox = Outbox(file: dir.appending(path: "outbox.json"), files: dir.appending(path: "files"))
+    let file = QueuedFile(type: "image/jpeg", name: "lake.jpg", size: 5)
+    try outbox.keep(Data("BYTES".utf8), as: file)
+    let item = try await outbox.enqueue(.post(NotePost(text: "Full phone", writtenAt: "2026-10-29T07:45:00-05:00", files: [file])))
+    // The phone fills up: the queue can no longer be written.
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path())
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path()) }
+    let calls = Calls([.success(.filed(receipt("a")))])
+    let prepare: Outbox.Preparer = { item, _ throws(APIError) in await calls.prepare(item) }
+    let report = await outbox.flush(prepare: prepare) { item throws(APIError) in try await calls.send(item) }
+    #expect(await calls.sent.isEmpty)
+    #expect(report.stopped?.code == "not_kept" && report.stopped?.retryable == true)
+    // Still as it was saved, so the next run prepares it afresh under its key.
+    let waiting = try #require(await outbox.waiting.first)
+    #expect(waiting.id == item.id && waiting.files.first?.upload == nil)
+  }
+
+  @Test func aHereAlreadyAskedForNamesTheQueuedNote() async throws {
+    let outbox = Outbox(file: nil)
+    let spot = Spot(lat: 44.98, lon: -93.26, accuracyM: 30)
+    let item = try await outbox.enqueue(.post(NotePost(text: "Lunch", writtenAt: "2026-10-29T12:05:00-05:00", spot: spot)))
+    let place = DevicePlace(name: "Minneapolis", region: "Minnesota", country: "United States", tz: "America/Chicago",
+                            district: "Old Town", venue: nil, lat: 44.98, lon: -93.26, accuracyM: 30, from: "device")
+    await outbox.name(item.id, spot: spot, place: place)
+    guard case .post(let named) = try #require(await outbox.waiting.first).operation else { Issue.record("not a post"); return }
+    // Ready as it is: preparing it asks Here nothing.
+    #expect(named.place == place && named.ready)
+  }
 }

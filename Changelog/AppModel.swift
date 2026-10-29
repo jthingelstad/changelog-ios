@@ -41,6 +41,10 @@ final class AppModel {
   private var spotAt: Date?
   /// The owner left the place off this draft.
   private var placeOff = false
+  /// The spot a Here under way is naming, and the notes committed meanwhile,
+  /// which that Here names when it answers rather than a second lookup.
+  private var naming: Spot?
+  private var waitingOnName: [UUID] = []
 
   /// "Add where I am": every note gets a place without asking. Kept on
   /// this phone; each Here is a lookup Release Notes pays for.
@@ -268,12 +272,13 @@ final class AppModel {
     // With "Add where I am" on, the next note within ten minutes takes the
     // same place; a Here asked for once goes with this note alone.
     if hereByDefault { placeOff = false } else { clearPlace(off: false) }
+    let item: OutboxItem
     do {
       if files.isEmpty && placed.spot == nil {
-        try await outbox.enqueue(text: text)
+        item = try await outbox.enqueue(text: text)
       } else {
-        try await outbox.enqueue(.post(NotePost(text: text, writtenAt: Timestamp.string(.now), files: files,
-                                                spot: placed.spot, place: placed.spot == nil ? nil : place)))
+        item = try await outbox.enqueue(.post(NotePost(text: text, writtenAt: Timestamp.string(.now), files: files,
+                                                       spot: placed.spot, place: placed.spot == nil ? nil : place)))
       }
     } catch {
       draft = draft.isEmpty ? typed : typed + "\n" + draft
@@ -289,6 +294,11 @@ final class AppModel {
     }
     for file in files { thumbnails[file.id] = nil }
     waiting = await outbox.waiting
+    // Here is still naming this spot: that answer names the note, then sends.
+    if let spot = placed.spot, place == nil, naming == spot {
+      waitingOnName.append(item.id)
+      return
+    }
     await send()
   }
 
@@ -435,16 +445,29 @@ final class AppModel {
       here = nil
       venue = nil
       guard let client else { return }
-      do {
-        let named = try await client.here(found)
+      naming = found
+      let answer: Result<Here, APIError>
+      do { answer = .success(try await client.here(found)) } catch { answer = .failure(error) }
+      naming = nil
+      let queued = waitingOnName
+      waitingOnName = []
+      switch answer {
+      case .success(let named):
         // The owner may have left it off, or committed, while it was named.
         if spot == found { here = named }
-      } catch {
+        for id in queued { await outbox.name(id, spot: found, place: named.place) }
+      case .failure(let error):
         if error.signedOut { return handle(error) }
-        if error.retryable && error.status != 429 { return }
+        // Offline: the note names its spot as it sends.
+        guard !error.retryable || error.status == 429 else { break }
         // Nowhere a city can be named (at sea), or the day's spots used.
         if spot == found { clearPlace(off: true) }
         problem = error.message
+        for id in queued { await outbox.name(id, spot: found, place: nil) }
+      }
+      if !queued.isEmpty {
+        waiting = await outbox.waiting
+        await send()
       }
     }
   }

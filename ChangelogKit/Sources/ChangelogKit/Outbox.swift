@@ -250,15 +250,24 @@ public actor Outbox {
     defer { flushing = false }
     var report = FlushReport()
     var tried = Set<UUID>()
-    while var item = items.first(where: { $0.refusal == nil && !tried.contains($0.id) }) {
+    sending: while var item = items.first(where: { $0.refusal == nil && !tried.contains($0.id) }) {
       tried.insert(item.id)
       do {
         if let prepare, case .post(let post) = item.operation, !post.ready {
           let ready = try await prepare(item, filesFolder)
+          // Discarded while its files went up.
+          guard let i = items.firstIndex(where: { $0.id == item.id }) else { continue }
           // Saved before sending: from here on, every resend is this request.
-          if let i = items.firstIndex(where: { $0.id == item.id }) { items[i].operation = ready.operation }
+          // Unsaved, it doesn't go, or a relaunch would prepare it again and
+          // send other uploads under the same key.
+          let before = items[i].operation
+          items[i].operation = ready.operation
+          do { try save() } catch {
+            items[i].operation = before
+            report.stopped = APIError(status: 507, code: "not_kept", message: Self.notKept)
+            break sending
+          }
           item.operation = ready.operation
-          try? save()
         }
         let result = try await send(item)
         items.removeAll { $0.id == item.id }
@@ -283,7 +292,7 @@ public actor Outbox {
           if let i = items.firstIndex(where: { $0.id == item.id }) { items[i].attempts += 1 }
           try? save()
           report.stopped = error
-          break
+          break sending
         }
         if let i = items.firstIndex(where: { $0.id == item.id }) {
           items[i].attempts += 1
@@ -294,6 +303,20 @@ public actor Outbox {
       }
     }
     return report
+  }
+
+  static let notKept = "This phone couldn't save a note to send. Free up some space and it will try again."
+
+  /// Names a queued note's place from a Here the app had already asked for
+  /// when the note was committed, so sending it asks no second time. `place`
+  /// nil leaves the place off (no city there, the day's spots used).
+  public func name(_ id: UUID, spot: Spot, place: DevicePlace?) {
+    guard let i = items.firstIndex(where: { $0.id == id }), case .post(var post) = items[i].operation,
+          post.spot == spot, post.place == nil else { return }
+    if let place { post.place = place } else { post.spot = nil }
+    items[i].operation = .post(post)
+    // Unsaved, the note still goes: it asks Here again as it is prepared.
+    try? save()
   }
 
   private func save() throws(OutboxNotKept) {
