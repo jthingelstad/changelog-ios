@@ -124,11 +124,15 @@ final class ChangelogUITests: XCTestCase {
     for label in ["Continue", "Not Now", "OK"] where photos.buttons[label].waitForExistence(timeout: 2) {
       photos.buttons[label].tap()
     }
-    let first = photos.images.matching(identifier: "PXGGridLayout-Info").firstMatch
-    expect(first, "Photos shows the library", in: photos)
-    first.tap()
+    // Photos opens where it was left: on a photo (the last run's), or the
+    // library.
     let share = photos.buttons["Share"]
-    expect(share, "a photo opens", in: photos)
+    if !share.waitForExistence(timeout: 3) {
+      let first = photos.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+      expect(first, "Photos shows the library", in: photos)
+      first.tap()
+      expect(share, "a photo opens", in: photos)
+    }
     share.tap()
     let changelog = photos.descendants(matching: .any).matching(NSPredicate(format: "label == 'Changelog'")).firstMatch
     if !changelog.waitForExistence(timeout: 8) {
@@ -197,7 +201,6 @@ final class ChangelogUITests: XCTestCase {
     shot.name = what
     shot.lifetime = .keepAlways
     add(shot)
-    print("UI-TREE \(what):\n\(app.debugDescription.prefix(60_000))")
     XCTFail("Expected: \(what)", file: file, line: line)
   }
 
