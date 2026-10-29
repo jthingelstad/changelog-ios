@@ -12,11 +12,13 @@ there first, never work around it here.
 
 - `ChangelogKit/` is a Swift package with everything that isn't a screen:
   `APIClient` (every `/v1` call, typed errors), `Outbox` (the offline queue),
+  `Media` (uploads, the types Release Notes keeps, the storage form),
   `Hashtags` (a port of Release Notes' `packages/domain/tags.ts`; keep them
   in step), `TokenStore` (the Keychain). It has its own tests:
   `swift test --package-path ChangelogKit`.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
-  screens (Log, Activity, Settings, sign-in).
+  screens (Log, Activity, Settings, sign-in), `Locator` one location fix,
+  `Recorder` a voice memo.
 - `Changelog.xcodeproj` uses synchronized folders, so new files in
   `Changelog/` need no project edit.
 
@@ -31,6 +33,12 @@ there first, never work around it here.
 - Never log, print or put in an error message a token or a note's text.
 - Every write goes through the Outbox with its idempotency key, so a resend
   never makes a second note.
+- A note's files are posted and its place named, and both saved, before
+  the note is sent (the Outbox's `prepare`), so a resend is the same
+  request. The token never goes to the storage form.
+- Location is When In Use, one fix when the owner asks (or has "Add where
+  I am" on), never in the background. Each Here is a lookup Release Notes
+  pays for, capped at 100 a day: ask once a draft, never as words change.
 - The app reads back only notes this token wrote, and the activity log
   (which has no words in it). It never asks for `notes:read`.
 - iOS 26 and later, iPhone only, Swift 6 strict concurrency.
@@ -58,3 +66,9 @@ CHANGELOG_DEV_TOKEN=rn_... swift test --package-path ChangelogKit --filter DevSe
 ```
 
 It runs only against localhost, never production, because it writes.
+`CHANGELOG_DEV_URL` (say `http://localhost:8792`) picks another port, for
+the tests and for a debug build launched with
+`SIMCTL_CHILD_CHANGELOG_DEV_URL`. Start the dev server with `--fake-places`
+for Here. A simulator build that signs in needs ad-hoc signing
+(`CODE_SIGN_IDENTITY=-`): `CODE_SIGNING_ALLOWED=NO` leaves out the
+Keychain.

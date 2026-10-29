@@ -10,6 +10,12 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>To add a photo you take to a note.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>To add a voice memo to a note.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>To add the neighbourhood or city you are in to a note, with the businesses nearby to pick from. Only when you ask, or when Add where I am is on.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

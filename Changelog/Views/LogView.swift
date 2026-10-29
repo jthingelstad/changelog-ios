@@ -20,13 +20,21 @@ struct LogView: View {
             .focused($typing)
             .submitLabel(.return)
             .accessibilityLabel("Note")
+          if !model.draftFiles.isEmpty { AttachmentStrip() }
           TagRowView()
-          HStack {
-            if let sticky = model.sticky {
-              Label("#\(sticky) on every note", systemImage: "pin.fill")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+          if model.placeLabel != nil || model.sticky != nil {
+            HStack {
+              PlaceMenu()
+              Spacer()
+              if let sticky = model.sticky {
+                Label("#\(sticky) on every note", systemImage: "pin.fill")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
             }
+          }
+          HStack {
+            ComposerTools()
             Spacer()
             Button("Commit") {
               Task { await model.commit() }
@@ -73,6 +81,9 @@ struct LogView: View {
       .toolbarTitleDisplayMode(.inline)
       .refreshable { await model.refresh() }
       .onAppear { typing = true }
+      .onChange(of: model.draft) { before, now in
+        if before.isEmpty, !now.isEmpty { Task { await model.draftStarted() } }
+      }
       .overlay(alignment: .bottom) { Toast() }
       .sheet(item: $editing) { item in EditNoteView(item: item) }
       .sheet(item: $fixing) { item in FixWaitingView(item: item) }
@@ -109,12 +120,36 @@ struct WaitingRow: View {
     case .edit(_, _, let text, _): "Edit: \(text)"
     case .delete(let date, _): "Delete a note from \(date)"
     case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.map { "#\($0)" }.joined(separator: " ")
+    case .post(let post):
+      post.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.count(post.files) : post.text
     }
+  }
+
+  /// What rides with a note besides its words.
+  private var extras: String? {
+    guard case .post(let post) = item.operation else { return nil }
+    let parts = [post.files.isEmpty ? nil : Self.count(post.files), post.place?.label ?? (post.spot == nil ? nil : "Here")]
+    let said = parts.compactMap(\.self)
+    return said.isEmpty ? nil : said.joined(separator: " · ")
+  }
+
+  static func count(_ files: [QueuedFile]) -> String {
+    let photos = files.filter(\.isPhoto).count
+    let memos = files.filter(\.isRecording).count
+    let others = files.count - photos - memos
+    return [
+      photos == 0 ? nil : photos == 1 ? "1 photo" : "\(photos) photos",
+      memos == 0 ? nil : memos == 1 ? "1 voice memo" : "\(memos) voice memos",
+      others == 0 ? nil : others == 1 ? "1 file" : "\(others) files",
+    ].compactMap(\.self).joined(separator: ", ")
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(summary).lineLimit(2)
+      if let extras {
+        Label(extras, systemImage: "paperclip").font(.caption).foregroundStyle(.secondary)
+      }
       if let refusal = item.refusal {
         Text(refusal).font(.caption).foregroundStyle(.orange)
       } else {

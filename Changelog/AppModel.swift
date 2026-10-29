@@ -1,4 +1,5 @@
 import ChangelogKit
+import CoreGraphics
 import Foundation
 import Observation
 import UIKit
@@ -25,6 +26,27 @@ final class AppModel {
   /// an update still waiting on the server can't schedule them again.
   private var remindersGeneration = 0
   var draft = ""
+  /// Files on the draft, their bytes already beside the queue.
+  private(set) var draftFiles: [QueuedFile] = []
+  /// Small pictures of the draft's photos, for the composer only.
+  private(set) var thumbnails: [UUID: CGImage] = [:]
+
+  /// Where the draft was written: the phone's spot, and the place Release
+  /// Notes named for it (nil offline, named when the note is sent).
+  private(set) var spot: Spot?
+  private(set) var here: Here?
+  /// A business nearby the owner picked, if any.
+  private(set) var venue: String?
+  private(set) var locating = false
+  private var spotAt: Date?
+  /// The owner left the place off this draft.
+  private var placeOff = false
+
+  /// "Add where I am": every note gets a place without asking. Kept on
+  /// this phone; each Here is a lookup Release Notes pays for.
+  var hereByDefault: Bool {
+    didSet { defaults.set(hereByDefault, forKey: "here") }
+  }
 
   /// A tag that rides on every note until turned off (a trip, a project).
   /// Kept on this phone only: a habit of the moment, not a setting.
@@ -47,6 +69,7 @@ final class AppModel {
     self.outbox = Outbox(file: outboxFile)
     self.sticky = defaults.string(forKey: "sticky")
     self.remindersOn = defaults.bool(forKey: "reminders")
+    self.hereByDefault = defaults.bool(forKey: "here")
     self.server = defaults.string(forKey: "server").flatMap(URL.init(string:)) ?? APIClient.production
   }
 
@@ -72,11 +95,16 @@ final class AppModel {
   func start() async {
     token = tokens.read()
     waiting = await outbox.waiting
+    // A draft's files left by a run that ended; the queue's own stay.
+    await outbox.sweep(keeping: Set(draftFiles.map(\.id)))
     #if DEBUG
     // `simctl launch` with SIMCTL_CHILD_CHANGELOG_DEV_TOKEN signs a debug
     // build in to the dev server's fictional account (AGENTS.md, Building).
-    if token == nil, let dev = ProcessInfo.processInfo.environment["CHANGELOG_DEV_TOKEN"] {
-      server = APIClient.devServer
+    // CHANGELOG_DEV_URL picks another port, on this Mac only.
+    let environment = ProcessInfo.processInfo.environment
+    if token == nil, let dev = environment["CHANGELOG_DEV_TOKEN"] {
+      let other = environment["CHANGELOG_DEV_URL"].flatMap(URL.init(string:))
+      server = other.flatMap { ["localhost", "127.0.0.1"].contains($0.host() ?? "") ? $0 : nil } ?? APIClient.devServer
       if await signIn(with: dev) == nil { return }
     }
     #endif
@@ -221,24 +249,45 @@ final class AppModel {
   // MARK: Writing
 
   var canCommit: Bool {
-    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftFiles.isEmpty
   }
 
   /// Queues the draft with the moment it was typed, then tries to send. If
-  /// the phone can't keep the queue, the words go back in the box.
+  /// the phone can't keep the queue, the words, files and place go back.
   func commit() async {
     let typed = draft
     var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { return }
+    let files = draftFiles
+    guard !text.isEmpty || !files.isEmpty else { return }
     if let sticky { text = Hashtags.adding(sticky, to: text) }
+    let placed = (spot: placeOff ? nil : spot, here: here, venue: venue, spotAt: spotAt)
+    var place = placed.here?.place
+    place?.venue = placed.venue
     draft = ""
+    draftFiles = []
+    // With "Add where I am" on, the next note within ten minutes takes the
+    // same place; a Here asked for once goes with this note alone.
+    if hereByDefault { placeOff = false } else { clearPlace(off: false) }
     do {
-      try await outbox.enqueue(text: text)
+      if files.isEmpty && placed.spot == nil {
+        try await outbox.enqueue(text: text)
+      } else {
+        try await outbox.enqueue(.post(NotePost(text: text, writtenAt: Timestamp.string(.now), files: files,
+                                                spot: placed.spot, place: placed.spot == nil ? nil : place)))
+      }
     } catch {
       draft = draft.isEmpty ? typed : typed + "\n" + draft
+      draftFiles = files + draftFiles
+      if spot == nil, let kept = placed.spot {
+        spot = kept
+        here = placed.here
+        venue = placed.venue
+        spotAt = placed.spotAt
+      }
       problem = Self.notKept
       return
     }
+    for file in files { thumbnails[file.id] = nil }
     waiting = await outbox.waiting
     await send()
   }
@@ -261,7 +310,9 @@ final class AppModel {
 
   func send() async {
     guard let client else { return }
-    let report = await outbox.flush { item throws(APIError) in try await client.perform(item) }
+    let report = await outbox.flush(prepare: { item, folder throws(APIError) in
+      try await client.prepare(item, files: folder)
+    }) { item throws(APIError) in try await client.perform(item) }
     waiting = await outbox.waiting
     for sent in report.sent {
       if case .pinned(let answer) = sent.result { tags = answer }
@@ -293,6 +344,124 @@ final class AppModel {
   }
 
   func clearToast() { toast = nil }
+
+  // MARK: Files
+
+  var canAddFiles: Bool { me?.token.scopes.contains("media:write") == true }
+  var roomForFiles: Int { max(0, MediaType.maxFiles - draftFiles.count) }
+
+  /// A photo from the library or the camera: JPEG, PNG, GIF and WebP as
+  /// they are, anything else made a JPEG with its time and place kept.
+  func addPhoto(_ data: Data?) async {
+    let made = await Task.detached { () -> (data: Data, type: String, thumbnail: CGImage?)? in
+      guard let data, let photo = MediaType.photo(data) else { return nil }
+      return (photo.data, photo.type, MediaType.thumbnail(photo.data))
+    }.value
+    guard let made else {
+      problem = "That photo couldn't be read."
+      return
+    }
+    let n = draftFiles.filter(\.isPhoto).count + 1
+    await addFile(made.data, type: made.type, name: "Photo \(n).\(MediaType.fileExtension(made.type))", thumbnail: made.thumbnail)
+  }
+
+  func addRecording(_ data: Data) async {
+    let n = draftFiles.filter(\.isRecording).count + 1
+    await addFile(data, type: "audio/mp4", name: n == 1 ? "Voice memo.m4a" : "Voice memo \(n).m4a", thumbnail: nil)
+  }
+
+  private func addFile(_ data: Data, type: String, name: String, thumbnail: CGImage?) async {
+    guard roomForFiles > 0 else {
+      problem = "A note holds up to \(MediaType.maxFiles) files."
+      return
+    }
+    guard data.count <= MediaType.maxBytes else {
+      problem = "That file is over 50 MB, the most a note keeps."
+      return
+    }
+    let file = QueuedFile(type: type, name: name, size: data.count)
+    let outbox = self.outbox
+    let kept = await Task.detached { () -> Bool in
+      do { try outbox.keep(data, as: file); return true } catch { return false }
+    }.value
+    guard kept else {
+      problem = Self.notKept
+      return
+    }
+    draftFiles.append(file)
+    thumbnails[file.id] = thumbnail
+    problem = nil
+    await draftStarted()
+  }
+
+  func remove(_ file: QueuedFile) {
+    draftFiles.removeAll { $0.id == file.id }
+    thumbnails[file.id] = nil
+    outbox.removeFiles([file])
+  }
+
+  // MARK: Here
+
+  /// What the draft's place will be named, if it has one.
+  var placeLabel: String? {
+    guard !placeOff, spot != nil else { return nil }
+    return venue ?? here?.place.label ?? "Here"
+  }
+
+  /// A new draft: with "Add where I am" on, find the phone now, while the
+  /// words are typed, so the note never waits for it. A spot more than ten
+  /// minutes old is found again.
+  func draftStarted() async {
+    guard hereByDefault, !placeOff, !locating else { return }
+    if let spotAt, spotAt > .now.addingTimeInterval(-600) { return }
+    await locate()
+  }
+
+  /// Finds the phone and has Release Notes name the spot, with the
+  /// businesses nearby. Offline, the spot is kept and named when it sends.
+  func locate() async {
+    guard !locating else { return }
+    locating = true
+    defer { locating = false }
+    placeOff = false
+    switch await Locator.spot() {
+    case .denied:
+      problem = "Location is off for Changelog. Allow it in the Settings app to add where you are."
+    case .unavailable:
+      problem = "This phone couldn't find where it is just now."
+    case .spot(let found):
+      spot = found
+      spotAt = .now
+      here = nil
+      venue = nil
+      guard let client else { return }
+      do {
+        let named = try await client.here(found)
+        // The owner may have left it off, or committed, while it was named.
+        if spot == found { here = named }
+      } catch {
+        if error.signedOut { return handle(error) }
+        if error.retryable && error.status != 429 { return }
+        // Nowhere a city can be named (at sea), or the day's spots used.
+        if spot == found { clearPlace(off: true) }
+        problem = error.message
+      }
+    }
+  }
+
+  /// A business nearby, or nil for the neighbourhood or city alone.
+  func pick(venue name: String?) {
+    venue = name
+  }
+
+  /// Leaves the place off this draft (`off`), or clears it once a note took it.
+  func clearPlace(off: Bool = true) {
+    spot = nil
+    here = nil
+    venue = nil
+    spotAt = nil
+    placeOff = off
+  }
 
   // MARK: Notes this token wrote
 
