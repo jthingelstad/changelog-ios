@@ -86,6 +86,10 @@ project. The app and the share extension share an App Group
 automatic signing registers on the first build for a phone. With your own
 team, change the `com.thingelstad` bundle ids and the group too.
 
+`scripts/testflight.sh` archives a clean commit on main and uploads it to
+TestFlight for internal testers only. It needs the same team, and the app
+made first in App Store Connect for the bundle id.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
