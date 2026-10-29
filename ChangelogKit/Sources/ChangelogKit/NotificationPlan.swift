@@ -43,7 +43,7 @@ public struct PlannedNotification: Sendable, Equatable {
   }
 }
 
-/// The daily prompt (Jamie's call 3: off by default): "You're 4.5.137
+/// The daily prompt (off by default): "You're 4.5.137
 /// today. What changed?" at the moment each morning's email is due, which
 /// opens Log. The versions are the server's, from `/v1/me`'s `days`; the
 /// phone works out only when the account's send time comes on each day.

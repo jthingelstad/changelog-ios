@@ -10,8 +10,13 @@ look back on the web. Changelog is for getting things in, in two taps.
   resend never makes a duplicate.
 - **Check** what happened: the activity log, from every channel, without
   the words.
-- **Reminders** from your Upcoming dates, as notifications when each
-  morning's email is due, in its words. Off until you turn them on.
+- **Upcoming**: the birthdays, anniversaries, trips and events ahead, to
+  add, change and remove, each in the line the email gives it.
+- **Notifications**, each off until you turn it on: Upcoming reminders
+  when each morning's email is due, in its words; a daily prompt with
+  the day's version ("What changed?"); and activity from elsewhere (notes
+  an agent or an import added, problems, badges), never with a note's
+  words.
 - **Photos, voice memos and where you are** on a note: from the library
   or the camera, recorded in the app, and the neighbourhood or city with a
   business nearby to pick. They wait on the phone with the note until it
@@ -20,7 +25,7 @@ look back on the web. Changelog is for getting things in, in two taps.
   Changelog is in the share sheet, with a line to go with it and Commit.
   It sends straight away when it can; what it can't, the app sends next
   time it opens, still as one note.
-- Later: adding Upcoming dates, Shortcuts, the Action Button and widgets.
+- Later: Shortcuts, the Action Button and widgets.
 
 It talks only to Release Notes' public `/v1` API, with a token you make in
 Release Notes' Settings. The API is designed in
