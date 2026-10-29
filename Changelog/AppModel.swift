@@ -86,7 +86,7 @@ final class AppModel {
     do {
       let me = try await probe.me()
       guard me.token.scopes.contains("notes:write") else {
-        return "This token can't add notes. Make one with Add notes ticked."
+        return "This token can't add notes. Make one with “Add notes” ticked."
       }
       try tokens.write(candidate)
       token = candidate

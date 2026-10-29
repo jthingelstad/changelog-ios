@@ -16,7 +16,7 @@ struct SignInView: View {
       Form {
         Section {
           Text("Changelog sends notes, and soon photos and dates, into your Release Notes. It can read back only the notes it sent, never the rest.")
-          Text("Make a token in Release Notes under Settings, API tokens, with Add notes and Activity ticked. Then paste it here.")
+          Text("Make a token in Release Notes under Settings, API tokens, with “Add notes” and “Read the activity log” ticked. Then paste it here.")
             .foregroundStyle(.secondary)
         }
         Section {
