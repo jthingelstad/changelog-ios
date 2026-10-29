@@ -53,7 +53,11 @@ there first, never work around it here.
   The signing team lives in `Config/Signing.local.xcconfig`, which git
   ignores; never set `DEVELOPMENT_TEAM` in the project.
 - Never test against production. Run the Release Notes dev server
-  (`tools/dev-server.ts`, port 8790) and point a debug build at it.
+  (`tools/dev-server.ts`, port 8790) and point a debug build at it. No
+  agent, script or test writes to a real account. The one pass on
+  production is by hand: the owner of an account trying a TestFlight
+  build on it (`docs/PHONE-TEST.md`), since a release build talks to
+  nothing else.
 - No third-party packages. Apple's frameworks only.
 - Never log, print or put in an error message a token or a note's text.
 - A file URL goes to `FileManager` as `path(percentEncoded: false)`.

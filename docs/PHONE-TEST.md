@@ -7,7 +7,9 @@ is one small picture. So each new TestFlight build also gets a pass by hand
 on a real phone.
 
 A TestFlight build is a release build: it talks only to Release Notes, so
-the pass is a person using it on their own account. Its notes are real and
+this pass is the owner of an account using the app on it, by hand, the way
+anyone with the build will. It is never an agent's or a script's: they
+stay on the dev server (the rule in `AGENTS.md`). Its notes are real and
 go in the next morning's email; swipe one left on Log and Delete it if it
 shouldn't. An issue about one never quotes it.
 
