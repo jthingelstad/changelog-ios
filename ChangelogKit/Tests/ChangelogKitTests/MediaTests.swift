@@ -45,7 +45,7 @@ private actor Calls {
 }
 
 private func folder() -> URL {
-  FileManager.default.temporaryDirectory.appending(path: "changelog-tests-" + UUID().uuidString, directoryHint: .isDirectory)
+  FileManager.default.temporaryDirectory.appending(path: "Application Support " + UUID().uuidString, directoryHint: .isDirectory)
 }
 
 @Suite struct MediaTests {
@@ -125,7 +125,7 @@ private func folder() -> URL {
     #expect(sent[0].operation == sent[1].operation)
     #expect(report.filed.map(\.note.id) == ["a"])
     // Sent, its bytes are gone from the phone.
-    #expect(outbox.url(for: file).map { FileManager.default.fileExists(atPath: $0.path()) } == false)
+    #expect(outbox.url(for: file).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } == false)
   }
 
   @Test func uploadsANoteFindsGoneAreMadeAgainOnceUnderANewKey() async throws {
@@ -152,7 +152,7 @@ private func folder() -> URL {
     try outbox.keep(Data("BYTES".utf8), as: file)
     let item = try await outbox.enqueue(.post(NotePost(text: "", writtenAt: "2026-10-29T07:45:00-05:00", files: [file])))
     await outbox.discard(item.id)
-    #expect(outbox.url(for: file).map { FileManager.default.fileExists(atPath: $0.path()) } == false)
+    #expect(outbox.url(for: file).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } == false)
   }
 
   @Test func aSweepKeepsQueuedAndDraftFilesOnly() async throws {
@@ -163,7 +163,7 @@ private func folder() -> URL {
     for f in [queued, draft, stray] { try outbox.keep(Data("x".utf8), as: f) }
     try await outbox.enqueue(.post(NotePost(text: "", writtenAt: "2026-10-29T07:45:00-05:00", files: [queued])))
     await outbox.sweep(keeping: [draft.id])
-    let exists = { (f: QueuedFile) in outbox.url(for: f).map { FileManager.default.fileExists(atPath: $0.path()) } ?? false }
+    let exists = { (f: QueuedFile) in outbox.url(for: f).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } ?? false }
     #expect(exists(queued) && exists(draft) && !exists(stray))
   }
 
@@ -259,8 +259,8 @@ private func folder() -> URL {
     try outbox.keep(Data("BYTES".utf8), as: file)
     let item = try await outbox.enqueue(.post(NotePost(text: "Full phone", writtenAt: "2026-10-29T07:45:00-05:00", files: [file])))
     // The phone fills up: the queue can no longer be written.
-    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path())
-    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path()) }
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path(percentEncoded: false))
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path(percentEncoded: false)) }
     let calls = Calls([.success(.filed(receipt("a")))])
     let prepare: Outbox.Preparer = { item, _ throws(APIError) in await calls.prepare(item) }
     let report = await outbox.flush(prepare: prepare) { item throws(APIError) in try await calls.send(item) }

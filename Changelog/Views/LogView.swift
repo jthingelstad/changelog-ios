@@ -80,6 +80,9 @@ struct LogView: View {
       .navigationTitle("Changelog")
       .toolbarTitleDisplayMode(.inline)
       .refreshable { await model.refresh() }
+      // The box takes the keyboard as Log opens, and the keyboard covers the
+      // tabs: scrolling puts it away.
+      .scrollDismissesKeyboard(.immediately)
       .onAppear { typing = true }
       .onChange(of: model.draft) { before, now in
         if before.isEmpty, !now.isEmpty { Task { await model.draftStarted() } }
@@ -176,6 +179,7 @@ struct Toast: View {
           withAnimation { model.clearToast() }
         }
         .accessibilityAddTraits(.updatesFrequently)
+        .accessibilityIdentifier("toast")
     }
   }
 }

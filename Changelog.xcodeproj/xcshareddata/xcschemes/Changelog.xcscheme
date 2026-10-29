@@ -14,6 +14,10 @@
             <BuildableReference BuildableIdentifier = "primary" BlueprintIdentifier = "ChangelogKitTests" BuildableName = "ChangelogKitTests" BlueprintName = "ChangelogKitTests" ReferencedContainer = "container:ChangelogKit">
             </BuildableReference>
          </TestableReference>
+         <TestableReference skipped = "NO">
+            <BuildableReference BuildableIdentifier = "primary" BlueprintIdentifier = "C0DE00000000000000000036" BuildableName = "ChangelogUITests.xctest" BlueprintName = "ChangelogUITests" ReferencedContainer = "container:Changelog.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction buildConfiguration = "Debug" selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB" launchStyle = "0" useCustomWorkingDirectory = "NO" ignoresPersistentStateOnLaunch = "NO" debugDocumentVersioning = "YES" debugServiceExtension = "internal" allowLocationSimulation = "YES">

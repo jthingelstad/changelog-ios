@@ -81,7 +81,7 @@ public struct ShareInbox: Sendable {
   @discardableResult
   public func adopt(into outbox: Outbox, now: Date = .now) async -> Int {
     let manager = FileManager.default
-    guard let names = try? manager.contentsOfDirectory(atPath: folder.path()) else { return 0 }
+    guard let names = try? manager.contentsOfDirectory(atPath: folder.path(percentEncoded: false)) else { return 0 }
     var adopted = 0
     for name in names.sorted() where name.hasSuffix(".json") {
       let file = folder.appending(path: name)
@@ -117,7 +117,7 @@ public struct ShareInbox: Sendable {
     var moved: [QueuedFile] = []
     for file in queued {
       let from = files.appending(path: file.fileName)
-      guard let to = outbox.url(for: file), !manager.fileExists(atPath: to.path()) else { continue }
+      guard let to = outbox.url(for: file), !manager.fileExists(atPath: to.path(percentEncoded: false)) else { continue }
       if (try? manager.moveItem(at: from, to: to)) != nil { moved.append(file) }
     }
     return moved
@@ -134,9 +134,9 @@ public struct ShareInbox: Sendable {
   /// enough that no extension can still be writing them.
   private func sweep(now: Date) {
     let manager = FileManager.default
-    guard let names = try? manager.contentsOfDirectory(atPath: files.path()) else { return }
+    guard let names = try? manager.contentsOfDirectory(atPath: files.path(percentEncoded: false)) else { return }
     var held = Set<String>()
-    for name in (try? manager.contentsOfDirectory(atPath: folder.path())) ?? [] {
+    for name in (try? manager.contentsOfDirectory(atPath: folder.path(percentEncoded: false))) ?? [] {
       let file = folder.appending(path: name)
       if name.hasSuffix(".draft"), Self.changed(file, or: now) < now.addingTimeInterval(-Self.draftLife) {
         try? manager.removeItem(at: file)
@@ -156,6 +156,6 @@ public struct ShareInbox: Sendable {
   }
 
   private static func changed(_ file: URL, or now: Date) -> Date {
-    (try? FileManager.default.attributesOfItem(atPath: file.path())[.modificationDate]) as? Date ?? now
+    (try? FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.modificationDate]) as? Date ?? now
   }
 }

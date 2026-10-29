@@ -4,7 +4,7 @@ import Testing
 
 @Suite struct ShareInboxTests {
   private func place() -> (inbox: ShareInbox, app: Outbox) {
-    let root = FileManager.default.temporaryDirectory.appending(path: "changelog-shares-" + UUID().uuidString, directoryHint: .isDirectory)
+    let root = FileManager.default.temporaryDirectory.appending(path: "changelog shares " + UUID().uuidString, directoryHint: .isDirectory)
     let app = Outbox(file: root.appending(path: "app/outbox.json"), files: root.appending(path: "app/files", directoryHint: .isDirectory))
     return (ShareInbox(folder: root.appending(path: "shares", directoryHint: .isDirectory)), app)
   }
@@ -26,8 +26,8 @@ import Testing
     let adopted = try #require(await app.waiting.first)
     #expect(adopted.id == item.id && adopted.operation == item.operation)
     // The file moved beside the app's queue; the share is gone.
-    #expect(app.url(for: file).map { FileManager.default.fileExists(atPath: $0.path()) } == true)
-    #expect((try FileManager.default.contentsOfDirectory(atPath: inbox.folder.path())).filter { $0.hasSuffix(".json") }.isEmpty)
+    #expect(app.url(for: file).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } == true)
+    #expect((try FileManager.default.contentsOfDirectory(atPath: inbox.folder.path(percentEncoded: false))).filter { $0.hasSuffix(".json") }.isEmpty)
     // Taking it in again changes nothing.
     #expect(await inbox.adopt(into: app) == 0)
     #expect(await app.waiting.count == 1)
@@ -71,7 +71,7 @@ import Testing
     inbox.hold([], for: share.file)
     try await share.outbox.enqueue(.post(NotePost(text: "Saved", writtenAt: "2026-10-29T07:45:00-05:00")))
     inbox.close(share.file, sent: false)
-    let left = try FileManager.default.contentsOfDirectory(atPath: inbox.folder.path())
+    let left = try FileManager.default.contentsOfDirectory(atPath: inbox.folder.path(percentEncoded: false))
     #expect(left.filter { $0.hasSuffix(".draft") }.isEmpty && left.contains { $0.hasSuffix(".json") })
   }
 
@@ -93,6 +93,6 @@ private extension ShareInbox {
   /// Adopts, then lists what is left in the shared files folder.
   func adoptAfterwards(_ app: Outbox, now: Date) async throws -> [String] {
     await adopt(into: app, now: now)
-    return (try? FileManager.default.contentsOfDirectory(atPath: files.path())) ?? []
+    return (try? FileManager.default.contentsOfDirectory(atPath: files.path(percentEncoded: false))) ?? []
   }
 }

@@ -56,6 +56,10 @@ there first, never work around it here.
   (`tools/dev-server.ts`, port 8790) and point a debug build at it.
 - No third-party packages. Apple's frameworks only.
 - Never log, print or put in an error message a token or a note's text.
+- A file URL goes to `FileManager` as `path(percentEncoded: false)`.
+  `path()` escapes the space in "Application Support", where the queue's
+  files are, and the file is then never found. Tests keep files in folders
+  with a space for this.
 - Every write goes through the Outbox with its idempotency key, so a resend
   never makes a second note. Upcoming's saves and deletes are the one
   exception: they go at once, since each is made from a revision and a
@@ -103,3 +107,11 @@ the tests and for a debug build launched with
 for Here. A simulator build that signs in needs ad-hoc signing
 (`CODE_SIGN_IDENTITY=-`): `CODE_SIGNING_ALLOWED=NO` leaves out the
 Keychain.
+
+`scripts/ui-test-cycle.sh` (`ChangelogUITests`) is the test cycle: it
+builds ad-hoc signed, grants photos, location and the microphone, sets the
+simulator in Minneapolis, and drives a note, a photo, Here, a voice memo,
+Activity and Settings, and a share from Photos against the dev server,
+checking `/v1/activity` that each made exactly one note. Name tests after
+the simulator to run only those. A simulator records with the Mac's
+microphone, which can fail to answer; the voice memo test skips then.

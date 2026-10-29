@@ -228,7 +228,7 @@ final class ShareModel {
         do {
           try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
           try FileManager.default.copyItem(at: from, to: to)
-          done.resume(returning: (try FileManager.default.attributesOfItem(atPath: to.path())[.size]) as? Int)
+          done.resume(returning: (try FileManager.default.attributesOfItem(atPath: to.path(percentEncoded: false))[.size]) as? Int)
         } catch {
           done.resume(returning: nil)
         }
