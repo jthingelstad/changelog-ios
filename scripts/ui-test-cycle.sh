@@ -46,7 +46,9 @@ for service in photos location microphone; do xcrun simctl privacy "$device" gra
 # Minneapolis, which the dev server names (with --fake-places).
 xcrun simctl location "$device" set 44.9778,-93.2650
 
+# A failure keeps its screenshot and UI tree in the result bundle; the
+# simulator's sysdiagnose on top took minutes and held up the run.
 TEST_RUNNER_CHANGELOG_DEV_TOKEN=$CHANGELOG_DEV_TOKEN TEST_RUNNER_CHANGELOG_DEV_URL=$url \
   xcodebuild -project "$root/Changelog.xcodeproj" -scheme Changelog -destination "id=$device" \
   -derivedDataPath "$dd" "${only[@]}" -resultBundlePath "$dd/cycle-$(date +%Y%m%d-%H%M%S).xcresult" \
-  test-without-building
+  -collect-test-diagnostics never test-without-building
