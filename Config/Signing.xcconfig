@@ -1,0 +1,4 @@
+// The team that signs Changelog for a phone, kept out of this public repo.
+// Put `DEVELOPMENT_TEAM = <your team ID>` in Config/Signing.local.xcconfig,
+// which git ignores. Without it, builds are for the simulator.
+#include? "Signing.local.xcconfig"
