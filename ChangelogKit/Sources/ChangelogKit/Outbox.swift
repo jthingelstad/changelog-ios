@@ -9,6 +9,45 @@ public enum OutboxOperation: Codable, Sendable, Equatable {
   case edit(date: String, id: String, text: String, revision: String)
   case delete(date: String, id: String)
   case pins([String])
+  /// A new note with files, a place or both. Its own case, so a queue saved
+  /// by an earlier build still reads.
+  case post(NotePost)
+}
+
+/// A note with files or a place, as queued. The files' bytes wait in the
+/// Outbox's folder; each `upload` and the `place` are filled in, and saved,
+/// before the note is sent, so every resend is the same request.
+public struct NotePost: Codable, Sendable, Equatable {
+  public var text: String
+  public var date: String?
+  public var writtenAt: String
+  public var files: [QueuedFile]
+  /// Where the phone was, named by Here when the note is sent.
+  public var spot: Spot?
+  /// The place, as Here named it (with a business, if one was picked).
+  public var place: DevicePlace?
+  /// Times the uploads were made again after the note found them gone.
+  public var reuploads: Int
+
+  public init(text: String, date: String? = nil, writtenAt: String, files: [QueuedFile] = [], spot: Spot? = nil, place: DevicePlace? = nil) {
+    self.text = text
+    self.date = date
+    self.writtenAt = writtenAt
+    self.files = files
+    self.spot = spot
+    self.place = place
+    self.reuploads = 0
+  }
+
+  /// Every file posted and the place named: ready to send.
+  public var ready: Bool { files.allSatisfy { $0.upload != nil } && (spot == nil || place != nil) }
+
+  public var request: NoteRequest {
+    let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return NoteRequest(text: words.isEmpty ? nil : text, date: date, writtenAt: writtenAt,
+                       uploads: files.isEmpty ? nil : files.map { UploadRef(upload: $0.upload ?? "", type: $0.type, name: $0.name) },
+                       place: place)
+  }
 }
 
 /// A write waiting to be sent. Its `id` is the request's idempotency key, so
@@ -29,13 +68,22 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   public var text: String? {
     switch operation {
     case .note(let text, _, _), .edit(_, _, let text, _): text
+    case .post(let post): post.text
     case .delete, .pins: nil
     }
   }
 
   /// A new note, which a refusal lets the owner fix and send again.
   public var isNote: Bool {
-    if case .note = operation { true } else { false }
+    switch operation {
+    case .note, .post: true
+    default: false
+    }
+  }
+
+  /// The files it carries.
+  public var files: [QueuedFile] {
+    if case .post(let post) = operation { post.files } else { [] }
   }
 }
 
@@ -73,14 +121,22 @@ public struct OutboxNotKept: Error, Sendable, Equatable {}
 /// are kept as one JSON file in the app's own container, oldest first.
 public actor Outbox {
   public typealias Sender = @Sendable (OutboxItem) async throws(APIError) -> OutboxResult
+  /// Makes an item ready to send (posts its files, names its place) and
+  /// answers it changed; the Outbox saves it before sending, so a resend
+  /// carries the same uploads under the same key.
+  public typealias Preparer = @Sendable (OutboxItem, URL?) async throws(APIError) -> OutboxItem
 
   private let file: URL?
+  /// Where a queued note's files wait, beside the queue.
+  public nonisolated let filesFolder: URL?
   private var items: [OutboxItem]
   private var flushing = false
 
-  /// `file` nil keeps everything in memory (tests, previews).
-  public init(file: URL?) {
+  /// `file` nil keeps everything in memory (tests, previews). Files wait in
+  /// `files`, or else in `outbox-files` beside the queue.
+  public init(file: URL?, files: URL? = nil) {
     self.file = file
+    self.filesFolder = files ?? file?.deletingLastPathComponent().appending(path: "outbox-files", directoryHint: .isDirectory)
     if let file, let data = try? Data(contentsOf: file),
        let saved = try? JSONDecoder().decode([OutboxItem].self, from: data) {
       items = saved
@@ -114,18 +170,66 @@ public actor Outbox {
   /// Discarding a write the owner gave up on. Should the file not take the
   /// change, it comes back after a relaunch to be discarded again.
   public func discard(_ id: UUID) {
+    let gone = items.first { $0.id == id }?.files ?? []
     items.removeAll { $0.id == id }
     try? save()
+    removeFiles(gone)
+  }
+
+  /// Where a queued file's bytes are.
+  public nonisolated func url(for file: QueuedFile) -> URL? {
+    filesFolder?.appending(path: file.fileName)
+  }
+
+  /// Keeps a file's bytes in the files folder, ready for a note.
+  public nonisolated func keep(_ data: Data, as file: QueuedFile) throws(OutboxNotKept) {
+    guard let folder = filesFolder, let url = url(for: file) else { return }
+    do {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    } catch {
+      throw OutboxNotKept()
+    }
+  }
+
+  /// Removes files no queued note holds, except `keeping` (the draft's).
+  public func sweep(keeping: Set<UUID> = []) {
+    guard let folder = filesFolder,
+          let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path()) else { return }
+    let held = Set(items.flatMap(\.files).map(\.id)).union(keeping)
+    for name in names {
+      if let id = UUID(uuidString: String(name.prefix(36))), held.contains(id) { continue }
+      try? FileManager.default.removeItem(at: folder.appending(path: name))
+    }
+  }
+
+  /// Removes files' bytes: a draft's the owner took off, or a sent note's.
+  public nonisolated func removeFiles(_ files: [QueuedFile]) {
+    for file in files { if let url = url(for: file) { try? FileManager.default.removeItem(at: url) } }
   }
 
   /// A refused note, edited by the owner, goes back in line under a new key:
   /// the old key's receipt belongs to the request that was refused.
   public func retry(_ id: UUID, text: String) throws(OutboxNotKept) {
-    guard let i = items.firstIndex(where: { $0.id == id }),
-          case .note(_, let date, let writtenAt) = items[i].operation else { return }
+    guard let i = items.firstIndex(where: { $0.id == id }) else { return }
     let before = items[i]
+    switch items[i].operation {
+    case .note(_, let date, let writtenAt):
+      items[i].operation = .note(text: text, date: date, writtenAt: writtenAt)
+    case .post(var post):
+      post.text = text
+      // A refused note leaves its uploads for a day, so they go again as
+      // they are (made again once should they be gone). A file never
+      // posted whose bytes are no longer on the phone goes; the rest still do.
+      post.files.removeAll { file in
+        file.upload == nil && (url(for: file).map { !FileManager.default.fileExists(atPath: $0.path()) } ?? false)
+      }
+      post.reuploads = 0
+      items[i].operation = .post(post)
+    default:
+      return
+    }
     items[i].id = UUID()
-    items[i].operation = .note(text: text, date: date, writtenAt: writtenAt)
     items[i].refusal = nil
     items[i].attempts = 0
     do { try save() } catch {
@@ -137,7 +241,7 @@ public actor Outbox {
   /// Sends what is waiting, oldest first. A refusal sets that item aside and
   /// carries on; anything worth retrying stops the run so order is kept.
   /// Items queued while a run is sending join that run.
-  public func flush(_ send: Sender) async -> FlushReport {
+  public func flush(prepare: Preparer? = nil, _ send: Sender) async -> FlushReport {
     // One run at a time: a second caller leaves its items to the run under
     // way, which reads the queue afresh after every send, rather than sending
     // the same item alongside it.
@@ -146,16 +250,35 @@ public actor Outbox {
     defer { flushing = false }
     var report = FlushReport()
     var tried = Set<UUID>()
-    while let item = items.first(where: { $0.refusal == nil && !tried.contains($0.id) }) {
+    while var item = items.first(where: { $0.refusal == nil && !tried.contains($0.id) }) {
       tried.insert(item.id)
       do {
+        if let prepare, case .post(let post) = item.operation, !post.ready {
+          let ready = try await prepare(item, filesFolder)
+          // Saved before sending: from here on, every resend is this request.
+          if let i = items.firstIndex(where: { $0.id == item.id }) { items[i].operation = ready.operation }
+          item.operation = ready.operation
+          try? save()
+        }
         let result = try await send(item)
         items.removeAll { $0.id == item.id }
         report.sent.append(SentItem(item: item, result: result))
         // Should the file keep a sent item, it is sent again after a relaunch
         // under its own key, and the receipt answers it: still no second note.
         try? save()
+        removeFiles(item.files)
       } catch {
+        // Uploads a note found gone (unused for a day, say) are made again
+        // once, under a new key: the old key's request was refused.
+        if error.field == "uploads", case .post(var post) = item.operation, post.reuploads == 0,
+           let i = items.firstIndex(where: { $0.id == item.id }) {
+          post.reuploads += 1
+          for f in post.files.indices { post.files[f].upload = nil }
+          items[i].operation = .post(post)
+          items[i].id = UUID()
+          try? save()
+          continue
+        }
         if error.retryable || error.signedOut {
           if let i = items.firstIndex(where: { $0.id == item.id }) { items[i].attempts += 1 }
           try? save()
@@ -199,7 +322,35 @@ public extension APIClient {
       return .deleted
     case .pins(let pinned):
       return .pinned(try await setPinned(pinned, idempotencyKey: key))
+    case .post(let post):
+      return .filed(try await createNote(post.request, idempotencyKey: key))
     }
+  }
+
+  /// Posts a queued note's files and names its place, so it is ready to send.
+  /// A place that can't be named (no city for the spot, or the day's 100
+  /// spots used) is left off: a note is never held back for its place.
+  func prepare(_ item: OutboxItem, files folder: URL?) async throws(APIError) -> OutboxItem {
+    guard case .post(var post) = item.operation else { return item }
+    for i in post.files.indices where post.files[i].upload == nil {
+      let file = post.files[i]
+      guard let url = folder?.appending(path: file.fileName), let data = try? Data(contentsOf: url) else {
+        throw APIError(status: 400, code: "file_missing", message: "A file for this note is no longer on this phone. Discard it, or fix it to send the words alone.")
+      }
+      let form = try await startUpload(UploadStart(name: file.name, type: file.type, size: data.count))
+      try await self.post(data, name: file.name, to: form)
+      post.files[i].upload = form.upload
+      post.files[i].type = form.type
+    }
+    if let spot = post.spot, post.place == nil {
+      do { post.place = try await here(spot).place } catch {
+        if error.signedOut || (error.retryable && error.status != 429) { throw error }
+        post.spot = nil
+      }
+    }
+    var ready = item
+    ready.operation = .post(post)
+    return ready
   }
 }
 

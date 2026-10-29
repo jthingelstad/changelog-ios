@@ -40,16 +40,21 @@ public struct TokenInfo: Codable, Sendable, Equatable {
 }
 
 /// `POST /v1/notes`. `writtenAt` is the moment the words were typed, so a
-/// note queued offline files to the day it was written.
+/// note queued offline files to the day it was written. A note with files
+/// needs no words: `text` nil leaves it out.
 public struct NoteRequest: Codable, Sendable, Equatable {
-  public var text: String
+  public var text: String?
   public var date: String?
   public var writtenAt: String?
+  public var uploads: [UploadRef]?
+  public var place: DevicePlace?
 
-  public init(text: String, date: String? = nil, writtenAt: String? = nil) {
+  public init(text: String?, date: String? = nil, writtenAt: String? = nil, uploads: [UploadRef]? = nil, place: DevicePlace? = nil) {
     self.text = text
     self.date = date
     self.writtenAt = writtenAt
+    self.uploads = uploads
+    self.place = place
   }
 }
 
@@ -61,6 +66,8 @@ public struct NoteRef: Codable, Sendable, Equatable, Hashable {
   /// Opaque: send it back to edit, never compare or count it.
   public var revision: String
   public var token: String?
+  /// How many files the note has.
+  public var files: Int?
 }
 
 public struct Unlocked: Codable, Sendable, Equatable {

@@ -37,6 +37,14 @@ struct SettingsView: View {
         }
 
         Section {
+          Toggle("Add where I am", isOn: $model.hereByDefault)
+        } header: {
+          Text("Place")
+        } footer: {
+          Text("Each note from this phone takes the neighbourhood or city it was written in, and you can pick a business nearby. Off, tap the location button for a note that should have one.")
+        }
+
+        Section {
           NavigationLink("Pinned tags") { PinnedTagsView() }
           if let sticky = model.sticky {
             Button("Stop adding #\(sticky) to every note") { model.sticky = nil }

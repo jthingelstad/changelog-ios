@@ -12,8 +12,12 @@ look back on the web. Changelog is for getting things in, in two taps.
   the words.
 - **Reminders** from your Upcoming dates, as notifications when each
   morning's email is due, in its words. Off until you turn them on.
-- Later: photos, voice memos and places (0.2), adding Upcoming dates,
-  Shortcuts, the Action Button and widgets (0.4).
+- **Photos, voice memos and where you are** on a note: from the library
+  or the camera, recorded in the app, and the neighbourhood or city with a
+  business nearby to pick. They wait on the phone with the note until it
+  is sent. Files need a token with "Add files" ticked.
+- Later: the share sheet (0.2), adding Upcoming dates, Shortcuts, the
+  Action Button and widgets (0.4).
 
 It talks only to Release Notes' public `/v1` API, with a token you make in
 Release Notes' Settings. The API is designed in

@@ -141,11 +141,11 @@ public struct APIClient: Sendable {
     return request
   }
 
-  private func send<T: Decodable>(_ method: String, _ path: String, query: [URLQueryItem] = [], idempotencyKey: String? = nil, expect: Int = 200) async throws(APIError) -> T {
+  func send<T: Decodable>(_ method: String, _ path: String, query: [URLQueryItem] = [], idempotencyKey: String? = nil, expect: Int = 200) async throws(APIError) -> T {
     try await send(method, path, query: query, body: Optional<NoBody>.none, idempotencyKey: idempotencyKey, expect: expect)
   }
 
-  private func send<T: Decodable, B: Encodable>(_ method: String, _ path: String, query: [URLQueryItem] = [], body: B?, idempotencyKey: String? = nil, expect: Int = 200) async throws(APIError) -> T {
+  func send<T: Decodable, B: Encodable>(_ method: String, _ path: String, query: [URLQueryItem] = [], body: B?, idempotencyKey: String? = nil, expect: Int = 200) async throws(APIError) -> T {
     let data: Data?
     do { data = try body.map { try Self.encoder.encode($0) } } catch {
       throw APIError(status: 0, code: "unreadable", message: "The note couldn't be prepared.")

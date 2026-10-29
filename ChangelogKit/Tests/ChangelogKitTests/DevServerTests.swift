@@ -1,5 +1,7 @@
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 @testable import ChangelogKit
 
 /// The client against the real `/v1`, served by Release Notes' dev server
@@ -108,6 +110,62 @@ struct DevServerTests {
       #expect((try? Date(day.sendAt, strategy: .iso8601)) != nil)
       #expect(!day.reminders.isEmpty)
     }
+  }
+
+  /// A note with a photo and no words, its spot named as it sends; then one
+  /// with a business picked from Here; then one whose upload is gone, which
+  /// is made again once under a new key.
+  @Test func filesAndPlaces() async throws {
+    let client = DevServer.client()
+    guard try await client.me().token.scopes.contains("media:write") else { return }
+    let folder = FileManager.default.temporaryDirectory.appending(path: "changelog-dev-" + UUID().uuidString, directoryHint: .isDirectory)
+    let outbox = Outbox(file: nil, files: folder)
+    let prepare: Outbox.Preparer = { item, folder throws(APIError) in try await client.prepare(item, files: folder) }
+    let send: Outbox.Sender = { item throws(APIError) in try await client.perform(item) }
+
+    let photo = QueuedFile(type: "image/png", name: "Photo 1.png", size: 0)
+    let png = Self.png()
+    var sized = photo
+    sized.size = png.count
+    try outbox.keep(png, as: sized)
+    try await outbox.enqueue(.post(NotePost(text: "", writtenAt: Timestamp.string(.now), files: [sized],
+                                            spot: Spot(lat: 44.98, lon: -93.26, accuracyM: 30))))
+    var report = await outbox.flush(prepare: prepare, send)
+    #expect(report.stopped == nil && report.refused.isEmpty)
+    let first = try #require(report.filed.first)
+    #expect(first.note.files == 1)
+    #expect(outbox.url(for: sized).map { FileManager.default.fileExists(atPath: $0.path()) } == false)
+
+    let here = try await client.here(Spot(lat: 44.98, lon: -93.26, accuracyM: 30))
+    #expect(here.place.from == "device")
+    var place = here.place
+    place.venue = try #require(here.nearby.first?.name)
+    try await outbox.enqueue(.post(NotePost(text: "Lunch #devtest", writtenAt: Timestamp.string(.now),
+                                            spot: Spot(lat: 44.98, lon: -93.26), place: place)))
+    report = await outbox.flush(prepare: prepare, send)
+    #expect(report.filed.count == 1 && report.refused.isEmpty)
+
+    var stale = QueuedFile(type: "image/png", name: "Photo 2.png", size: png.count, upload: String(repeating: "0", count: 32))
+    try outbox.keep(png, as: stale)
+    stale.type = "image/png"
+    let queued = try await outbox.enqueue(.post(NotePost(text: "Gone upload #devtest", writtenAt: Timestamp.string(.now), files: [stale])))
+    report = await outbox.flush(prepare: prepare, send)
+    #expect(report.refused.isEmpty, "the uploads refusal should be made again, not set aside")
+    let remade = try #require(report.sent.first?.item)
+    #expect(remade.idempotencyKey != queued.idempotencyKey)
+    #expect(report.filed.first?.note.files == 1)
+  }
+
+  static func png() -> Data {
+    let context = CGContext(data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.setFillColor(CGColor(red: 0.9, green: 0.5, blue: 0.1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+    let out = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(out, UTType.png.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+    CGImageDestinationFinalize(destination)
+    return out as Data
   }
 
   @Test func errorsDecode() async throws {
