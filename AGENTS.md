@@ -124,11 +124,16 @@ microphone, which can fail to answer; the voice memo test skips then.
 `scripts/testflight.sh` uploads a clean commit on main to TestFlight, for
 internal testers only (`Config/ExportOptions-TestFlight.plist`; Xcode
 leaves the build number alone). An upload goes to Apple and to Jamie's
-phone: run it only when Jamie asks. It needs one phone registered to the
-team (automatic signing archives with a development profile, which Apple
-makes only for a team with a device), and Xcode's sign-in, which a
-background process can't reach: run it from Terminal. Each target has a
-`PrivacyInfo.xcprivacy` naming why it uses Apple's required-reason APIs
+phone. Jamie, 2026-10-29: "Claude may upload Changelog to TestFlight for
+internal testing after work merges to main, without asking each time." So
+after a merge that changes the app, upload main; a merge of docs or CI
+alone needs no build. Every other upload (for outside testers, for the App
+Store, from anything but main) is still Jamie's call each time. It needs
+one phone registered to the team (automatic signing archives with a
+development profile, which Apple makes only for a team with a device), and
+Xcode's sign-in, which a background process can't reach: run it from
+Terminal (an agent `open`s a `.command` file that runs it). Each target
+has a `PrivacyInfo.xcprivacy` naming why it uses Apple's required-reason APIs
 (defaults, file dates); a new use of one of those goes there too, or App
 Store Connect refuses the build. `ITSAppUsesNonExemptEncryption` is false:
 the app's only encryption is HTTPS. `docs/PHONE-TEST.md` is the pass by
