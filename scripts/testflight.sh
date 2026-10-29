@@ -1,0 +1,38 @@
+#!/bin/bash
+# Archives Changelog for the App Store and uploads it to TestFlight, for
+# internal testers only (Config/ExportOptions-TestFlight.plist). Builds come
+# from a clean commit on main: Apple's build number is the commit count, so
+# it only goes up, and Settings names the commit.
+#
+# Needs the developer account signed in to Xcode (Settings > Accounts), its
+# team in Config/Signing.local.xcconfig, and the app made in App Store
+# Connect for com.thingelstad.changelog. The first run registers the app's
+# ids and its App Group with Apple and makes the signing certificates.
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+
+if ! grep -qE '^[[:space:]]*DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*[A-Z0-9]{10}' Config/Signing.local.xcconfig 2>/dev/null; then
+  echo "Put DEVELOPMENT_TEAM = <your team ID> in Config/Signing.local.xcconfig first." >&2
+  exit 1
+fi
+if [[ -n $(git status --porcelain) ]]; then
+  echo "The checkout has changes. TestFlight builds come from a clean commit." >&2
+  exit 1
+fi
+git fetch -q origin main
+if ! git merge-base --is-ancestor HEAD origin/main; then
+  echo "This commit isn't on main. TestFlight builds come from main." >&2
+  exit 1
+fi
+
+out=$root/build/testflight
+rm -rf "$out"
+echo "Changelog $(scripts/version.sh), build $(git rev-list --count HEAD) ($(git rev-parse --short HEAD))"
+xcodebuild -project Changelog.xcodeproj -scheme Changelog -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath "$out/Changelog.xcarchive" \
+  -allowProvisioningUpdates -quiet archive
+xcodebuild -exportArchive -archivePath "$out/Changelog.xcarchive" \
+  -exportOptionsPlist Config/ExportOptions-TestFlight.plist -exportPath "$out/export" \
+  -allowProvisioningUpdates
+echo "Uploaded. App Store Connect takes a few minutes to process it; then it is in TestFlight."

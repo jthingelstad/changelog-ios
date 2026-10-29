@@ -116,3 +116,12 @@ from Photos against the dev server, checking `/v1/activity` that each made
 exactly one note (and `/v1/upcoming` the date). Name tests after
 the simulator to run only those. A simulator records with the Mac's
 microphone, which can fail to answer; the voice memo test skips then.
+
+`scripts/testflight.sh` uploads a clean commit on main to TestFlight, for
+internal testers only (`Config/ExportOptions-TestFlight.plist`; Xcode
+leaves the build number alone). An upload goes to Apple and to Jamie's
+phone: run it only when Jamie asks. Each target has a
+`PrivacyInfo.xcprivacy` naming why it uses Apple's required-reason APIs
+(defaults, file dates); a new use of one of those goes there too, or App
+Store Connect refuses the build. `ITSAppUsesNonExemptEncryption` is false:
+the app's only encryption is HTTPS.
