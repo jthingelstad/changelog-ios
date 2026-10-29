@@ -100,6 +100,7 @@ final class ShareModel {
     }
     files.append(file)
     thumbnails[file.id] = thumbnail
+    inbox?.hold(files, for: share.file)
   }
 
   private func copy(_ provider: NSItemProvider, _ kind: UTType, type: String) async {
@@ -113,6 +114,7 @@ final class ShareModel {
       var copied = file
       copied.size = size
       files.append(copied)
+      inbox?.hold(files, for: share.file)
     } else {
       try? FileManager.default.removeItem(at: to)
       skipped += 1
@@ -166,22 +168,38 @@ final class ShareModel {
     }
   }
 
-  /// Leaves without a note: the share's files and queue go.
+  /// Before Commit, leaves without a note: the draft's files go. After it,
+  /// only leaves: the note and its files wait for the app.
   func cancel() {
-    guard phase != .sending else { return }
-    if let share {
-      share.outbox.removeFiles(files)
-      try? FileManager.default.removeItem(at: share.file)
+    switch phase {
+    case .sending:
+      return
+    case .loading, .ready:
+      if let share {
+        share.outbox.removeFiles(files)
+        try? FileManager.default.removeItem(at: share.file)
+        inbox?.release(share.file)
+      }
+    case .done:
+      break
     }
-    finish()
+    leave()
   }
 
   private func done(_ said: String) {
     phase = .done(said)
     Task {
       try? await Task.sleep(for: .seconds(1.5))
-      finish()
+      leave()
     }
+  }
+
+  private var left = false
+
+  private func leave() {
+    guard !left else { return }
+    left = true
+    finish()
   }
 
   private static let webImages: [UTType] = [.jpeg, .png, .gif, .webP]

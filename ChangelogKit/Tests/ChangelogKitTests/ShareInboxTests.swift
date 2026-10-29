@@ -51,6 +51,30 @@ import Testing
     #expect(await app.waiting.isEmpty)
   }
 
+  @Test func aDraftsFilesStayWhileItsSheetIsOpen() async throws {
+    let (inbox, app) = place()
+    let share = inbox.open()
+    let file = QueuedFile(type: "application/pdf", name: "Menu.pdf", size: 9)
+    try share.outbox.keep(Data("%PDF-1.7\n".utf8), as: file)
+    inbox.hold([file], for: share.file)
+    // Left open past the stray-file window, the draft still has its file.
+    let open = try await inbox.adoptAfterwards(app, now: .now.addingTimeInterval(ShareInbox.abandoned + 60))
+    #expect(open.contains(file.fileName))
+    // A day on, the sheet is taken to be gone, and the file with it.
+    let gone = try await inbox.adoptAfterwards(app, now: .now.addingTimeInterval(ShareInbox.draftLife + 60))
+    #expect(!gone.contains(file.fileName))
+  }
+
+  @Test func committingReleasesTheDraft() async throws {
+    let (inbox, _) = place()
+    let share = inbox.open()
+    inbox.hold([], for: share.file)
+    try await share.outbox.enqueue(.post(NotePost(text: "Saved", writtenAt: "2026-10-29T07:45:00-05:00")))
+    inbox.close(share.file, sent: false)
+    let left = try FileManager.default.contentsOfDirectory(atPath: inbox.folder.path())
+    #expect(left.filter { $0.hasSuffix(".draft") }.isEmpty && left.contains { $0.hasSuffix(".json") })
+  }
+
   @Test func strayFilesGoOnceOld() async throws {
     let (inbox, app) = place()
     let (_, held) = try await leftOver(inbox)
