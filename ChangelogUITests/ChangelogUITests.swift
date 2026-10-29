@@ -123,7 +123,8 @@ final class ChangelogUITests: XCTestCase {
     expect(add, "Upcoming can add a date", in: app)
     add.tap()
     let title = "Ada \(UUID().uuidString.prefix(6).lowercased())"
-    let field = app.textFields["Title"]
+    // The field's label is its prompt ("Whose birthday"), not "Title".
+    let field = app.textFields["title"]
     expect(field, "the editor opens", in: app)
     field.tap()
     field.typeText(title)

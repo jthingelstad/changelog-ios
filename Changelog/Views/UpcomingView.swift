@@ -256,6 +256,7 @@ struct UpcomingEditor: View {
           .pickerStyle(.segmented)
           TextField("Title", text: $draft.title, prompt: Text(titlePrompt))
             .textInputAutocapitalization(.words)
+            .accessibilityIdentifier("title")
             .submitLabel(.done)
         }
 
