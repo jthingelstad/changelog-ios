@@ -93,6 +93,12 @@ public struct APIClient: Sendable {
     return try await send("GET", "v1/activity", query: query)
   }
 
+  /// The reminders each morning brings, from today through `days` ahead.
+  /// Needs the `upcoming` scope.
+  public func reminders(days: Int = ReminderPlan.days) async throws(APIError) -> Reminders {
+    try await send("GET", "v1/upcoming/reminders", query: [URLQueryItem(name: "days", value: String(days))])
+  }
+
   /// Sign out: the token revokes itself.
   public func revokeToken() async throws(APIError) {
     let _: Empty = try await send("DELETE", "v1/token", expect: 204)

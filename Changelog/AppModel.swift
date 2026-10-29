@@ -18,6 +18,9 @@ final class AppModel {
   private(set) var lastFiled: NoteReceipt?
   private(set) var toast: String?
   private(set) var problem: String?
+  /// Upcoming reminders as notifications on this phone, off until turned on.
+  private(set) var remindersOn: Bool
+  private(set) var remindersProblem: String?
   var draft = ""
 
   /// A tag that rides on every note until turned off (a trip, a project).
@@ -40,6 +43,7 @@ final class AppModel {
     self.defaults = defaults
     self.outbox = Outbox(file: outboxFile)
     self.sticky = defaults.string(forKey: "sticky")
+    self.remindersOn = defaults.bool(forKey: "reminders")
     self.server = defaults.string(forKey: "server").flatMap(URL.init(string:)) ?? APIClient.production
   }
 
@@ -115,6 +119,11 @@ final class AppModel {
     tags = nil
     today = []
     phase = .signedOut
+    // The next sign-in asks again before any reminder comes.
+    remindersOn = false
+    defaults.set(false, forKey: "reminders")
+    PhoneReminders.cancelRefresh()
+    Task { await PhoneReminders.clear() }
   }
 
   // MARK: Reading
@@ -129,6 +138,7 @@ final class AppModel {
       problem = nil
       await loadToday()
       await send()
+      await updateReminders()
     } catch let error as APIError {
       handle(error)
     } catch {}
@@ -139,6 +149,53 @@ final class AppModel {
     if let page = try? await client.activity(limit: 100) {
       today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
     }
+  }
+
+  // MARK: Reminders
+
+  var canRemind: Bool { me?.token.scopes.contains("upcoming") == true }
+
+  /// The Settings toggle. Turning it on asks iOS first; if notifications are
+  /// off for Changelog it stays off and says where to allow them.
+  func setReminders(_ on: Bool) async {
+    remindersProblem = nil
+    if on, !(await PhoneReminders.ask()) {
+      remindersProblem = Self.notificationsOff
+      return
+    }
+    remindersOn = on
+    defaults.set(on, forKey: "reminders")
+    await updateReminders()
+  }
+
+  static let notificationsOff = "Notifications are off for Changelog. Allow them in the Settings app, then turn this on again."
+
+  /// Replaces this phone's reminders from a fresh read. Offline, what was
+  /// scheduled stays; a token that can't read Upcoming clears it.
+  func updateReminders() async {
+    guard remindersOn, canRemind, let client else {
+      PhoneReminders.cancelRefresh()
+      await PhoneReminders.clear()
+      return
+    }
+    remindersProblem = await PhoneReminders.allowed() ? nil : Self.notificationsOff
+    do {
+      let answer = try await client.reminders()
+      await PhoneReminders.schedule(ReminderPlan.plan(answer, now: .now))
+    } catch {
+      if error.signedOut || error.code == "scope_required" { await PhoneReminders.clear() }
+    }
+    PhoneReminders.askForRefresh()
+  }
+
+  /// iOS's background refresh, which may start the app without a window:
+  /// read who this is, send what waits, and read the reminders again.
+  func backgroundRefresh() async {
+    if token == nil { token = tokens.read() }
+    guard let client else { return }
+    if let me = try? await client.me() { self.me = me }
+    await send()
+    await updateReminders()
   }
 
   // MARK: Writing

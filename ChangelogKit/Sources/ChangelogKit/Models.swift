@@ -122,6 +122,31 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
   public var family: String { String(kind.split(separator: ".").first ?? Substring(kind)) }
 }
 
+/// `GET /v1/upcoming/reminders`: the reminders each morning's email
+/// carries, for the days ahead, with when that email is due. Only days with
+/// a reminder are listed.
+public struct Reminders: Codable, Sendable, Equatable {
+  public var from: String
+  public var through: String
+  public var days: [ReminderDay]
+}
+
+public struct ReminderDay: Codable, Sendable, Equatable {
+  public var date: String
+  /// When that morning's email is due, with the account's offset that day.
+  public var sendAt: String
+  public var reminders: [Reminder]
+}
+
+/// One reminder, in the email's own words: `when` ("In 7 days") and `line`.
+public struct Reminder: Codable, Sendable, Equatable {
+  /// The Upcoming date's id.
+  public var upcoming: String
+  public var date: String
+  public var when: String
+  public var line: String
+}
+
 /// The one error shape: `{"error": {"code", "message"}}`.
 struct ErrorBody: Codable, Sendable {
   struct Detail: Codable, Sendable {

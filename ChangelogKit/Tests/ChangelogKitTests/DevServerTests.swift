@@ -99,6 +99,17 @@ struct DevServerTests {
     #expect(first.items.contains { $0.via == "token" && $0.client == "Changelog" })
   }
 
+  @Test func remindersDecode() async throws {
+    let client = DevServer.client()
+    guard try await client.me().token.scopes.contains("upcoming") else { return }
+    let reminders = try await client.reminders()
+    #expect(reminders.from <= reminders.through)
+    for day in reminders.days {
+      #expect((try? Date(day.sendAt, strategy: .iso8601)) != nil)
+      #expect(!day.reminders.isEmpty)
+    }
+  }
+
   @Test func errorsDecode() async throws {
     let bad = APIClient(baseURL: DevServer.url, token: "rn_" + String(repeating: "A", count: 43),
                         userAgent: "Changelog/0.1 (dev tests)", session: URLSession(configuration: .ephemeral))
