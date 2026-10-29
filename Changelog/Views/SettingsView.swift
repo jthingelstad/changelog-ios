@@ -33,7 +33,7 @@ struct SettingsView: View {
         } header: {
           Text("Upcoming reminders")
         } footer: {
-          Text(model.remindersProblem ?? "The reminders each morning's email carries, as notifications here when that email is due, in its words. Dates with email reminders off don't come.")
+          Text(model.remindersProblem ?? "The reminders each morning's email carries, as notifications here when that email is due, in its words. They still come while your email is paused or stopped. Dates with email reminders off don't come.")
         }
 
         NotificationSettings()
