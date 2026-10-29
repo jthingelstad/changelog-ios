@@ -14,13 +14,24 @@ there first, never work around it here.
   `APIClient` (every `/v1` call, typed errors), `Outbox` (the offline queue),
   `Media` (uploads, the types Release Notes keeps, the storage form),
   `Hashtags` (a port of Release Notes' `packages/domain/tags.ts`; keep them
-  in step), `TokenStore` (the Keychain). It has its own tests:
+  in step), `TokenStore` (the Keychain), `Shares` (the App Group and the
+  extension's hand-off to the app). It has its own tests:
   `swift test --package-path ChangelogKit`.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
   screens (Log, Activity, Settings, sign-in), `Locator` one location fix,
   `Recorder` a voice memo.
+- `ShareExtension/` is the share sheet's Changelog. It keeps each share in
+  a queue of its own in the App Group's `shares/` folder, sends it if it
+  can within 25 seconds, and leaves the rest for the app, which adopts it
+  into its Outbox under the same key. It has about 120 MB of memory: files
+  are copied and streamed from disk, never read whole, except photos.
+- The token is in the Keychain under the App Group's access group, so the
+  extension can read it; a token kept by 0.1 moves there when the app
+  starts. The app mirrors the server and the sticky tag into the group's
+  defaults.
 - `Changelog.xcodeproj` uses synchronized folders, so new files in
-  `Changelog/` need no project edit.
+  `Changelog/` and `ShareExtension/` need no project edit. Versions are set
+  once at the project level, so the extension always matches the app.
 
 ## Rules
 

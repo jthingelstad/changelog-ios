@@ -55,11 +55,19 @@ final class AppModel {
   /// A tag that rides on every note until turned off (a trip, a project).
   /// Kept on this phone only: a habit of the moment, not a setting.
   var sticky: String? {
-    didSet { defaults.set(sticky, forKey: "sticky") }
+    didSet {
+      defaults.set(sticky, forKey: "sticky")
+      AppGroup.defaults?.set(sticky, forKey: "sticky")
+    }
   }
 
+  /// The share extension reads the server and the sticky tag from the App
+  /// Group, so a shared note goes where the app's do, tagged as they are.
   var server: URL {
-    didSet { defaults.set(server.absoluteString, forKey: "server") }
+    didSet {
+      defaults.set(server.absoluteString, forKey: "server")
+      AppGroup.defaults?.set(server.absoluteString, forKey: "server")
+    }
   }
 
   private let tokens: TokenStore
@@ -67,7 +75,8 @@ final class AppModel {
   private let defaults: UserDefaults
   private var token: String?
 
-  init(tokens: TokenStore = KeychainTokenStore(), defaults: UserDefaults = .standard, outboxFile: URL? = AppModel.outboxFile) {
+  init(tokens: TokenStore = KeychainTokenStore(accessGroup: AppGroup.id), defaults: UserDefaults = .standard,
+       outboxFile: URL? = AppModel.outboxFile) {
     self.tokens = tokens
     self.defaults = defaults
     self.outbox = Outbox(file: outboxFile)
@@ -75,6 +84,8 @@ final class AppModel {
     self.remindersOn = defaults.bool(forKey: "reminders")
     self.hereByDefault = defaults.bool(forKey: "here")
     self.server = defaults.string(forKey: "server").flatMap(URL.init(string:)) ?? APIClient.production
+    AppGroup.defaults?.set(server.absoluteString, forKey: "server")
+    AppGroup.defaults?.set(sticky, forKey: "sticky")
   }
 
   static var outboxFile: URL? {
@@ -97,8 +108,13 @@ final class AppModel {
   // MARK: Signing in and out
 
   func start() async {
+    // A token 0.1 kept where only the app could read it moves to the App
+    // Group, for the share extension.
+    (tokens as? KeychainTokenStore)?.share()
     token = tokens.read()
-    waiting = await outbox.waiting
+    // Shares the extension couldn't send come in first, so the sweep after
+    // keeps their files.
+    await adoptShares()
     // A draft's files left by a run that ended; the queue's own stay.
     await outbox.sweep(keeping: Set(draftFiles.map(\.id)))
     #if DEBUG
@@ -318,8 +334,15 @@ final class AppModel {
     return true
   }
 
+  /// Takes in notes shared from other apps that the share extension left.
+  private func adoptShares() async {
+    await ShareInbox.shared?.adopt(into: outbox)
+    waiting = await outbox.waiting
+  }
+
   func send() async {
     guard let client else { return }
+    await adoptShares()
     let report = await outbox.flush(prepare: { item, folder throws(APIError) in
       try await client.prepare(item, files: folder)
     }) { item throws(APIError) in try await client.perform(item) }

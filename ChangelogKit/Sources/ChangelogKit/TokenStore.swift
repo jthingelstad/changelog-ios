@@ -25,12 +25,17 @@ public enum TokenFormat {
   }
 }
 
+/// The token in the Keychain. With `accessGroup` (the App Group) it is kept
+/// where the share extension can read it too; a build without the group
+/// keeps it in the app's own.
 public final class KeychainTokenStore: TokenStore {
   private let service: String
+  private let accessGroup: String?
   private let account = "release-notes-token"
 
-  public init(service: String = "com.thingelstad.changelog") {
+  public init(service: String = "com.thingelstad.changelog", accessGroup: String? = nil) {
     self.service = service
+    self.accessGroup = accessGroup
   }
 
   private var query: [String: Any] {
@@ -39,6 +44,8 @@ public final class KeychainTokenStore: TokenStore {
      kSecAttrAccount as String: account]
   }
 
+  /// Reads it from any group this app may read: the shared one, or the
+  /// app's own, where 0.1 kept it.
   public func read() -> String? {
     var q = query
     q[kSecReturnData as String] = true
@@ -50,15 +57,47 @@ public final class KeychainTokenStore: TokenStore {
 
   public func write(_ token: String) throws {
     clear()
-    var q = query
-    q[kSecValueData as String] = Data(token.utf8)
-    // Readable by background refresh after the first unlock, never synced
-    // to other devices or restored onto a new phone.
-    q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-    let status = SecItemAdd(q as CFDictionary, nil)
+    if let accessGroup {
+      let status = add(token, group: accessGroup)
+      if status == errSecSuccess { return }
+      // A build without the App Group keeps it in the app's own group.
+      guard status == errSecMissingEntitlement else { throw KeychainError(status: status) }
+    }
+    let status = add(token, group: nil)
     guard status == errSecSuccess else { throw KeychainError(status: status) }
   }
 
+  /// Moves a token 0.1 kept in the app's own group to the shared one, so
+  /// the share extension can read it. The shared copy is made before the
+  /// old one goes, so a failure leaves the token where it was.
+  public func share() {
+    guard let accessGroup else { return }
+    var q = query
+    q[kSecReturnAttributes as String] = true
+    q[kSecMatchLimit as String] = kSecMatchLimitAll
+    var found: CFTypeRef?
+    guard SecItemCopyMatching(q as CFDictionary, &found) == errSecSuccess, let items = found as? [[String: Any]] else { return }
+    let groups = items.compactMap { $0[kSecAttrAccessGroup as String] as? String }
+    guard !groups.isEmpty, !groups.contains(accessGroup), let token = read(),
+          add(token, group: accessGroup) == errSecSuccess else { return }
+    for group in groups {
+      var old = query
+      old[kSecAttrAccessGroup as String] = group
+      SecItemDelete(old as CFDictionary)
+    }
+  }
+
+  private func add(_ token: String, group: String?) -> OSStatus {
+    var q = query
+    q[kSecValueData as String] = Data(token.utf8)
+    if let group { q[kSecAttrAccessGroup as String] = group }
+    // Readable by background refresh after the first unlock, never synced
+    // to other devices or restored onto a new phone.
+    q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    return SecItemAdd(q as CFDictionary, nil)
+  }
+
+  /// Removes it from every group this app may reach.
   public func clear() {
     SecItemDelete(query as CFDictionary)
   }

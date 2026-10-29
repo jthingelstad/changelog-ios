@@ -187,22 +187,38 @@ public enum MediaType {
 /// file last, as `file`, as S3's POST policy wants it.
 public enum Multipart {
   public static func body(fields: [String: String], file: Data, name: String, type: String, boundary: String) -> Data {
-    var body = Data()
-    func line(_ s: String) { body.append(Data((s + "\r\n").utf8)) }
-    for key in fields.keys.sorted() {
-      line("--\(boundary)")
-      line("Content-Disposition: form-data; name=\"\(escape(key))\"")
-      line("")
-      line(fields[key]!)
+    head(fields: fields, name: name, type: type, boundary: boundary) + file + tail(boundary: boundary)
+  }
+
+  /// The same body written to `body`, the file copied from disk a piece at
+  /// a time, so a 50 MB file never sits in memory (a share extension has
+  /// little).
+  public static func write(fields: [String: String], file: URL, name: String, type: String, boundary: String,
+                           to body: URL) throws {
+    guard FileManager.default.createFile(atPath: body.path(), contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+    let out = try FileHandle(forWritingTo: body)
+    defer { try? out.close() }
+    let source = try FileHandle(forReadingFrom: file)
+    defer { try? source.close() }
+    try out.write(contentsOf: head(fields: fields, name: name, type: type, boundary: boundary))
+    while let piece = try source.read(upToCount: 1 << 20), !piece.isEmpty {
+      try out.write(contentsOf: piece)
     }
-    line("--\(boundary)")
-    line("Content-Disposition: form-data; name=\"file\"; filename=\"\(escape(name))\"")
-    line("Content-Type: \(type)")
-    line("")
-    body.append(file)
-    line("")
-    line("--\(boundary)--")
-    return body
+    try out.write(contentsOf: tail(boundary: boundary))
+  }
+
+  static func head(fields: [String: String], name: String, type: String, boundary: String) -> Data {
+    var head = ""
+    for key in fields.keys.sorted() {
+      head += "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(escape(key))\"\r\n\r\n\(fields[key]!)\r\n"
+    }
+    head += "--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(escape(name))\"\r\n"
+    head += "Content-Type: \(type)\r\n\r\n"
+    return Data(head.utf8)
+  }
+
+  static func tail(boundary: String) -> Data {
+    Data("\r\n--\(boundary)--\r\n".utf8)
   }
 
   /// A quote or a line break would end the header early.

@@ -201,6 +201,11 @@ private func folder() -> URL {
     let upload = try #require(StubProtocol.requests("storage.test").first)
     #expect(upload.value(forHTTPHeaderField: "Authorization") == nil)
     #expect(upload.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true)
+    // Streamed from disk: every field, then the file's bytes, then the end.
+    let sent = try #require(upload.httpBody.flatMap { String(data: $0, encoding: .utf8) })
+    let policy = try #require(sent.range(of: "name=\"policy\"\r\n\r\np\r\n"))
+    let bytes = try #require(sent.range(of: "Content-Type: image/jpeg\r\n\r\nBYTES\r\n--changelog-"))
+    #expect(policy.upperBound < bytes.lowerBound && sent.hasSuffix("--\r\n"))
   }
 
   @Test func aPlaceThatCantBeNamedIsLeftOff() async throws {
