@@ -15,8 +15,8 @@ struct SignInView: View {
     NavigationStack {
       Form {
         Section {
-          Text("Changelog sends notes, photos and voice memos, and soon dates, into your Release Notes. It can read back only the notes it sent, never the rest.")
-          Text("Make a token in Release Notes under Settings, API tokens, with “Add notes” and “Read the activity log” ticked. Then paste it here.")
+          Text("Changelog sends notes, photos, voice memos and where you are into your Release Notes, and keeps your Upcoming dates. It can read back only the notes it sent, never the rest.")
+          Text("Make a token in Release Notes under Settings, API tokens, with all four ticked: “Add notes”, “Add files”, “Read and change your Upcoming dates” and “Read the activity log”. Then paste it here.")
             .foregroundStyle(.secondary)
         }
         Section {
