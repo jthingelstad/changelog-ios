@@ -28,11 +28,13 @@ enum PhoneReminders {
     return status == .authorized || status == .provisional || status == .ephemeral
   }
 
-  /// Replaces every reminder this app scheduled with the plan.
-  static func schedule(_ plan: [PlannedReminder], now: Date = .now) async {
+  /// Replaces every reminder this app scheduled with the plan, for as long
+  /// as `wanted` holds: turned off midway, it takes back what it added.
+  static func schedule(_ plan: [PlannedReminder], now: Date = .now, while wanted: () -> Bool) async {
     let center = UNUserNotificationCenter.current()
     await clear()
     for planned in plan {
+      guard wanted() else { return await clear() }
       let content = UNMutableNotificationContent()
       content.title = "Upcoming"
       content.subtitle = planned.when
@@ -44,6 +46,7 @@ enum PhoneReminders {
       let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, planned.fireAt.timeIntervalSince(now)), repeats: false)
       try? await center.add(UNNotificationRequest(identifier: planned.id, content: content, trigger: trigger))
     }
+    if !wanted() { await clear() }
   }
 
   static func clear() async {
