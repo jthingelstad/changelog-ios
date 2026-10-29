@@ -410,7 +410,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourversionnumber.changelog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -434,7 +434,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourversionnumber.changelog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -451,7 +451,7 @@
 				INFOPLIST_FILE = "Config/ShareExtension-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Changelog;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog.share;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourversionnumber.changelog.share;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -469,7 +469,7 @@
 				INFOPLIST_FILE = "Config/ShareExtension-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Changelog;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog.share;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourversionnumber.changelog.share;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -482,7 +482,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourversionnumber.changelog.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -495,7 +495,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourversionnumber.changelog.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				TARGETED_DEVICE_FAMILY = 1;

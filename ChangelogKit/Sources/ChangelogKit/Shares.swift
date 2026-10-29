@@ -3,7 +3,7 @@ import Foundation
 /// What the app and its share extension share: the token's Keychain item,
 /// the server and the sticky tag, and notes shared from other apps.
 public enum AppGroup {
-  public static let id = "group.com.thingelstad.changelog"
+  public static let id = "group.com.yourversionnumber.changelog"
 
   /// The group's folder; nil in a build without the App Group (CI, or a
   /// simulator build that isn't signed).

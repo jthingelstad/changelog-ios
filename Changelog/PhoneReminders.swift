@@ -12,7 +12,7 @@ import UserNotifications
 /// shown as a background refresh finds them.
 @MainActor
 enum PhoneReminders {
-  static let refreshTask = "com.thingelstad.changelog.reminders"
+  static let refreshTask = "com.yourversionnumber.changelog.reminders"
   private static let presenter = Presenter()
 
   /// Shows a notification that comes while Changelog is open, too, and

@@ -6,8 +6,8 @@
 #
 # Needs the developer account signed in to Xcode (Settings > Accounts), its
 # team in Config/Signing.local.xcconfig, and the app made in App Store
-# Connect for com.thingelstad.changelog. The first run registers the app's
-# ids and its App Group with Apple and makes the signing certificates.
+# Connect for com.yourversionnumber.changelog. The first run registers the
+# app's ids and its App Group with Apple and makes the signing certificates.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
