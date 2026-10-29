@@ -21,6 +21,9 @@ final class AppModel {
   /// Upcoming reminders as notifications on this phone, off until turned on.
   private(set) var remindersOn: Bool
   private(set) var remindersProblem: String?
+  /// Moves on when reminders are turned on or off or the session ends, so
+  /// an update still waiting on the server can't schedule them again.
+  private var remindersGeneration = 0
   var draft = ""
 
   /// A tag that rides on every note until turned off (a trip, a project).
@@ -121,9 +124,9 @@ final class AppModel {
     phase = .signedOut
     // The next sign-in asks again before any reminder comes.
     remindersOn = false
+    remindersGeneration += 1
     defaults.set(false, forKey: "reminders")
-    PhoneReminders.cancelRefresh()
-    Task { await PhoneReminders.clear() }
+    Task { await stopReminders() }
   }
 
   // MARK: Reading
@@ -158,6 +161,7 @@ final class AppModel {
   /// The Settings toggle. Turning it on asks iOS first; if notifications are
   /// off for Changelog it stays off and says where to allow them.
   func setReminders(_ on: Bool) async {
+    remindersGeneration += 1
     remindersProblem = nil
     if on, !(await PhoneReminders.ask()) {
       remindersProblem = Self.notificationsOff
@@ -173,19 +177,32 @@ final class AppModel {
   /// Replaces this phone's reminders from a fresh read. Offline, what was
   /// scheduled stays; a token that can't read Upcoming clears it.
   func updateReminders() async {
-    guard remindersOn, canRemind, let client else {
-      PhoneReminders.cancelRefresh()
-      await PhoneReminders.clear()
-      return
-    }
+    let generation = remindersGeneration
+    guard remindersOn, token != nil else { return await stopReminders() }
+    // A background launch that couldn't reach /v1/me doesn't know the
+    // token's scopes yet, which is not the same as lacking one: keep what
+    // is scheduled and try again later.
+    guard let me else { return PhoneReminders.askForRefresh() }
+    guard me.token.scopes.contains("upcoming"), let client else { return await stopReminders() }
     remindersProblem = await PhoneReminders.allowed() ? nil : Self.notificationsOff
     do {
       let answer = try await client.reminders()
-      await PhoneReminders.schedule(ReminderPlan.plan(answer, now: .now))
+      guard wantsReminders(generation) else { return }
+      await PhoneReminders.schedule(ReminderPlan.plan(answer, now: .now)) { self.wantsReminders(generation) }
     } catch {
-      if error.signedOut || error.code == "scope_required" { await PhoneReminders.clear() }
+      if error.signedOut || error.code == "scope_required" { return await stopReminders() }
     }
-    PhoneReminders.askForRefresh()
+    if wantsReminders(generation) { PhoneReminders.askForRefresh() }
+  }
+
+  /// Whether an update begun at `generation` still speaks for the toggle.
+  private func wantsReminders(_ generation: Int) -> Bool {
+    generation == remindersGeneration && remindersOn && token != nil
+  }
+
+  private func stopReminders() async {
+    PhoneReminders.cancelRefresh()
+    await PhoneReminders.clear()
   }
 
   /// iOS's background refresh, which may start the app without a window:
@@ -193,7 +210,10 @@ final class AppModel {
   func backgroundRefresh() async {
     if token == nil { token = tokens.read() }
     guard let client else { return }
-    if let me = try? await client.me() { self.me = me }
+    do { me = try await client.me() } catch {
+      // A revoked or expired token signs out here as it would on screen.
+      if error.signedOut { return handle(error) }
+    }
     await send()
     await updateReminders()
   }
