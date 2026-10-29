@@ -82,9 +82,10 @@ echo 'DEVELOPMENT_TEAM = <your team ID>' > Config/Signing.local.xcconfig
 Every target signs with it (`Config/Signing.xcconfig`); leave the Team
 menus in Xcode alone, since a team picked there is written into the
 project. The app and the share extension share an App Group
-(`group.com.thingelstad.changelog`) for the token and for shares, which
-automatic signing registers on the first build for a phone. With your own
-team, change the `com.thingelstad` bundle ids and the group too.
+(`group.com.yourversionnumber.changelog`) for the token and for shares,
+which automatic signing registers on the first build for a phone. With
+your own team, change the `com.yourversionnumber` bundle ids and the
+group too.
 
 `scripts/testflight.sh` archives a clean commit on main and uploads it to
 TestFlight for internal testers only. It needs the same team, and the app

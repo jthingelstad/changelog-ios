@@ -33,7 +33,7 @@ public final class KeychainTokenStore: TokenStore {
   private let accessGroup: String?
   private let account = "release-notes-token"
 
-  public init(service: String = "com.thingelstad.changelog", accessGroup: String? = nil) {
+  public init(service: String = "com.yourversionnumber.changelog", accessGroup: String? = nil) {
     self.service = service
     self.accessGroup = accessGroup
   }

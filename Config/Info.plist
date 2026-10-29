@@ -6,7 +6,7 @@
 	<false/>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.thingelstad.changelog.reminders</string>
+		<string>com.yourversionnumber.changelog.reminders</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

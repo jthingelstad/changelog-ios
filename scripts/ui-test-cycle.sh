@@ -40,7 +40,7 @@ dd=$root/build/ui
 xcodebuild -project "$root/Changelog.xcodeproj" -scheme Changelog -destination "id=$device" \
   -derivedDataPath "$dd" CODE_SIGN_IDENTITY=- -quiet build-for-testing
 
-bundle=com.thingelstad.changelog
+bundle=com.yourversionnumber.changelog
 xcrun simctl install "$device" "$dd/Build/Products/Debug-iphonesimulator/Changelog.app"
 for service in photos location microphone; do xcrun simctl privacy "$device" grant "$service" "$bundle"; done
 # Minneapolis, which the dev server names (with --fake-places).
