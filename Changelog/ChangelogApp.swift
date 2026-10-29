@@ -36,8 +36,16 @@ struct RootView: View {
     case .signedIn:
       TabView(selection: $tab) {
         Tab("Log", systemImage: "square.and.pencil", value: "log") { LogView() }
+        Tab("Upcoming", systemImage: "calendar", value: "upcoming") { UpcomingView() }
         Tab("Activity", systemImage: "list.bullet.rectangle", value: "activity") { ActivityView() }
         Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
+      }
+      // A tapped notification opens its tab: a reminder Upcoming, the
+      // daily prompt Log, an activity notice Activity.
+      .onChange(of: NotificationRoute.shared.tab, initial: true) { _, asked in
+        guard let asked else { return }
+        tab = asked
+        NotificationRoute.shared.tab = nil
       }
     }
   }

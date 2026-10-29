@@ -117,7 +117,7 @@ extension ActivityItem {
     case "note.edited": return "Edited in\(version)"
     case "note.deleted": return "Deleted from\(version)"
     case "note.files": return "Files added in\(version)"
-    case "mail": return outcome == "note" ? "Reply filed in\(version)" : "Email not filed"
+    case "mail": return outcome == "filed" ? "Reply filed in\(version)" : "Email not filed"
     case "email.sent": return "Email sent for\(version)"
     case "reminder": return title.map { "Reminder: \($0)" } ?? "Reminder in the email"
     case "badge.earned": return name.map { "Badge: \($0)" } ?? "Badge earned"
@@ -148,7 +148,8 @@ extension ActivityItem {
   }
 
   var isProblem: Bool {
-    (kind == "mail" && outcome != "note") || kind == "status.stopped" || kind == "connection.removed"
+    // A mail row's outcome is filed, not-filed or failed (WEB-APP.md).
+    (kind == "mail" && outcome != "filed") || kind == "status.stopped" || kind == "connection.removed"
   }
 
   var time: String {

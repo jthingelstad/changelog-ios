@@ -25,6 +25,13 @@ final class AppModel {
   /// Moves on when reminders are turned on or off or the session ends, so
   /// an update still waiting on the server can't schedule them again.
   private var remindersGeneration = 0
+  /// The daily prompt, off by default (Jamie's call 3).
+  private(set) var promptOn: Bool
+  private(set) var promptProblem: String?
+  /// The activity this phone tells of, each kind chosen in Settings; none
+  /// until then.
+  private(set) var activityNotices: Set<ActivityNoticeKind>
+  private(set) var activityProblem: String?
   var draft = ""
   /// Files on the draft, their bytes already beside the queue.
   private(set) var draftFiles: [QueuedFile] = []
@@ -82,6 +89,8 @@ final class AppModel {
     self.outbox = Outbox(file: outboxFile)
     self.sticky = defaults.string(forKey: "sticky")
     self.remindersOn = defaults.bool(forKey: "reminders")
+    self.promptOn = defaults.bool(forKey: "prompt")
+    self.activityNotices = Set((defaults.stringArray(forKey: "activity.notices") ?? []).compactMap(ActivityNoticeKind.init(rawValue:)))
     self.hereByDefault = defaults.bool(forKey: "here")
     self.server = defaults.string(forKey: "server").flatMap(URL.init(string:)) ?? APIClient.production
     AppGroup.defaults?.set(server.absoluteString, forKey: "server")
@@ -174,6 +183,11 @@ final class AppModel {
     remindersOn = false
     remindersGeneration += 1
     defaults.set(false, forKey: "reminders")
+    promptOn = false
+    defaults.set(false, forKey: "prompt")
+    activityNotices = []
+    defaults.removeObject(forKey: "activity.notices")
+    defaults.removeObject(forKey: Self.activityCursor)
     Task { await stopReminders() }
   }
 
@@ -202,7 +216,7 @@ final class AppModel {
     }
   }
 
-  // MARK: Reminders
+  // MARK: Reminders and the daily prompt
 
   var canRemind: Bool { me?.token.scopes.contains("upcoming") == true }
 
@@ -213,48 +227,81 @@ final class AppModel {
     remindersProblem = nil
     if on, !(await PhoneReminders.ask()) {
       remindersProblem = Self.notificationsOff
-      return
+      return await updateReminders()
     }
     remindersOn = on
     defaults.set(on, forKey: "reminders")
     await updateReminders()
   }
 
-  static let notificationsOff = "Notifications are off for Changelog. Allow them in the Settings app, then turn this on again."
-
-  /// Replaces this phone's reminders from a fresh read. Offline, what was
-  /// scheduled stays; a token that can't read Upcoming clears it.
-  func updateReminders() async {
-    let generation = remindersGeneration
-    guard remindersOn, token != nil else { return await stopReminders() }
-    // A background launch that couldn't reach /v1/me doesn't know the
-    // token's scopes yet, which is not the same as lacking one: keep what
-    // is scheduled and try again later.
-    guard let me else { return PhoneReminders.askForRefresh() }
-    guard me.token.scopes.contains("upcoming"), let client else { return await stopReminders() }
-    remindersProblem = await PhoneReminders.allowed() ? nil : Self.notificationsOff
-    do {
-      let answer = try await client.reminders()
-      guard wantsReminders(generation) else { return }
-      await PhoneReminders.schedule(ReminderPlan.plan(answer, now: .now)) { self.wantsReminders(generation) }
-    } catch {
-      if error.signedOut || error.code == "scope_required" { return await stopReminders() }
+  /// The daily prompt's toggle, asking iOS first as reminders do.
+  func setPrompt(_ on: Bool) async {
+    remindersGeneration += 1
+    promptProblem = nil
+    if on, !(await PhoneReminders.ask()) {
+      promptProblem = Self.notificationsOff
+      return await updateReminders()
     }
-    if wantsReminders(generation) { PhoneReminders.askForRefresh() }
+    promptOn = on
+    defaults.set(on, forKey: "prompt")
+    await updateReminders()
   }
 
-  /// Whether an update begun at `generation` still speaks for the toggle.
-  private func wantsReminders(_ generation: Int) -> Bool {
-    generation == remindersGeneration && remindersOn && token != nil
+  static let notificationsOff = "Notifications are off for Changelog. Allow them in the Settings app, then turn this on again."
+
+  /// Replaces this phone's reminders and daily prompts from a fresh read,
+  /// within iOS's limit on waiting notifications (`NotificationPlan`).
+  /// Offline, the reminders scheduled stay and the prompts are topped up
+  /// from the last `/v1/me`; a token that can't read Upcoming clears its
+  /// reminders.
+  func updateReminders() async {
+    let generation = remindersGeneration
+    guard token != nil, remindersOn || promptOn else { return await stopReminders() }
+    // A background launch that couldn't reach /v1/me doesn't know the
+    // token's scopes or the days ahead yet, which is not the same as lacking
+    // them: keep what is scheduled and try again later.
+    guard let me else { return scheduleRefresh() }
+    let allowed = await PhoneReminders.allowed()
+    remindersProblem = remindersOn && !allowed ? Self.notificationsOff : nil
+    promptProblem = promptOn && !allowed ? Self.notificationsOff : nil
+    var answer: Reminders?
+    var reminders: [PlannedReminder]? = []
+    if remindersOn, me.token.scopes.contains("upcoming"), let client {
+      do {
+        answer = try await client.reminders()
+        reminders = answer.map { ReminderPlan.plan($0, now: .now) }
+      } catch {
+        // Unreachable: what is waiting stays. Revoked, or no longer allowed
+        // to read Upcoming: the reminders go.
+        if !(error.signedOut || error.code == "scope_required") { reminders = nil }
+      }
+    }
+    guard wantsNotifications(generation) else { return }
+    let prompts = promptOn ? DailyPrompt.plan(me, reminders: answer, now: .now) : []
+    await PhoneReminders.schedule(reminders: reminders, prompts: prompts) { self.wantsNotifications(generation) }
+    if wantsNotifications(generation) { scheduleRefresh() }
+  }
+
+  /// Whether an update begun at `generation` still speaks for the toggles.
+  private func wantsNotifications(_ generation: Int) -> Bool {
+    generation == remindersGeneration && token != nil && (remindersOn || promptOn)
   }
 
   private func stopReminders() async {
-    PhoneReminders.cancelRefresh()
     await PhoneReminders.clear()
+    scheduleRefresh()
+  }
+
+  /// A background refresh while anything needs one: sooner for activity,
+  /// which only a refresh reads; none once everything is off.
+  private func scheduleRefresh() {
+    guard token != nil, remindersOn || promptOn || !activityNotices.isEmpty else { return PhoneReminders.cancelRefresh() }
+    PhoneReminders.askForRefresh(after: activityNotices.isEmpty ? 6 * 3600 : 3600)
   }
 
   /// iOS's background refresh, which may start the app without a window:
-  /// read who this is, send what waits, and read the reminders again.
+  /// read who this is, send what waits, read the reminders again, and look
+  /// for activity to tell of.
   func backgroundRefresh() async {
     if token == nil { token = tokens.read() }
     guard let client else { return }
@@ -264,6 +311,97 @@ final class AppModel {
     }
     await send()
     await updateReminders()
+    await notifyActivity()
+  }
+
+  // MARK: Activity notifications
+
+  /// The newest activity row already told of (or passed over), kept on this
+  /// phone only, apart from Activity's "since you last looked".
+  static let activityCursor = "activity.notified"
+
+  func setActivityNotice(_ kind: ActivityNoticeKind, _ on: Bool) async {
+    activityProblem = nil
+    if on, !(await PhoneReminders.ask()) {
+      activityProblem = Self.notificationsOff
+      return
+    }
+    let wasOff = activityNotices.isEmpty
+    if on { activityNotices.insert(kind) } else { activityNotices.remove(kind) }
+    defaults.set(activityNotices.map(\.rawValue).sorted(), forKey: "activity.notices")
+    // Turned on: only what happens from now on is news.
+    if activityNotices.isEmpty || wasOff { defaults.removeObject(forKey: Self.activityCursor) }
+    if wasOff, !activityNotices.isEmpty { await startActivityCursor() }
+    scheduleRefresh()
+  }
+
+  /// Marks the newest row as seen, telling of nothing before it.
+  private func startActivityCursor() async {
+    guard let client, me?.token.scopes.contains("activity") == true,
+          let page = try? await client.activity(kinds: ActivityNotices.families, limit: 1) else { return }
+    defaults.set(page.items.first?.id ?? "", forKey: Self.activityCursor)
+  }
+
+  /// Reads what happened since the last look and shows the kinds chosen.
+  /// Rows past the first 100 new ones are passed over, with their kinds
+  /// already summed in what shows.
+  func notifyActivity() async {
+    let wanted = activityNotices
+    guard !wanted.isEmpty, let client, let me, me.token.scopes.contains("activity") else { return }
+    guard let cursor = defaults.string(forKey: Self.activityCursor) else { return await startActivityCursor() }
+    let page: ActivityPage
+    do {
+      page = try await client.activity(after: cursor.isEmpty ? nil : cursor, kinds: ActivityNotices.families, limit: 100)
+    } catch {
+      if error.signedOut { handle(error) }
+      return
+    }
+    // Turned off, or signed out, while the read was out.
+    guard activityNotices == wanted, token != nil, defaults.string(forKey: Self.activityCursor) == cursor else { return }
+    if let next = ActivityNotices.cursor(after: page.items, previous: cursor) { defaults.set(next, forKey: Self.activityCursor) }
+    guard await PhoneReminders.allowed() else { return }
+    await PhoneReminders.show(ActivityNotices.notices(for: page.items, tokenName: me.token.name, wanted: wanted))
+  }
+
+  // MARK: Upcoming
+
+  /// Upcoming needs the `upcoming` scope, as reminders do. The app never
+  /// changes a token's scopes; the web makes a new token.
+  var canKeepUpcoming: Bool { canRemind }
+
+  func upcoming() async throws(APIError) -> UpcomingList {
+    guard let client else { throw .notSignedIn }
+    do { return try await client.upcoming() } catch {
+      if error.signedOut { handle(error) }
+      throw error
+    }
+  }
+
+  /// Saves at once, under the key the caller holds for this request, so a
+  /// Save tapped again after a lost answer is the same save. Upcoming isn't
+  /// queued: a change is made from a revision, and a refusal (a city the
+  /// search doesn't know) is for the person to fix there and then.
+  func saveUpcoming(_ batch: UpcomingBatch, idempotencyKey: String?) async throws(APIError) -> UpcomingSaved {
+    guard let client else { throw .notSignedIn }
+    do {
+      let saved = try await client.saveUpcoming(batch, idempotencyKey: idempotencyKey)
+      if !batch.dryRun { Task { await updateReminders() } }
+      return saved
+    } catch {
+      if error.signedOut { handle(error) }
+      throw error
+    }
+  }
+
+  func deleteUpcoming(_ entry: UpcomingEntry, idempotencyKey: String) async throws(APIError) {
+    guard let client else { throw .notSignedIn }
+    do {
+      try await client.deleteUpcoming(id: entry.id, revision: entry.revision, idempotencyKey: idempotencyKey)
+      Task { await updateReminders() }
+    } catch {
+      if error.signedOut { handle(error) }
+      throw error
+    }
   }
 
   // MARK: Writing
@@ -355,6 +493,10 @@ final class AppModel {
       let badges = report.filed.flatMap { $0.unlocked ?? [] }
       toast = badges.isEmpty ? "Filed in \(last.note.version)." : "Unlocked: \(badges.map(\.name).joined(separator: ", "))"
       if last.note.date == me?.today { me?.wroteToday = true }
+      // Written today: today's prompt has nothing left to ask.
+      if promptOn, report.filed.contains(where: { $0.note.date == me?.today }), let today = me?.today {
+        PhoneReminders.takeBack([DailyPrompt.id(today)])
+      }
     }
     if report.sent.contains(where: { $0.item.text != nil || $0.result == .deleted }) { await loadToday() }
     if let stopped = report.stopped { handle(stopped) }
