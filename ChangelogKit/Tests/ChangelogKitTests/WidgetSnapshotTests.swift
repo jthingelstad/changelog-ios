@@ -90,4 +90,21 @@ import Testing
     #expect(WidgetSnapshot.load(from: defaults)?.wroteToday == true)
     #expect(!WidgetSnapshot.filed(on: "2026-10-29", in: defaults))
   }
+
+  @Test func aNoteFiledAfterMidnightMarksTheNewDayWritten() throws {
+    let defaults = try #require(UserDefaults(suiteName: "changelog-widget-" + UUID().uuidString))
+    WidgetSnapshot(me: me(wrote: true), upcoming: nil).save(to: defaults)
+    // Siri after midnight, before the app has read /v1/me again.
+    #expect(WidgetSnapshot.filed(on: "2026-10-30", in: defaults))
+    let snapshot = try #require(WidgetSnapshot.load(from: defaults))
+    #expect(snapshot.today == "2026-10-30")
+    #expect(snapshot.version == "4.5.138")
+    let days = snapshot.timeline(now: try chicago("2026-10-30T00:20:00"))
+    #expect(days.map(\.date) == ["2026-10-30", "2026-10-31"])
+    #expect(days.map(\.wrote) == [true, false])
+    #expect(!WidgetSnapshot.filed(on: "2026-10-30", in: defaults))
+    // A day the server didn't list: the widgets already ask for the app.
+    #expect(!WidgetSnapshot.filed(on: "2026-11-09", in: defaults))
+    #expect(WidgetSnapshot.load(from: defaults)?.today == "2026-10-30")
+  }
 }

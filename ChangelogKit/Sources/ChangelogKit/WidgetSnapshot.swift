@@ -114,11 +114,21 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
   }
 
   /// A note filed from a shortcut or the share sheet, before the app next
-  /// reads `/v1/me`: the day it filed to is written. True when that changed
-  /// what the widgets show.
+  /// reads `/v1/me`: the day it filed to is written. A day after the
+  /// snapshot's today means midnight has passed since: that day, with the
+  /// server's version for it, is today now. True when that changed what the
+  /// widgets show.
   @discardableResult
   public static func filed(on date: String, in defaults: UserDefaults? = AppGroup.defaults) -> Bool {
-    guard var snapshot = load(from: defaults), snapshot.today == date, !snapshot.wroteToday else { return false }
+    guard var snapshot = load(from: defaults), date >= snapshot.today else { return false }
+    if date > snapshot.today {
+      // Past the listed days the widgets already ask for the app.
+      guard let day = snapshot.days.first(where: { $0.date == date }) else { return false }
+      snapshot.today = day.date
+      snapshot.version = day.version
+      snapshot.wroteToday = false
+    }
+    guard !snapshot.wroteToday else { return false }
     snapshot.wroteToday = true
     snapshot.save(to: defaults)
     return true
