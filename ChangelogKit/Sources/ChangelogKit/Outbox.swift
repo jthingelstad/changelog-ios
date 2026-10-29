@@ -167,6 +167,18 @@ public actor Outbox {
     try enqueue(.note(text: text, date: date, writtenAt: Timestamp.string(writtenAt, timeZone: timeZone)))
   }
 
+  /// Takes in a write queued elsewhere (a share from the share extension)
+  /// under its own key, so should both send it, it is still one note. One
+  /// already here is left as it is.
+  public func adopt(_ item: OutboxItem) throws(OutboxNotKept) {
+    guard !items.contains(where: { $0.id == item.id }) else { return }
+    items.append(item)
+    do { try save() } catch {
+      items.removeAll { $0.id == item.id }
+      throw error
+    }
+  }
+
   /// Discarding a write the owner gave up on. Should the file not take the
   /// change, it comes back after a relaunch to be discarded again.
   public func discard(_ id: UUID) {
@@ -357,11 +369,12 @@ public extension APIClient {
     guard case .post(var post) = item.operation else { return item }
     for i in post.files.indices where post.files[i].upload == nil {
       let file = post.files[i]
-      guard let url = folder?.appending(path: file.fileName), let data = try? Data(contentsOf: url) else {
-        throw APIError(status: 400, code: "file_missing", message: "A file for this note is no longer on this phone. Discard it, or fix it to send the words alone.")
+      guard let url = folder?.appending(path: file.fileName),
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path())[.size]) as? Int else {
+        throw APIError(status: 400, code: "file_missing", message: Self.fileMissing)
       }
-      let form = try await startUpload(UploadStart(name: file.name, type: file.type, size: data.count))
-      try await self.post(data, name: file.name, to: form)
+      let form = try await startUpload(UploadStart(name: file.name, type: file.type, size: size))
+      try await self.post(fileAt: url, name: file.name, to: form)
       post.files[i].upload = form.upload
       post.files[i].type = form.type
     }

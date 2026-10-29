@@ -8,16 +8,48 @@
 
 /* Begin PBXBuildFile section */
 		C0DE0000000000000000000A /* ChangelogKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE0000000000000000000B /* ChangelogKit */; };
+		C0DE00000000000000000023 /* ChangelogKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE00000000000000000024 /* ChangelogKit */; };
+		C0DE0000000000000000002D /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000020 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C0DE0000000000000000002B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0DE00000000000000000009 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0DE00000000000000000026;
+			remoteInfo = ShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C0DE0000000000000000002C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C0DE0000000000000000002D /* ShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		C0DE00000000000000000001 /* Changelog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Changelog.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0DE00000000000000000020 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C0DE00000000000000000002 /* Changelog */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Changelog;
+			sourceTree = "<group>";
+		};
+		C0DE0000000000000000002E /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ShareExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -31,6 +63,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0DE00000000000000000022 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0DE00000000000000000023 /* ChangelogKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -38,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				C0DE00000000000000000002 /* Changelog */,
+				C0DE0000000000000000002E /* ShareExtension */,
 				C0DE00000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,6 +87,7 @@
 			isa = PBXGroup;
 			children = (
 				C0DE00000000000000000001 /* Changelog.app */,
+				C0DE00000000000000000020 /* ShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -60,10 +102,12 @@
 				C0DE00000000000000000006 /* Sources */,
 				C0DE00000000000000000007 /* Frameworks */,
 				C0DE00000000000000000008 /* Resources */,
+				C0DE0000000000000000002C /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C0DE0000000000000000002A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C0DE00000000000000000002 /* Changelog */,
@@ -76,6 +120,29 @@
 			productReference = C0DE00000000000000000001 /* Changelog.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C0DE00000000000000000026 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0DE00000000000000000027 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				C0DE00000000000000000021 /* Sources */,
+				C0DE00000000000000000022 /* Frameworks */,
+				C0DE00000000000000000025 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0DE0000000000000000002E /* ShareExtension */,
+			);
+			name = ShareExtension;
+			packageProductDependencies = (
+				C0DE00000000000000000024 /* ChangelogKit */,
+			);
+			productName = ShareExtension;
+			productReference = C0DE00000000000000000020 /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -87,6 +154,9 @@
 				LastUpgradeCheck = 2710;
 				TargetAttributes = {
 					C0DE00000000000000000005 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					C0DE00000000000000000026 = {
 						CreatedOnToolsVersion = 27.1;
 					};
 				};
@@ -109,12 +179,20 @@
 			projectRoot = "";
 			targets = (
 				C0DE00000000000000000005 /* Changelog */,
+				C0DE00000000000000000026 /* ShareExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		C0DE00000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0DE00000000000000000025 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -131,7 +209,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0DE00000000000000000021 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C0DE0000000000000000002A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0DE00000000000000000026 /* ShareExtension */;
+			targetProxy = C0DE0000000000000000002B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C0DE0000000000000000000F /* Debug */ = {
@@ -142,6 +235,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -150,6 +244,7 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.2;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
@@ -166,6 +261,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -173,6 +269,7 @@
 				GCC_NO_COMMON_BLOCKS = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.2;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 6.0;
@@ -185,8 +282,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/Changelog.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -197,7 +294,6 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -210,8 +306,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/Changelog.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -222,9 +318,44 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		C0DE00000000000000000028 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/ShareExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Changelog;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		C0DE00000000000000000029 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/ShareExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Changelog;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -251,6 +382,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		C0DE00000000000000000027 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0DE00000000000000000028 /* Debug */,
+				C0DE00000000000000000029 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -262,6 +402,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		C0DE0000000000000000000B /* ChangelogKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ChangelogKit;
+		};
+		C0DE00000000000000000024 /* ChangelogKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ChangelogKit;
 		};
