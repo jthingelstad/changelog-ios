@@ -22,6 +22,21 @@ struct SettingsView: View {
         }
 
         Section {
+          if model.canRemind {
+            Toggle("Remind me on this phone", isOn: Binding(
+              get: { model.remindersOn },
+              set: { on in Task { await model.setReminders(on) } }))
+          } else {
+            Text("To get them here, make a token with “Read and change your Upcoming dates and their reminders” ticked.")
+              .foregroundStyle(.secondary)
+          }
+        } header: {
+          Text("Upcoming reminders")
+        } footer: {
+          Text(model.remindersProblem ?? "The reminders each morning's email carries, as notifications here when that email is due, in its words. Dates with email reminders off don't come.")
+        }
+
+        Section {
           NavigationLink("Pinned tags") { PinnedTagsView() }
           if let sticky = model.sticky {
             Button("Stop adding #\(sticky) to every note") { model.sticky = nil }

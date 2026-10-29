@@ -10,9 +10,10 @@ look back on the web. Changelog is for getting things in, in two taps.
   resend never makes a duplicate.
 - **Check** what happened: the activity log, from every channel, without
   the words.
-- Later: photos, voice memos and places (0.2), Upcoming dates and their
-  reminders as notifications (0.3), Shortcuts, the Action Button and
-  widgets (0.4).
+- **Reminders** from your Upcoming dates, as notifications when each
+  morning's email is due, in its words. Off until you turn them on.
+- Later: photos, voice memos and places (0.2), adding Upcoming dates,
+  Shortcuts, the Action Button and widgets (0.4).
 
 It talks only to Release Notes' public `/v1` API, with a token you make in
 Release Notes' Settings. The API is designed in
