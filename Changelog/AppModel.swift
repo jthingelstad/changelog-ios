@@ -25,7 +25,7 @@ final class AppModel {
   /// Moves on when reminders are turned on or off or the session ends, so
   /// an update still waiting on the server can't schedule them again.
   private var remindersGeneration = 0
-  /// The daily prompt, off by default (Jamie's call 3).
+  /// The daily prompt, off by default.
   private(set) var promptOn: Bool
   private(set) var promptProblem: String?
   /// The activity this phone tells of, each kind chosen in Settings; none

@@ -15,11 +15,16 @@ there first, never work around it here.
   `Media` (uploads, the types Release Notes keeps, the storage form),
   `Hashtags` (a port of Release Notes' `packages/domain/tags.ts`; keep them
   in step), `TokenStore` (the Keychain), `Shares` (the App Group and the
-  extension's hand-off to the app). It has its own tests:
+  extension's hand-off to the app), `Upcoming` (the dates and their
+  batch), `NotificationPlan` (Upcoming reminders and the daily prompt,
+  within iOS's 64 waiting notifications) and `ActivityNotices` (which
+  activity rows tell the phone something). It has its own tests:
   `swift test --package-path ChangelogKit`.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
-  screens (Log, Activity, Settings, sign-in), `Locator` one location fix,
-  `Recorder` a voice memo.
+  screens (Log, Upcoming, Activity, Settings, sign-in), `Locator` one
+  location fix, `Recorder` a voice memo, `PhoneReminders` the phone's own
+  notifications (there is no push server: they are scheduled ahead, or
+  found by background refresh).
 - `ShareExtension/` is the share sheet's Changelog. It keeps each share in
   a queue of its own in the App Group's `shares/` folder, sends it if it
   can within 25 seconds, and leaves the rest for the app, which adopts it
@@ -50,7 +55,13 @@ there first, never work around it here.
 - No third-party packages. Apple's frameworks only.
 - Never log, print or put in an error message a token or a note's text.
 - Every write goes through the Outbox with its idempotency key, so a resend
-  never makes a second note.
+  never makes a second note. Upcoming's saves and deletes are the one
+  exception: they go at once, since each is made from a revision and a
+  refusal (a city the search doesn't know) is for the person to fix there
+  and then. Each still carries an Idempotency-Key held for as long as the
+  same request is tried again (`RequestKey`).
+- A notification never carries a note's words. Activity notices never tell
+  of this token's own rows or the daily email.
 - A note's files are posted and its place named, and both saved, before
   the note is sent (the Outbox's `prepare`), so a resend is the same
   request. The token never goes to the storage form.
