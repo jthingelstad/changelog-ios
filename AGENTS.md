@@ -124,7 +124,10 @@ microphone, which can fail to answer; the voice memo test skips then.
 `scripts/testflight.sh` uploads a clean commit on main to TestFlight, for
 internal testers only (`Config/ExportOptions-TestFlight.plist`; Xcode
 leaves the build number alone). An upload goes to Apple and to Jamie's
-phone: run it only when Jamie asks. Each target has a
+phone: run it only when Jamie asks. It needs one phone registered to the
+team (automatic signing archives with a development profile, which Apple
+makes only for a team with a device), and Xcode's sign-in, which a
+background process can't reach: run it from Terminal. Each target has a
 `PrivacyInfo.xcprivacy` naming why it uses Apple's required-reason APIs
 (defaults, file dates); a new use of one of those goes there too, or App
 Store Connect refuses the build. `ITSAppUsesNonExemptEncryption` is false:

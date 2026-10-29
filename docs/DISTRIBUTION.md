@@ -13,6 +13,12 @@ commit on main, marked internal only (`testFlightInternalTestingOnly` in
 `Config/ExportOptions-TestFlight.plist`). Internal builds need no review
 from Apple. Each one gets [a pass on a real phone](PHONE-TEST.md).
 
+The team needs one iPhone registered to it before the first archive:
+automatic signing archives with a development profile, and Apple makes
+one only for a team with a device. Building to a phone once from Xcode,
+with Developer Mode on, registers it. App Store Connect took 0.0.0 as the
+first version.
+
 ## 2. A few outside testers
 
 Apple calls them external testers. What it takes:
@@ -62,8 +68,8 @@ the last, which Changelog's daily version is.
 
 ## Open
 
-- Whether App Store Connect takes a first version of 0.0.0. The first
-  upload says.
+- Whether the App Store takes 0.0.0 as well as TestFlight did. The first
+  submission says.
 - Jamie's calls: when outside testers start and who they are, the review
   account, the listing's words and the privacy answers, and when the App
   Store comes.
