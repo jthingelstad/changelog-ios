@@ -74,6 +74,11 @@ struct SettingsView: View {
           Text("The dev server is tools/dev-server.ts in the Release Notes repo, with its fictional account. Sign out and in again after switching.")
         }
         #endif
+
+        Section {
+        } footer: {
+          Text(Build.line).accessibilityIdentifier("build")
+        }
       }
       .navigationTitle("Settings")
       .confirmationDialog("Sign out of Changelog?", isPresented: $confirmSignOut, titleVisibility: .visible) {

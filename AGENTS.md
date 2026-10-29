@@ -26,12 +26,19 @@ there first, never work around it here.
   into its Outbox under the same key. It has about 120 MB of memory: files
   are copied and streamed from disk, never read whole, except photos.
 - The token is in the Keychain under the App Group's access group, so the
-  extension can read it; a token kept by 0.1 moves there when the app
-  starts. The app mirrors the server and the sticky tag into the group's
-  defaults.
+  extension can read it; a token kept by an earlier build moves there when
+  the app starts. The app mirrors the server and the sticky tag into the
+  group's defaults.
 - `Changelog.xcodeproj` uses synchronized folders, so new files in
-  `Changelog/` and `ShareExtension/` need no project edit. Versions are set
-  once at the project level, so the extension always matches the app.
+  `Changelog/` and `ShareExtension/` need no project edit.
+- Versions count from Changelog's start on 2026-10-29 by Your Version
+  Number's arithmetic (decades.years.days, the day in Chicago), like
+  Release Notes' own. `scripts/version.sh` stamps both targets' built
+  Info.plist (a build phase; script sandboxing is off for it): the
+  version, Apple's build number (the commit count, since it must be whole
+  numbers) and the commit, which Settings shows as the build
+  (`Build.swift`). Never set `MARKETING_VERSION` by hand.
+  `scripts/version.sh test` checks the arithmetic, in CI.
 
 ## Rules
 

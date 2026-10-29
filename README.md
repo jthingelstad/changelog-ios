@@ -20,8 +20,7 @@ look back on the web. Changelog is for getting things in, in two taps.
   Changelog is in the share sheet, with a line to go with it and Commit.
   It sends straight away when it can; what it can't, the app sends next
   time it opens, still as one note.
-- Later: adding Upcoming dates, Shortcuts, the Action Button and widgets
-  (0.4).
+- Later: adding Upcoming dates, Shortcuts, the Action Button and widgets.
 
 It talks only to Release Notes' public `/v1` API, with a token you make in
 Release Notes' Settings. The API is designed in
@@ -38,6 +37,12 @@ swift test --package-path ChangelogKit
 xcodebuild -project Changelog.xcodeproj -scheme Changelog \
   -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
+
+Changelog numbers its builds the way Release Notes does, by Your Version
+Number's arithmetic from its own start on 29 October 2026 to the day a
+build is made, in Chicago: 0.0.0 on the first day, 0.1.0 a year on.
+`scripts/version.sh` stamps every build with it and the commit, which the
+foot of Settings shows (`Changelog 0.0.0, build 571b43d`).
 
 `ChangelogKit/` holds everything that isn't a screen (the API client, the
 offline queue, hashtags, the token's storage) and is tested on its own. The
