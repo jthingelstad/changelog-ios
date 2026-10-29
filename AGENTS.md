@@ -47,3 +47,14 @@ xcodebuild -project Changelog.xcodeproj -scheme Changelog \
 
 CI (`.github/workflows/test.yml`) runs both on every PR. Actions are pinned
 by commit SHA.
+
+`DevServerTests` runs the client against the real `/v1` and skips unless a
+dev server token is set. Start the Release Notes dev server
+(`node --import tsx tools/dev-server.ts` in that repo, Node 24); it prints
+a token for its fictional account. Then:
+
+```sh
+CHANGELOG_DEV_TOKEN=rn_... swift test --package-path ChangelogKit --filter DevServerTests
+```
+
+It runs only against localhost, never production, because it writes.

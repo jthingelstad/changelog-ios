@@ -65,6 +65,14 @@ final class AppModel {
   func start() async {
     token = tokens.read()
     waiting = await outbox.waiting
+    #if DEBUG
+    // `simctl launch` with SIMCTL_CHILD_CHANGELOG_DEV_TOKEN signs a debug
+    // build in to the dev server's fictional account (AGENTS.md, Building).
+    if token == nil, let dev = ProcessInfo.processInfo.environment["CHANGELOG_DEV_TOKEN"] {
+      server = APIClient.devServer
+      if await signIn(with: dev) == nil { return }
+    }
+    #endif
     phase = token == nil ? .signedOut : .signedIn
     if phase == .signedIn { await refresh() }
   }
