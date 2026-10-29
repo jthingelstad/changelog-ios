@@ -107,7 +107,7 @@ public struct APIClient: Sendable {
   // MARK: Transport
 
   private struct Wrapped: Decodable { var note: NoteRef }
-  private struct Empty: Decodable {}
+  struct Empty: Decodable {}
   private struct NoBody: Encodable {}
 
   static let decoder: JSONDecoder = {

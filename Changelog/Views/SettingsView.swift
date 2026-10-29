@@ -36,6 +36,8 @@ struct SettingsView: View {
           Text(model.remindersProblem ?? "The reminders each morning's email carries, as notifications here when that email is due, in its words. Dates with email reminders off don't come.")
         }
 
+        NotificationSettings()
+
         Section {
           Toggle("Add where I am", isOn: $model.hereByDefault)
         } header: {
