@@ -12,3 +12,4 @@ xcuserdata/
 .env.*
 !.env.example
 Config/Signing.local.xcconfig
+Config/AppStoreConnect.local

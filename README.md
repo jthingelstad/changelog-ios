@@ -90,8 +90,9 @@ group too.
 `scripts/testflight.sh` archives a clean commit on main and uploads it to
 TestFlight for internal testers only. It needs the same team, one iPhone
 registered to it (build to your phone once from Xcode, with Developer Mode
-on), and the app made first in App Store Connect for the bundle id. Each
-build then gets [a pass on a real phone](docs/PHONE-TEST.md), and
+on), and the app made first in App Store Connect for the bundle id. It
+signs in with Xcode's account, or with an App Store Connect API key from
+any shell; the script says how. Each build then gets [a pass on a real phone](docs/PHONE-TEST.md), and
 [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) is the way from there to
 outside testers and the App Store.
 

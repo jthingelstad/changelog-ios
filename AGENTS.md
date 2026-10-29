@@ -131,9 +131,11 @@ alone needs no build. Every other upload (for outside testers, for the App
 Store, from anything but main) is still Jamie's call each time. It needs
 one phone registered to the team (automatic signing archives with a
 development profile, which Apple makes only for a team with a device), and
-Xcode's sign-in, which a background process can't reach: run it from
-Terminal (an agent `open`s a `.command` file that runs it). Each target
-has a `PrivacyInfo.xcprivacy` naming why it uses Apple's required-reason APIs
+either an App Store Connect API key, which works from any shell (an Admin
+team key, its ids in `Config/AppStoreConnect.local`, which git ignores; the
+script says how), or Xcode's sign-in, which a background process can't
+reach (run it from Terminal: an agent `open`s a `.command` file). The key,
+its ids and the team never go in this repo. Each target has a `PrivacyInfo.xcprivacy` naming why it uses Apple's required-reason APIs
 (defaults, file dates); a new use of one of those goes there too, or App
 Store Connect refuses the build. `ITSAppUsesNonExemptEncryption` is false:
 the app's only encryption is HTTPS. `docs/PHONE-TEST.md` is the pass by
