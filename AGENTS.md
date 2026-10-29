@@ -17,14 +17,23 @@ there first, never work around it here.
   in step), `TokenStore` (the Keychain), `Shares` (the App Group and the
   extension's hand-off to the app), `Upcoming` (the dates and their
   batch), `NotificationPlan` (Upcoming reminders and the daily prompt,
-  within iOS's 64 waiting notifications) and `ActivityNotices` (which
-  activity rows tell the phone something). It has its own tests:
+  within iOS's 64 waiting notifications), `ActivityNotices` (which
+  activity rows tell the phone something), `QuickNote` (a note sent from
+  outside the app's screens, within a deadline, else left for the app)
+  and `WidgetSnapshot` (what the widgets show, one day per local
+  midnight). It has its own tests:
   `swift test --package-path ChangelogKit`.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
   screens (Log, Upcoming, Activity, Settings, sign-in), `Locator` one
   location fix, `Recorder` a voice memo, `PhoneReminders` the phone's own
   notifications (there is no push server: they are scheduled ahead, or
-  found by background refresh).
+  found by background refresh), `Intents` Shortcuts' and Siri's "Add a
+  Note" (sent as a share is, without opening the app) and the phrases
+  Siri knows.
+- `Shared/` is built into both the app and the widget extension:
+  `AppRoute` (the tab or the new note the app opens to) and `NewNoteIntent`
+  ("New Note", which opens Log ready to write; a control can only name an
+  intent both targets have).
 - `ShareExtension/` is the share sheet's Changelog. It keeps each share in
   a queue of its own in the App Group's `shares/` folder, sends it if it
   can within 25 seconds, and leaves the rest for the app, which adopts it
@@ -34,11 +43,18 @@ there first, never work around it here.
   extension can read it; a token kept by an earlier build moves there when
   the app starts. The app mirrors the server and the sticky tag into the
   group's defaults.
+- `Widgets/` is the widget extension: Today (small and medium on the Home
+  Screen, three on the Lock Screen) and the New Note control (Control
+  Center, the Lock Screen, the Action Button). A widget never calls the
+  API: it reads the `WidgetSnapshot` the app writes to the group's
+  defaults each time it reads `/v1/me`, and has one entry a day from the
+  server's `days`. A tap opens `com.yourversionnumber.changelog:new-note`.
 - `Changelog.xcodeproj` uses synchronized folders, so new files in
-  `Changelog/` and `ShareExtension/` need no project edit.
+  `Changelog/`, `Shared/`, `ShareExtension/` and `Widgets/` need no
+  project edit.
 - Versions count from Changelog's start on 2026-10-29 by Your Version
   Number's arithmetic (decades.years.days, the day in Chicago), like
-  Release Notes' own. `scripts/version.sh` stamps both targets' built
+  Release Notes' own. `scripts/version.sh` stamps each target's built
   Info.plist (a build phase; script sandboxing is off for it): the
   version, Apple's build number (the commit count, since it must be whole
   numbers) and the commit, which Settings shows as the build
@@ -70,8 +86,11 @@ there first, never work around it here.
   refusal (a city the search doesn't know) is for the person to fix there
   and then. Each still carries an Idempotency-Key held for as long as the
   same request is tried again (`RequestKey`).
-- A notification never carries a note's words. Activity notices never tell
-  of this token's own rows or the daily email.
+- A notification never carries a note's words, and nor does a widget or
+  what Siri or a shortcut says back. Upcoming's titles show on Home Screen
+  widgets only, never the Lock Screen. A widget never works out a version:
+  each day's is the server's, from `/v1/me`'s `days`. Activity notices
+  never tell of this token's own rows or the daily email.
 - A note's files are posted and its place named, and both saved, before
   the note is sent (the Outbox's `prepare`), so a resend is the same
   request. The token never goes to the storage form.

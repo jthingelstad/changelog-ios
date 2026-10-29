@@ -4,6 +4,7 @@ import Foundation
 import Observation
 import UIKit
 import UniformTypeIdentifiers
+import WidgetKit
 
 /// A share, from the items another app handed over to a note in Release
 /// Notes. It goes through a queue of its own in the App Group: sent from
@@ -126,8 +127,7 @@ final class ShareModel {
   func commit() async {
     guard let share, let inbox, canCommit else { return }
     phase = .sending
-    var words = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let sticky = AppGroup.defaults?.string(forKey: "sticky") { words = Hashtags.adding(sticky, to: words) }
+    let words = QuickNote.words(text)
     do {
       try await share.outbox.enqueue(.post(NotePost(text: words, writtenAt: Timestamp.string(.now), files: files)))
     } catch {
@@ -135,37 +135,10 @@ final class ShareModel {
       problem = "This phone couldn't save that to send. Free up some space and try again."
       return
     }
-    guard let token = KeychainTokenStore(accessGroup: AppGroup.id).read() else {
-      inbox.close(share.file, sent: false)
-      return done("Saved. Open Changelog to send it.")
-    }
-    let server = AppGroup.defaults?.string(forKey: "server").flatMap(URL.init(string:)) ?? APIClient.production
-    let client = APIClient(baseURL: server, token: token, userAgent: Self.userAgent)
-    let outbox = share.outbox
     // The share sheet shouldn't hang: what isn't sent in time, the app sends.
-    let sending = Task {
-      await outbox.flush(prepare: { item, folder throws(APIError) in try await client.prepare(item, files: folder) }) {
-        item throws(APIError) in try await client.perform(item)
-      }
-    }
-    let timer = Task {
-      try? await Task.sleep(for: .seconds(25))
-      sending.cancel()
-    }
-    let report = await sending.value
-    timer.cancel()
-    let sent = await outbox.waiting.isEmpty
-    inbox.close(share.file, sent: sent)
-    if let receipt = report.filed.first {
-      let badges = receipt.unlocked ?? []
-      done(badges.isEmpty ? "Filed in \(receipt.note.version)." : "Unlocked: \(badges.map(\.name).joined(separator: ", "))")
-    } else if let refused = report.refused.first?.refusal {
-      done(refused + " It waits in Changelog to fix.")
-    } else if report.stopped?.signedOut == true {
-      done("Saved. Sign in to Changelog again and it goes from there.")
-    } else {
-      done("Saved. Changelog sends it when it can.")
-    }
+    let outcome = await QuickNote.send(share, from: inbox, with: QuickNote.client(userAgent: Self.userAgent), within: .seconds(25))
+    if case .filed(let receipt) = outcome, WidgetSnapshot.filed(on: receipt.note.date) { WidgetCenter.shared.reloadAllTimelines() }
+    done(QuickNote.said(outcome))
   }
 
   /// Before Commit, leaves without a note: the draft's files go. After it,

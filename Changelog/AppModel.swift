@@ -3,6 +3,7 @@ import CoreGraphics
 import Foundation
 import Observation
 import UIKit
+import WidgetKit
 
 /// The app's one source of truth: who it's signed in as, today's version, the
 /// tag row, what's waiting to go and what happened today. Everything a note
@@ -192,6 +193,9 @@ final class AppModel {
     activityNotices = []
     defaults.removeObject(forKey: "activity.notices")
     defaults.removeObject(forKey: Self.activityCursor)
+    soon = nil
+    WidgetSnapshot.clear()
+    WidgetCenter.shared.reloadAllTimelines()
     Task { await stopReminders() }
   }
 
@@ -205,6 +209,8 @@ final class AppModel {
       self.me = try await me
       self.tags = try? await tags
       problem = nil
+      await readSoon()
+      updateWidgets()
       await loadToday()
       await send()
       await updateReminders()
@@ -309,7 +315,11 @@ final class AppModel {
   func backgroundRefresh() async {
     if token == nil { token = tokens.read() }
     guard let client else { return }
-    do { me = try await client.me() } catch {
+    do {
+      me = try await client.me()
+      await readSoon()
+      updateWidgets()
+    } catch {
       // A revoked or expired token signs out here as it would on screen.
       if error.signedOut { return handle(error) }
     }
@@ -375,7 +385,12 @@ final class AppModel {
 
   func upcoming() async throws(APIError) -> UpcomingList {
     guard let client else { throw .notSignedIn }
-    do { return try await client.upcoming() } catch {
+    do {
+      let list = try await client.upcoming()
+      soon = WidgetSnapshot.soonest(list.entries)
+      updateWidgets()
+      return list
+    } catch {
       if error.signedOut { handle(error) }
       throw error
     }
@@ -406,6 +421,31 @@ final class AppModel {
       if error.signedOut { handle(error) }
       throw error
     }
+  }
+
+  // MARK: Widgets
+
+  /// The next Upcoming dates the widgets show: kept from the last read, so
+  /// a read that fails leaves them be. Nil for a token that can't read
+  /// Upcoming.
+  @ObservationIgnored private var soon: [WidgetSnapshot.Soon]? = WidgetSnapshot.load()?.upcoming
+
+  private func readSoon() async {
+    guard let client, me?.token.scopes.contains("upcoming") == true else {
+      soon = nil
+      return
+    }
+    if let list = try? await client.upcoming() { soon = WidgetSnapshot.soonest(list.entries) }
+  }
+
+  /// Writes what the widgets show to the App Group, and has them drawn
+  /// again when it changed. Never a note's words.
+  private func updateWidgets() {
+    guard let me else { return }
+    let snapshot = WidgetSnapshot(me: me, soon: soon)
+    guard snapshot != WidgetSnapshot.load() else { return }
+    snapshot.save()
+    WidgetCenter.shared.reloadAllTimelines()
   }
 
   // MARK: Writing
@@ -496,7 +536,10 @@ final class AppModel {
       lastFiled = last
       let badges = report.filed.flatMap { $0.unlocked ?? [] }
       toast = badges.isEmpty ? "Filed in \(last.note.version)." : "Unlocked: \(badges.map(\.name).joined(separator: ", "))"
-      if last.note.date == me?.today { me?.wroteToday = true }
+      if last.note.date == me?.today {
+        me?.wroteToday = true
+        updateWidgets()
+      }
       // Written today: today's prompt has nothing left to ask.
       if promptOn, report.filed.contains(where: { $0.note.date == me?.today }), let today = me?.today {
         PhoneReminders.takeBack([DailyPrompt.id(today)])
