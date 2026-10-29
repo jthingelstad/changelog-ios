@@ -77,13 +77,14 @@ func stubbedClient(_ host: String) -> APIClient {
 
   @Test func createsANoteWithItsKey() async throws {
     StubProtocol.set("create.test", .init(status: 201, body: """
-      {"note":{"id":"t-3f9c","date":"2026-10-28","version":"4.5.136","revision":1,"token":"Terminal"},
+      {"note":{"id":"t-3f9c","date":"2026-10-28","version":"4.5.136","revision":"9c1e5b0a2f7d4e3c8b6a1f0e","token":"Terminal"},
        "unlocked":[{"key":"api","name":"API release"}]}
       """))
     let receipt = try await stubbedClient("create.test").createNote(
       NoteRequest(text: "Ran the river loop #running", writtenAt: "2026-10-28T23:58:40-05:00"), idempotencyKey: "k-1")
     #expect(receipt.note.version == "4.5.136")
     #expect(receipt.unlocked?.first?.name == "API release")
+    #expect(receipt.note.revision == "9c1e5b0a2f7d4e3c8b6a1f0e")
     let request = try #require(StubProtocol.requests("create.test").first)
     #expect(request.httpMethod == "POST")
     #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == "k-1")
@@ -157,5 +158,32 @@ func stubbedClient(_ host: String) -> APIClient {
     let query = StubProtocol.requests("activity.test").first?.url?.query ?? ""
     #expect(query.contains("after=abc"))
     #expect(query.contains("kinds=note,mail"))
+  }
+
+  @Test func aMismatchCarriesTheCurrentRevision() async throws {
+    StubProtocol.set("mismatch.test", .init(status: 409, body: """
+      {"error":{"code":"revision_mismatch","message":"This note changed since it was read.","revision":"0d4f9a7c1b2e3d5f6a8b9c0e"}}
+      """))
+    do {
+      _ = try await stubbedClient("mismatch.test").editNote(date: "2026-10-29", id: "t-1", text: "x", revision: "old", idempotencyKey: "k")
+      Issue.record("expected an error")
+    } catch {
+      #expect(error.code == "revision_mismatch")
+      #expect(error.revision == "0d4f9a7c1b2e3d5f6a8b9c0e")
+      #expect(!error.retryable)
+    }
+    let body = try JSONSerialization.jsonObject(with: try #require(StubProtocol.requests("mismatch.test").first?.httpBody)) as? [String: String]
+    #expect(body == ["text": "x", "revision": "old"])
+  }
+
+  @Test func performSendsEachWriteUnderItsKey() async throws {
+    StubProtocol.set("perform.test", .init(status: 200, body: #"{"pinned":["running"],"recent":[]}"#))
+    let item = OutboxItem(id: UUID(), operation: .pins(["running"]), queuedAt: .now, attempts: 0, refusal: nil)
+    let result = try await stubbedClient("perform.test").perform(item)
+    #expect(result == .pinned(Tags(pinned: ["running"], recent: [], windowDays: nil)))
+    let request = try #require(StubProtocol.requests("perform.test").first)
+    #expect(request.httpMethod == "PUT")
+    #expect(request.url?.path == "/v1/tags/pinned")
+    #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == item.idempotencyKey)
   }
 }

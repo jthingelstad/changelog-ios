@@ -17,7 +17,7 @@ public enum TokenFormat {
     return token.dropFirst(3).allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
   }
 
-  /// Pulls a token out of what was pasted or scanned (a bare token, or text
+  /// Pulls a token out of what was pasted (a bare token, or text
   /// around one), so a copied line works as well as the token alone.
   public static func extract(_ raw: String) -> String? {
     let pattern = /rn_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/

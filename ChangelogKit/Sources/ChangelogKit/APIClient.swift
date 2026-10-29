@@ -9,7 +9,8 @@ public struct APIError: Error, Sendable, Equatable {
   public var code: String
   public var message: String
   public var field: String?
-  public var revision: Int?
+  /// The note's current revision, with `revision_mismatch`.
+  public var revision: String?
   public var retryAfter: TimeInterval?
 
   /// The token no longer works: sign out and ask for a new one.
@@ -59,8 +60,8 @@ public struct APIClient: Sendable {
     try await send("GET", "v1/notes/\(date)/\(id)")
   }
 
-  public func editNote(date: String, id: String, text: String, revision: Int, idempotencyKey: String) async throws(APIError) -> NoteRef {
-    struct Body: Encodable { var text: String; var revision: Int }
+  public func editNote(date: String, id: String, text: String, revision: String, idempotencyKey: String) async throws(APIError) -> NoteRef {
+    struct Body: Encodable { var text: String; var revision: String }
     let answer: Wrapped = try await send("PUT", "v1/notes/\(date)/\(id)", body: Body(text: text, revision: revision), idempotencyKey: idempotencyKey)
     return answer.note
   }

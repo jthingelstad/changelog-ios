@@ -58,7 +58,8 @@ public struct NoteRef: Codable, Sendable, Equatable, Hashable {
   public var id: String
   public var date: String
   public var version: String
-  public var revision: Int
+  /// Opaque: send it back to edit, never compare or count it.
+  public var revision: String
   public var token: String?
 }
 
@@ -77,7 +78,7 @@ public struct NoteDetail: Codable, Sendable, Equatable {
   public var id: String
   public var date: String
   public var text: String
-  public var revision: Int
+  public var revision: String
   public var writtenAt: String?
   public var files: Int?
 }
@@ -127,7 +128,7 @@ struct ErrorBody: Codable, Sendable {
     var code: String
     var message: String
     var field: String?
-    var revision: Int?
+    var revision: String?
   }
   var error: Detail
 }
