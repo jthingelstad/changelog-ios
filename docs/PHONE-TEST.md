@@ -44,21 +44,39 @@ notes, Add files, Upcoming and the activity log.
    from Safari, a link; from Files, a PDF; from Voice Memos, a recording.
    Each makes exactly one note. A video too, to see what it says: Release
    Notes doesn't keep video.
-8. **Offline.** Airplane mode, a note with a photo, Commit: it waits
-   under "Waiting to send". Airplane mode off: it sends, once. A share made
-   offline sends the next time the app opens.
-9. **Upcoming.** "Add a date" (a birthday), Save, then edit it and delete
-   it. The web's Upcoming agrees at each step.
-10. **Notifications**, in Settings: "Remind me on this phone" (Upcoming
+8. **Siri and Shortcuts.** "Add a note in Changelog", then say a line:
+   Siri answers "Filed in" today's version, never the words, and the note
+   is on the web once, with the sticky tag if one is set. In the
+   Shortcuts app, "Add a Note" with some text does the same, and "New
+   Note" opens Log with the keyboard up, from any tab. With the phone
+   locked, Siri asks for it to be unlocked first.
+9. **The Action Button**, on a phone that has one: Settings, Action
+   Button, Controls, "New Note". A press opens Log ready to write. Then
+   Shortcut, "Add a Note": a press asks what changed.
+10. **Widgets.** On the Home Screen, Today small and medium; on the Lock
+    Screen, the round, the rectangular and the one above the time. Each
+    shows today's version and "Nothing yet" or "Written today", and a
+    note from Siri turns it to "Written today". The medium one lists
+    what's coming up; the Lock Screen ones never do. A tap opens Log
+    ready to write. The next morning the version has turned without
+    opening the app. In Control Center, add "New Note".
+11. **Offline.** Airplane mode, a note with a photo, Commit: it waits
+    under "Waiting to send". Airplane mode off: it sends, once. A share,
+    or "Add a Note" in Shortcuts, made offline says "Saved. Changelog
+    sends it when it can." and sends the next time the app opens, once.
+12. **Upcoming.** "Add a date" (a birthday), Save, then edit it and delete
+    it. The web's Upcoming agrees at each step, and so does the medium
+    widget.
+13. **Notifications**, in Settings: "Remind me on this phone" (Upcoming
     reminders), "Ask me each morning" (Daily prompt) and the Activity
     notifications switches. A note added on the web or by an agent brings
     a notice minutes or hours later: iOS decides when the app looks.
-11. **Activity.** Rows from every channel; "Older" loads more.
-12. **The build.** The foot of Settings names the version and the commit
+14. **Activity.** Rows from every channel; "Older" loads more.
+15. **The build.** The foot of Settings names the version and the commit
     (`Changelog 0.0.0, build 571b43d`).
-13. **Last, sign out.** Settings, "Sign out", then "Sign out and revoke
-    this token". The token shows as revoked on the web, and anything still
-    waiting stays on the phone.
+16. **Last, sign out.** Settings, "Sign out", then "Sign out and revoke
+    this token". The token shows as revoked on the web, anything still
+    waiting stays on the phone, and the widgets say to sign in.
 
 Anything wrong, slow or oddly worded becomes an issue here, with a
 screenshot of the dev server's fictional account if it needs one, never of

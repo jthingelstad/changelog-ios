@@ -10,6 +10,8 @@
 		C0DE0000000000000000000A /* ChangelogKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE0000000000000000000B /* ChangelogKit */; };
 		C0DE00000000000000000023 /* ChangelogKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE00000000000000000024 /* ChangelogKit */; };
 		C0DE0000000000000000002D /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000020 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C0DE0000000000000000005B /* ChangelogKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE0000000000000000005C /* ChangelogKit */; };
+		C0DE0000000000000000005D /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000050 /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,6 +29,13 @@
 			remoteGlobalIDString = C0DE00000000000000000026;
 			remoteInfo = ShareExtension;
 		};
+		C0DE0000000000000000005E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0DE00000000000000000009 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0DE00000000000000000053;
+			remoteInfo = Widgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -37,6 +46,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				C0DE0000000000000000002D /* ShareExtension.appex in Embed Foundation Extensions */,
+				C0DE0000000000000000005D /* Widgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -47,6 +57,7 @@
 		C0DE00000000000000000001 /* Changelog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Changelog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DE00000000000000000031 /* ChangelogUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ChangelogUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DE00000000000000000020 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0DE00000000000000000050 /* Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DE00000000000000000040 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Signing.xcconfig; path = Config/Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -64,6 +75,16 @@
 		C0DE0000000000000000002E /* ShareExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		C0DE00000000000000000051 /* Widgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Widgets;
+			sourceTree = "<group>";
+		};
+		C0DE00000000000000000052 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -85,6 +106,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0DE00000000000000000055 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0DE0000000000000000005B /* ChangelogKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0DE00000000000000000034 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -99,7 +128,9 @@
 			isa = PBXGroup;
 			children = (
 				C0DE00000000000000000002 /* Changelog */,
+				C0DE00000000000000000052 /* Shared */,
 				C0DE0000000000000000002E /* ShareExtension */,
+				C0DE00000000000000000051 /* Widgets */,
 				C0DE00000000000000000032 /* ChangelogUITests */,
 				C0DE00000000000000000040 /* Signing.xcconfig */,
 				C0DE00000000000000000004 /* Products */,
@@ -111,6 +142,7 @@
 			children = (
 				C0DE00000000000000000001 /* Changelog.app */,
 				C0DE00000000000000000020 /* ShareExtension.appex */,
+				C0DE00000000000000000050 /* Widgets.appex */,
 				C0DE00000000000000000031 /* ChangelogUITests.xctest */,
 			);
 			name = Products;
@@ -133,9 +165,11 @@
 			);
 			dependencies = (
 				C0DE0000000000000000002A /* PBXTargetDependency */,
+				C0DE0000000000000000005F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C0DE00000000000000000002 /* Changelog */,
+				C0DE00000000000000000052 /* Shared */,
 			);
 			name = Changelog;
 			packageProductDependencies = (
@@ -167,6 +201,31 @@
 			);
 			productName = ShareExtension;
 			productReference = C0DE00000000000000000020 /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		C0DE00000000000000000053 /* Widgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0DE00000000000000000058 /* Build configuration list for PBXNativeTarget "Widgets" */;
+			buildPhases = (
+				C0DE00000000000000000054 /* Sources */,
+				C0DE00000000000000000055 /* Frameworks */,
+				C0DE00000000000000000056 /* Resources */,
+				C0DE00000000000000000057 /* Stamp the version */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0DE00000000000000000051 /* Widgets */,
+				C0DE00000000000000000052 /* Shared */,
+			);
+			name = Widgets;
+			packageProductDependencies = (
+				C0DE0000000000000000005C /* ChangelogKit */,
+			);
+			productName = Widgets;
+			productReference = C0DE00000000000000000050 /* Widgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		C0DE00000000000000000036 /* ChangelogUITests */ = {
@@ -206,6 +265,9 @@
 					C0DE00000000000000000026 = {
 						CreatedOnToolsVersion = 27.1;
 					};
+					C0DE00000000000000000053 = {
+						CreatedOnToolsVersion = 27.1;
+					};
 					C0DE00000000000000000036 = {
 						CreatedOnToolsVersion = 27.1;
 						TestTargetID = C0DE00000000000000000005;
@@ -231,6 +293,7 @@
 			targets = (
 				C0DE00000000000000000005 /* Changelog */,
 				C0DE00000000000000000026 /* ShareExtension */,
+				C0DE00000000000000000053 /* Widgets */,
 				C0DE00000000000000000036 /* ChangelogUITests */,
 			);
 		};
@@ -245,6 +308,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C0DE00000000000000000025 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0DE00000000000000000056 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -301,6 +371,26 @@
 			shellPath = /bin/sh;
 			shellScript = "\"$SRCROOT/scripts/version.sh\" stamp \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\n";
 		};
+		C0DE00000000000000000057 /* Stamp the version */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "Stamp the version";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/scripts/version.sh\" stamp \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -312,6 +402,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C0DE00000000000000000021 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0DE00000000000000000054 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -337,6 +434,11 @@
 			isa = PBXTargetDependency;
 			target = C0DE00000000000000000005 /* Changelog */;
 			targetProxy = C0DE00000000000000000038 /* PBXContainerItemProxy */;
+		};
+		C0DE0000000000000000005F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0DE00000000000000000053 /* Widgets */;
+			targetProxy = C0DE0000000000000000005E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -477,6 +579,42 @@
 			};
 			name = Release;
 		};
+		C0DE00000000000000000059 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/Widgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/Widgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Changelog;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourversionnumber.changelog.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		C0DE0000000000000000005A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/Widgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/Widgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Changelog;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourversionnumber.changelog.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 		C0DE0000000000000000003A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -533,6 +671,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		C0DE00000000000000000058 /* Build configuration list for PBXNativeTarget "Widgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0DE00000000000000000059 /* Debug */,
+				C0DE0000000000000000005A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		C0DE00000000000000000039 /* Build configuration list for PBXNativeTarget "ChangelogUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -557,6 +704,10 @@
 			productName = ChangelogKit;
 		};
 		C0DE00000000000000000024 /* ChangelogKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ChangelogKit;
+		};
+		C0DE0000000000000000005C /* ChangelogKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ChangelogKit;
 		};

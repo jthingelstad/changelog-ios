@@ -145,6 +145,22 @@ final class ChangelogUITests: XCTestCase {
     XCTAssertEqual(left, 0, "deleted on the server")
   }
 
+  /// A widget's tap (or the New Note control) opens Log from any tab, with
+  /// the keyboard up.
+  @MainActor func testANewNoteLink() throws {
+    let app = launch()
+    hideKeyboard(app)
+    app.tabBars.buttons["Settings"].tap()
+    expect(app.staticTexts["Settings"], "Settings opens", in: app)
+    app.open(URL(string: "com.yourversionnumber.changelog:new-note")!)
+    expect(app.keyboards.firstMatch, "the keyboard comes up", in: app)
+    XCTAssertTrue(app.tabBars.buttons["Log"].isSelected, "Log is open")
+    // Asked again while Log is open, with the keyboard put away.
+    hideKeyboard(app)
+    app.open(URL(string: "com.yourversionnumber.changelog:new-note")!)
+    expect(app.keyboards.firstMatch, "the keyboard comes up again", in: app)
+  }
+
   /// A photo shared from the Photos app files once, from the extension.
   @MainActor func testShareFromPhotos() async throws {
     // Signs the app in, so the extension finds the token and the server.

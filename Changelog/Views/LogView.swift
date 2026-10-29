@@ -84,6 +84,9 @@ struct LogView: View {
       // tabs: scrolling puts it away.
       .scrollDismissesKeyboard(.immediately)
       .onAppear { typing = true }
+      // A shortcut, a control or a widget asked for a new note while Log was
+      // already open.
+      .onChange(of: AppRoute.shared.newNotes) { typing = true }
       .onChange(of: model.draft) { before, now in
         if before.isEmpty, !now.isEmpty { Task { await model.draftStarted() } }
       }

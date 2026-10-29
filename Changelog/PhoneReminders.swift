@@ -109,15 +109,7 @@ enum PhoneReminders {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
       let tab = response.notification.request.content.userInfo["tab"] as? String
-      await MainActor.run { NotificationRoute.shared.tab = tab }
+      await MainActor.run { AppRoute.shared.tab = tab }
     }
   }
-}
-
-/// The tab a tapped notification asked for, held until the app's window
-/// takes it, since a tap can start the app before the window is there.
-@MainActor @Observable
-final class NotificationRoute {
-  static let shared = NotificationRoute()
-  var tab: String?
 }

@@ -18,6 +18,10 @@ struct ChangelogApp: App {
         .onChange(of: scenePhase) { _, phase in
           if phase == .active, model.phase == .signedIn { Task { await model.refresh() } }
         }
+        // A widget's link: Log, ready to write.
+        .onOpenURL { url in
+          if url == AppRoute.newNoteURL { AppRoute.shared.newNote() }
+        }
     }
     .backgroundTask(.appRefresh(PhoneReminders.refreshTask)) { await model.backgroundRefresh() }
   }
@@ -41,11 +45,12 @@ struct RootView: View {
         Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
       }
       // A tapped notification opens its tab: a reminder Upcoming, the
-      // daily prompt Log, an activity notice Activity.
-      .onChange(of: NotificationRoute.shared.tab, initial: true) { _, asked in
+      // daily prompt Log, an activity notice Activity. A new note (a
+      // shortcut, a control, a widget) opens Log.
+      .onChange(of: AppRoute.shared.tab, initial: true) { _, asked in
         guard let asked else { return }
         tab = asked
-        NotificationRoute.shared.tab = nil
+        AppRoute.shared.tab = nil
       }
     }
   }
