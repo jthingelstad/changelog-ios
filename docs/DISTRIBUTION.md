@@ -2,8 +2,9 @@
 
 Changelog goes out in three steps: TestFlight for Jamie's developer team,
 TestFlight for a few people who use Release Notes, then the App Store.
-Each step is Jamie's call, and so is each upload: it goes to Apple and to
-people's phones.
+Each step is Jamie's call, and so is each upload, since it goes to Apple
+and to people's phones, with one standing exception: a build of main for
+internal testers after work merges (Jamie, 29 October 2026).
 
 ## 1. Internal testers (now)
 
