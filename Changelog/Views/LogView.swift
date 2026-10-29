@@ -47,7 +47,7 @@ struct LogView: View {
               WaitingRow(item: item)
                 .swipeActions {
                   Button("Discard", role: .destructive) { Task { await model.discard(item) } }
-                  if item.refusal != nil { Button("Fix") { fixing = item } }
+                  if item.refusal != nil && item.isNote { Button("Fix") { fixing = item } }
                 }
             }
           }
@@ -103,9 +103,18 @@ struct VersionHeader: View {
 struct WaitingRow: View {
   let item: OutboxItem
 
+  private var summary: String {
+    switch item.operation {
+    case .note(let text, _, _): text
+    case .edit(_, _, let text, _): "Edit: \(text)"
+    case .delete(let date, _): "Delete a note from \(date)"
+    case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.map { "#\($0)" }.joined(separator: " ")
+    }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(item.text).lineLimit(2)
+      Text(summary).lineLimit(2)
       if let refusal = item.refusal {
         Text(refusal).font(.caption).foregroundStyle(.orange)
       } else {
@@ -196,13 +205,12 @@ struct FixWaitingView: View {
         ToolbarItem(placement: .confirmationAction) {
           Button("Send") {
             Task {
-              await model.retry(item, text: text)
-              dismiss()
+              if await model.retry(item, text: text) { dismiss() }
             }
           }
         }
       }
-      .onAppear { text = item.text }
+      .onAppear { text = item.text ?? "" }
     }
   }
 }

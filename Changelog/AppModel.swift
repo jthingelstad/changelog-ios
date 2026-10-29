@@ -69,7 +69,7 @@ final class AppModel {
     if phase == .signedIn { await refresh() }
   }
 
-  /// Checks a pasted or scanned token with `/v1/me` before keeping it.
+  /// Checks a pasted token with `/v1/me` before keeping it.
   func signIn(with raw: String) async -> String? {
     guard let candidate = TokenFormat.extract(raw) else {
       return "That isn't a Release Notes token. It starts with rn_."
@@ -139,30 +139,55 @@ final class AppModel {
     !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
-  /// Queues the draft with the moment it was typed, then tries to send.
+  /// Queues the draft with the moment it was typed, then tries to send. If
+  /// the phone can't keep the queue, the words go back in the box.
   func commit() async {
-    var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    let typed = draft
+    var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     if let sticky { text = Hashtags.adding(sticky, to: text) }
     draft = ""
-    await outbox.enqueue(text: text)
+    do {
+      try await outbox.enqueue(text: text)
+    } catch {
+      draft = draft.isEmpty ? typed : typed + "\n" + draft
+      problem = Self.notKept
+      return
+    }
     waiting = await outbox.waiting
     await send()
   }
 
-  func send() async {
-    guard let client else { return }
-    let report = await outbox.flush { item throws(APIError) in
-      try await client.createNote(item.request, idempotencyKey: item.idempotencyKey)
+  static let notKept = "This phone couldn't save that to send, so nothing was sent. Free up some space and try again."
+
+  /// Queues any other write, so it goes under one key however many times it
+  /// is sent. False when the phone couldn't keep it.
+  private func queue(_ operation: OutboxOperation) async -> Bool {
+    do {
+      try await outbox.enqueue(operation)
+    } catch {
+      problem = Self.notKept
+      return false
     }
     waiting = await outbox.waiting
-    if let last = report.sent.last {
-      lastFiled = last.receipt
-      let badges = report.sent.flatMap { $0.receipt.unlocked ?? [] }
-      toast = badges.isEmpty ? "Filed in \(last.receipt.note.version)." : "Unlocked: \(badges.map(\.name).joined(separator: ", "))"
-      await loadToday()
-      if last.receipt.note.date == me?.today { me?.wroteToday = true }
+    await send()
+    return true
+  }
+
+  func send() async {
+    guard let client else { return }
+    let report = await outbox.flush { item throws(APIError) in try await client.perform(item) }
+    waiting = await outbox.waiting
+    for sent in report.sent {
+      if case .pinned(let answer) = sent.result { tags = answer }
     }
+    if let last = report.filed.last {
+      lastFiled = last
+      let badges = report.filed.flatMap { $0.unlocked ?? [] }
+      toast = badges.isEmpty ? "Filed in \(last.note.version)." : "Unlocked: \(badges.map(\.name).joined(separator: ", "))"
+      if last.note.date == me?.today { me?.wroteToday = true }
+    }
+    if report.sent.contains(where: { $0.item.text != nil || $0.result == .deleted }) { await loadToday() }
     if let stopped = report.stopped { handle(stopped) }
   }
 
@@ -171,10 +196,15 @@ final class AppModel {
     waiting = await outbox.waiting
   }
 
-  func retry(_ item: OutboxItem, text: String) async {
-    await outbox.retry(item.id, text: text)
+  /// A refused note, fixed by hand. False when the phone couldn't keep it.
+  func retry(_ item: OutboxItem, text: String) async -> Bool {
+    do { try await outbox.retry(item.id, text: text) } catch {
+      problem = Self.notKept
+      return false
+    }
     waiting = await outbox.waiting
     await send()
+    return true
   }
 
   func clearToast() { toast = nil }
@@ -192,25 +222,15 @@ final class AppModel {
     do { return try await client.note(date: day, id: id) } catch { handle(error); return nil }
   }
 
+  /// Queues an edit from the revision read. True once it is safely queued:
+  /// a refusal (changed since) shows under Waiting to send.
   func save(_ note: NoteDetail, text: String) async -> Bool {
-    guard let client else { return false }
-    do {
-      _ = try await client.editNote(date: note.date, id: note.id, text: text, revision: note.revision,
-                                    idempotencyKey: UUID().uuidString.lowercased())
-      await loadToday()
-      return true
-    } catch {
-      handle(error)
-      return false
-    }
+    await queue(.edit(date: note.date, id: note.id, text: text, revision: note.revision))
   }
 
   func delete(_ item: ActivityItem) async {
-    guard let client, let day = item.day, let id = item.note else { return }
-    do {
-      try await client.deleteNote(date: day, id: id, idempotencyKey: UUID().uuidString.lowercased())
-      await loadToday()
-    } catch { handle(error) }
+    guard let day = item.day, let id = item.note else { return }
+    _ = await queue(.delete(date: day, id: id))
   }
 
   // MARK: Tags
@@ -223,9 +243,11 @@ final class AppModel {
     sticky = sticky == tag ? nil : tag
   }
 
+  /// Shows the new pins at once; Release Notes' answer replaces them.
   func setPinned(_ pinned: [String]) async {
-    guard let client else { return }
-    do { tags = try await client.setPinned(pinned, idempotencyKey: UUID().uuidString.lowercased()) } catch { handle(error) }
+    let before = tags
+    tags?.pinned = pinned
+    if !(await queue(.pins(pinned))) { tags = before }
   }
 
   // MARK: Activity
