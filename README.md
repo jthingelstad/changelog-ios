@@ -62,10 +62,20 @@ To try it without touching real notes, run the Release Notes dev server
 it serves the API against a fictional account and prints a token), choose "Dev server" on the
 sign-in screen of a debug build, and paste the token.
 
-To run it on your own iPhone, set your team under Signing & Capabilities
-for both the Changelog and ShareExtension targets. They share an App Group
-(`group.com.thingelstad.changelog`) for the token and for shares; if
-automatic signing doesn't register it, add it under App Groups on each.
+To run it on your own iPhone, sign in to your Apple developer account in
+Xcode (Settings, Accounts), then put your team in a file git ignores, so
+it never lands in this repo:
+
+```sh
+echo 'DEVELOPMENT_TEAM = <your team ID>' > Config/Signing.local.xcconfig
+```
+
+Every target signs with it (`Config/Signing.xcconfig`); leave the Team
+menus in Xcode alone, since a team picked there is written into the
+project. The app and the share extension share an App Group
+(`group.com.thingelstad.changelog`) for the token and for shares, which
+automatic signing registers on the first build for a phone. With your own
+team, change the `com.thingelstad` bundle ids and the group too.
 
 ## License
 

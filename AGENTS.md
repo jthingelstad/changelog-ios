@@ -50,6 +50,8 @@ there first, never work around it here.
 - This repo is public. Never commit real notes, real versions, real
   account details, tokens, screenshots of a real account, or Apple account
   or signing details. Examples use the dev server's fictional account.
+  The signing team lives in `Config/Signing.local.xcconfig`, which git
+  ignores; never set `DEVELOPMENT_TEAM` in the project.
 - Never test against production. Run the Release Notes dev server
   (`tools/dev-server.ts`, port 8790) and point a debug build at it.
 - No third-party packages. Apple's frameworks only.

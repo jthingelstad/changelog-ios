@@ -11,3 +11,4 @@ xcuserdata/
 .env
 .env.*
 !.env.example
+Config/Signing.local.xcconfig

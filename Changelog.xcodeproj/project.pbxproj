@@ -39,6 +39,7 @@
 /* Begin PBXFileReference section */
 		C0DE00000000000000000001 /* Changelog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Changelog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DE00000000000000000020 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0DE00000000000000000040 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Signing.xcconfig; path = Config/Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -79,6 +80,7 @@
 			children = (
 				C0DE00000000000000000002 /* Changelog */,
 				C0DE0000000000000000002E /* ShareExtension */,
+				C0DE00000000000000000040 /* Signing.xcconfig */,
 				C0DE00000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -274,6 +276,7 @@
 /* Begin XCBuildConfiguration section */
 		C0DE0000000000000000000F /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0DE00000000000000000040 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -300,6 +303,7 @@
 		};
 		C0DE00000000000000000010 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0DE00000000000000000040 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -330,7 +334,6 @@
 				CODE_SIGN_ENTITLEMENTS = Config/Changelog.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/Info.plist;
@@ -355,7 +358,6 @@
 				CODE_SIGN_ENTITLEMENTS = Config/Changelog.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/Info.plist;
@@ -378,7 +380,6 @@
 				CODE_SIGN_ENTITLEMENTS = Config/ShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/ShareExtension-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Changelog;
@@ -397,7 +398,6 @@
 				CODE_SIGN_ENTITLEMENTS = Config/ShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/ShareExtension-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Changelog;
