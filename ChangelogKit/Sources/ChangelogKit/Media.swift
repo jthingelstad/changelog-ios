@@ -195,7 +195,7 @@ public enum Multipart {
   /// little).
   public static func write(fields: [String: String], file: URL, name: String, type: String, boundary: String,
                            to body: URL) throws {
-    guard FileManager.default.createFile(atPath: body.path(), contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+    guard FileManager.default.createFile(atPath: body.path(percentEncoded: false), contents: nil) else { throw CocoaError(.fileWriteUnknown) }
     let out = try FileHandle(forWritingTo: body)
     defer { try? out.close() }
     let source = try FileHandle(forReadingFrom: file)

@@ -118,7 +118,7 @@ struct DevServerTests {
   @Test func filesAndPlaces() async throws {
     let client = DevServer.client()
     guard try await client.me().token.scopes.contains("media:write") else { return }
-    let folder = FileManager.default.temporaryDirectory.appending(path: "changelog-dev-" + UUID().uuidString, directoryHint: .isDirectory)
+    let folder = FileManager.default.temporaryDirectory.appending(path: "changelog dev " + UUID().uuidString, directoryHint: .isDirectory)
     let outbox = Outbox(file: nil, files: folder)
     let prepare: Outbox.Preparer = { item, folder throws(APIError) in try await client.prepare(item, files: folder) }
     let send: Outbox.Sender = { item throws(APIError) in try await client.perform(item) }
@@ -134,7 +134,7 @@ struct DevServerTests {
     #expect(report.stopped == nil && report.refused.isEmpty)
     let first = try #require(report.filed.first)
     #expect(first.note.files == 1)
-    #expect(outbox.url(for: sized).map { FileManager.default.fileExists(atPath: $0.path()) } == false)
+    #expect(outbox.url(for: sized).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } == false)
 
     let here = try await client.here(Spot(lat: 44.98, lon: -93.26, accuracyM: 30))
     #expect(here.place.from == "device")

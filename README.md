@@ -62,6 +62,15 @@ To try it without touching real notes, run the Release Notes dev server
 it serves the API against a fictional account and prints a token), choose "Dev server" on the
 sign-in screen of a debug build, and paste the token.
 
+A test cycle drives the app on a simulator against that dev server
+(started with `--fake-places`): a note, a photo, Here, a voice memo,
+Activity and Settings, and a share from Photos, each checked against what
+the server filed.
+
+```sh
+CHANGELOG_DEV_TOKEN=rn_... scripts/ui-test-cycle.sh "iPhone 17"
+```
+
 To run it on your own iPhone, sign in to your Apple developer account in
 Xcode (Settings, Accounts), then put your team in a file git ignores, so
 it never lands in this repo:

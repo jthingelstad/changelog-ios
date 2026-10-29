@@ -117,8 +117,8 @@ final class AppModel {
   // MARK: Signing in and out
 
   func start() async {
-    // A token 0.1 kept where only the app could read it moves to the App
-    // Group, for the share extension.
+    // A token an earlier build kept where only the app could read it moves
+    // to the App Group, for the share extension.
     (tokens as? KeychainTokenStore)?.share()
     token = tokens.read()
     // Shares the extension couldn't send come in first, so the sweep after
@@ -127,14 +127,18 @@ final class AppModel {
     // A draft's files left by a run that ended; the queue's own stay.
     await outbox.sweep(keeping: Set(draftFiles.map(\.id)))
     #if DEBUG
-    // `simctl launch` with SIMCTL_CHILD_CHANGELOG_DEV_TOKEN signs a debug
-    // build in to the dev server's fictional account (AGENTS.md, Building).
+    // `simctl launch` with SIMCTL_CHILD_CHANGELOG_DEV_TOKEN (or a UI test)
+    // signs a debug build in to the dev server's fictional account
+    // (AGENTS.md, Building). It always wins over a token kept from before,
+    // so a run meant for the dev server never writes anywhere else.
     // CHANGELOG_DEV_URL picks another port, on this Mac only.
     let environment = ProcessInfo.processInfo.environment
-    if token == nil, let dev = environment["CHANGELOG_DEV_TOKEN"] {
+    if let dev = environment["CHANGELOG_DEV_TOKEN"] {
       let other = environment["CHANGELOG_DEV_URL"].flatMap(URL.init(string:))
       server = other.flatMap { ["localhost", "127.0.0.1"].contains($0.host() ?? "") ? $0 : nil } ?? APIClient.devServer
-      if await signIn(with: dev) == nil { return }
+      token = nil
+      problem = await signIn(with: dev)
+      if problem == nil { return }
     }
     #endif
     phase = token == nil ? .signedOut : .signedIn

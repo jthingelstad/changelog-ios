@@ -13,6 +13,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		C0DE00000000000000000038 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0DE00000000000000000009 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0DE00000000000000000005;
+			remoteInfo = Changelog;
+		};
 		C0DE0000000000000000002B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = C0DE00000000000000000009 /* Project object */;
@@ -38,6 +45,7 @@
 
 /* Begin PBXFileReference section */
 		C0DE00000000000000000001 /* Changelog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Changelog.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0DE00000000000000000031 /* ChangelogUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ChangelogUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DE00000000000000000020 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DE00000000000000000040 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Signing.xcconfig; path = Config/Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -46,6 +54,11 @@
 		C0DE00000000000000000002 /* Changelog */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Changelog;
+			sourceTree = "<group>";
+		};
+		C0DE00000000000000000032 /* ChangelogUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ChangelogUITests;
 			sourceTree = "<group>";
 		};
 		C0DE0000000000000000002E /* ShareExtension */ = {
@@ -72,6 +85,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0DE00000000000000000034 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -80,6 +100,7 @@
 			children = (
 				C0DE00000000000000000002 /* Changelog */,
 				C0DE0000000000000000002E /* ShareExtension */,
+				C0DE00000000000000000032 /* ChangelogUITests */,
 				C0DE00000000000000000040 /* Signing.xcconfig */,
 				C0DE00000000000000000004 /* Products */,
 			);
@@ -90,6 +111,7 @@
 			children = (
 				C0DE00000000000000000001 /* Changelog.app */,
 				C0DE00000000000000000020 /* ShareExtension.appex */,
+				C0DE00000000000000000031 /* ChangelogUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -147,6 +169,27 @@
 			productReference = C0DE00000000000000000020 /* ShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		C0DE00000000000000000036 /* ChangelogUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0DE00000000000000000039 /* Build configuration list for PBXNativeTarget "ChangelogUITests" */;
+			buildPhases = (
+				C0DE00000000000000000033 /* Sources */,
+				C0DE00000000000000000034 /* Frameworks */,
+				C0DE00000000000000000035 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C0DE00000000000000000037 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C0DE00000000000000000032 /* ChangelogUITests */,
+			);
+			name = ChangelogUITests;
+			productName = ChangelogUITests;
+			productReference = C0DE00000000000000000031 /* ChangelogUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -162,6 +205,10 @@
 					};
 					C0DE00000000000000000026 = {
 						CreatedOnToolsVersion = 27.1;
+					};
+					C0DE00000000000000000036 = {
+						CreatedOnToolsVersion = 27.1;
+						TestTargetID = C0DE00000000000000000005;
 					};
 				};
 			};
@@ -184,6 +231,7 @@
 			targets = (
 				C0DE00000000000000000005 /* Changelog */,
 				C0DE00000000000000000026 /* ShareExtension */,
+				C0DE00000000000000000036 /* ChangelogUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -197,6 +245,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C0DE00000000000000000025 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0DE00000000000000000035 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -263,6 +318,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0DE00000000000000000033 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -270,6 +332,11 @@
 			isa = PBXTargetDependency;
 			target = C0DE00000000000000000026 /* ShareExtension */;
 			targetProxy = C0DE0000000000000000002B /* PBXContainerItemProxy */;
+		};
+		C0DE00000000000000000037 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0DE00000000000000000005 /* Changelog */;
+			targetProxy = C0DE00000000000000000038 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -410,6 +477,34 @@
 			};
 			name = Release;
 		};
+		C0DE0000000000000000003A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Changelog;
+			};
+			name = Debug;
+		};
+		C0DE0000000000000000003B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thingelstad.changelog.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Changelog;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -436,6 +531,15 @@
 			buildConfigurations = (
 				C0DE00000000000000000028 /* Debug */,
 				C0DE00000000000000000029 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0DE00000000000000000039 /* Build configuration list for PBXNativeTarget "ChangelogUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0DE0000000000000000003A /* Debug */,
+				C0DE0000000000000000003B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

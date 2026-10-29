@@ -207,7 +207,7 @@ public actor Outbox {
   /// Removes files no queued note holds, except `keeping` (the draft's).
   public func sweep(keeping: Set<UUID> = []) {
     guard let folder = filesFolder,
-          let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path()) else { return }
+          let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)) else { return }
     let held = Set(items.flatMap(\.files).map(\.id)).union(keeping)
     for name in names {
       if let id = UUID(uuidString: String(name.prefix(36))), held.contains(id) { continue }
@@ -234,7 +234,7 @@ public actor Outbox {
       // they are (made again once should they be gone). A file never
       // posted whose bytes are no longer on the phone goes; the rest still do.
       post.files.removeAll { file in
-        file.upload == nil && (url(for: file).map { !FileManager.default.fileExists(atPath: $0.path()) } ?? false)
+        file.upload == nil && (url(for: file).map { !FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } ?? false)
       }
       post.reuploads = 0
       items[i].operation = .post(post)
@@ -370,7 +370,7 @@ public extension APIClient {
     for i in post.files.indices where post.files[i].upload == nil {
       let file = post.files[i]
       guard let url = folder?.appending(path: file.fileName),
-            let size = (try? FileManager.default.attributesOfItem(atPath: url.path())[.size]) as? Int else {
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.size]) as? Int else {
         throw APIError(status: 400, code: "file_missing", message: Self.fileMissing)
       }
       let form = try await startUpload(UploadStart(name: file.name, type: file.type, size: size))
