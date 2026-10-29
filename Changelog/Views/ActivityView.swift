@@ -40,7 +40,7 @@ struct ActivityView: View {
         .pickerStyle(.menu)
 
         if !model.hasActivity {
-          Text("This token can't read the activity log. Make one with Activity ticked to see it here.")
+          Text("This token can't read the activity log. Make one with “Read the activity log” ticked to see it here.")
             .foregroundStyle(.secondary)
         }
         ForEach(shown) { item in
