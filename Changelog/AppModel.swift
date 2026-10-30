@@ -458,7 +458,10 @@ final class AppModel {
       // A revoked or expired token signs out here as it would on screen.
       if error.signedOut { return handle(error, from: client) }
     }
-    await send()
+    // Not before Release Notes said to try again (a day's limit runs to
+    // midnight UTC): a refresh that came for the widgets, reminders or
+    // activity sends nothing then. Opening the app always tries.
+    if queueAfter.map({ $0 <= .now }) ?? true { await send() }
     await updateReminders()
     await notifyActivity()
   }

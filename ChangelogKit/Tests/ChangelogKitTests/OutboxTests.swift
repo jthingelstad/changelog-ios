@@ -223,8 +223,8 @@ private actor Script {
     #expect(await script.sent.isEmpty)
   }
 
-  /// Log says why a note waits: a day's limit, Release Notes busy, or (the
-  /// view's own words) no connection.
+  /// Log says why a note waits: a day's limit, Release Notes busy, or no
+  /// connection, for the note a run stopped at and those behind it.
   @Test func eachWaitSaysWhy() async throws {
     let outbox = Outbox(file: nil)
     try await outbox.enqueue(text: "one")
