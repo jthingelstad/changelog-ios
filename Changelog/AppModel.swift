@@ -929,7 +929,7 @@ final class AppModel {
         if spot == found { here = named }
         for id in queued { await outbox.name(id, spot: found, place: named.place) }
       case .failure(let error):
-        if error.signedOut { return handle(error) }
+        if error.signedOut { return handle(error, from: client) }
         // Offline: the note names its spot as it sends.
         guard !error.retryable || error.status == 429 else { break }
         // Nowhere a city can be named (at sea), or the day's spots used.
@@ -977,7 +977,7 @@ final class AppModel {
   func load(date: String, id: String) async throws(APIError) -> NoteDetail {
     guard let client else { throw .notSignedIn }
     do { return try await client.note(date: date, id: id) } catch {
-      if error.signedOut { handle(error) }
+      if error.signedOut { handle(error, from: client) }
       throw error
     }
   }
