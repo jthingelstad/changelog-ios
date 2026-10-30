@@ -37,7 +37,9 @@ final class ChangelogUITests: XCTestCase {
     // Today reads back what this token sent and shows its words.
     let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
     expect(row, "Today shows the note's words", in: app)
-    // A swipe's Delete asks first; the note goes only once confirmed.
+    // A swipe's Delete asks first; the note goes only once confirmed. Log
+    // keeps the keyboard up after Commit, over Today's newest rows.
+    hideKeyboard(app)
     row.swipeLeft()
     app.buttons["Delete"].firstMatch.tap()
     expect(app.staticTexts["Delete this note?"], "deleting a note asks first", in: app)

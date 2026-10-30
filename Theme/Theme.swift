@@ -246,7 +246,8 @@ struct CommitButtonStyle: ButtonStyle {
       .padding(.horizontal, 22)
       .frame(minHeight: 48)
       .background(Color.tangerine, in: .rect(cornerRadius: 8))
-      .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+      // The web's `.go:disabled`; 0.45 went muddy on the dark paper.
+      .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.6)
   }
 }
 
