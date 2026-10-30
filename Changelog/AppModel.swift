@@ -160,7 +160,7 @@ final class AppModel {
     // The draft a run that ended left (iOS ends an app it isn't showing),
     // and shares the extension couldn't send, come in first, so the sweep
     // after keeps their files.
-    restoreDraft()
+    await restoreDraft()
     await adoptShares()
     // Files nothing holds, left by a run that ended; the queue's own stay.
     await outbox.sweep(keeping: Set(draftFiles.map(\.id)))
@@ -549,6 +549,12 @@ final class AppModel {
     guard !text.isEmpty || !files.isEmpty else { return }
     committing += 1
     if let sticky { text = Hashtags.adding(sticky, to: text) }
+    let stamp = Timestamp.string(.now)
+    // The draft as it is, kept with the note it is becoming, so a launch
+    // after the app ended mid-commit can tell whether that note reached
+    // the queue.
+    let handing = Draft(text: typed, files: files, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff,
+                        handover: Draft.Handover(text: text, writtenAt: stamp))
     let placed = (spot: placeOff ? nil : spot, here: here, venue: venue, spotAt: spotAt)
     var place = placed.here?.place
     place?.venue = placed.venue
@@ -557,12 +563,13 @@ final class AppModel {
     // With "Add where I am" on, the next note within ten minutes takes the
     // same place; a Here asked for once goes with this note alone.
     if hereByDefault { placeOff = false } else { clearPlace(off: false) }
+    if draftRestored { drafts.save(handing) }
     let item: OutboxItem
     do {
       if files.isEmpty && placed.spot == nil {
-        item = try await outbox.enqueue(text: text)
+        item = try await outbox.enqueue(.note(text: text, date: nil, writtenAt: stamp))
       } else {
-        item = try await outbox.enqueue(.post(NotePost(text: text, writtenAt: Timestamp.string(.now), files: files,
+        item = try await outbox.enqueue(.post(NotePost(text: text, writtenAt: stamp, files: files,
                                                        spot: placed.spot, place: placed.spot == nil ? nil : place)))
       }
     } catch {
@@ -693,10 +700,10 @@ final class AppModel {
   }
 
   /// Puts back the draft a run that ended left, and its photos' pictures.
-  private func restoreDraft() {
+  private func restoreDraft() async {
     guard !draftRestored else { return }
     defer { draftRestored = true }
-    guard let kept = drafts.load(filesIn: outbox) else { return }
+    guard let kept = await drafts.load(filesIn: outbox) else { return }
     draft = kept.text
     draftFiles = kept.files
     spot = kept.spot
