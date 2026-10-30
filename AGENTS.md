@@ -32,8 +32,9 @@ there first, never work around it here.
   `Locator` one location fix, `Recorder` a voice memo, `PhoneReminders`
   the phone's own notifications (there is no push server: they are
   scheduled ahead, or found by background refresh), `Intents` Shortcuts'
-  and Siri's "Add a Note" (sent as a share is, without opening the app)
-  and the phrases Siri knows.
+  and Siri's "Add a Note" (sent as a share is, without opening the app,
+  within 5 seconds, well inside Siri's own wait, else left for the app;
+  Jamie, 2026-10-30) and the phrases Siri knows.
 - `Shared/` is built into both the app and the widget extension:
   `AppRoute` (the tab or the new note the app opens to) and `NewNoteIntent`
   ("New Note", which opens Log ready to write; a control can only name an
@@ -42,10 +43,14 @@ there first, never work around it here.
   a queue of its own in the App Group's `shares/` folder, sends it if it
   can within 25 seconds, and leaves the rest for the app, which adopts it
   into its Outbox under the same key. It has about 120 MB of memory: files
-  are copied and streamed from disk, never read whole, except photos.
+  are copied and streamed from disk, never read whole, except photos. A
+  very large photo (ProRAW, 48 MP) may not fit; it is kept as it is, not
+  shrunk (Jamie, 2026-10-30, asked: "Leave").
 - The token is in the Keychain under the App Group's access group, so the
   extension can read it; a token kept by an earlier build moves there when
-  the app starts. The app mirrors the server and the sticky tag into the
+  the app starts. It outlives deleting the app, as Keychain items do, so a
+  reinstall is still signed in (Jamie, 2026-10-30, asked whether to clear
+  it: "No leave it"). The app mirrors the server and the sticky tag into the
   group's defaults. Only a debug build reads a saved server: a release
   build, and the share extension and Siri in one, always use Release Notes
   itself (`APIClient.production`).
@@ -93,10 +98,13 @@ there first, never work around it here.
   and then. Each still carries an Idempotency-Key held for as long as the
   same request is tried again (`RequestKey`).
 - A notification never carries a note's words, and nor does a widget or
-  what Siri or a shortcut says back. Upcoming's titles show on Home Screen
-  widgets only, never the Lock Screen. A widget never works out a version:
-  each day's is the server's, from `/v1/me`'s `days`. Activity notices
-  never tell of this token's own rows or the daily email.
+  what Siri or a shortcut says back. On widgets, Upcoming's titles show on
+  the Home Screen only, never the Lock Screen. A reminder notification
+  carries its date's title, as the email's line does, Lock Screen included
+  (Jamie, 2026-10-30, asked whether to hide them there: "No"). A widget
+  never works out a version: each day's is the server's, from `/v1/me`'s
+  `days`. Activity notices never tell of this token's own rows or the
+  daily email.
 - A note's files are posted and its place named, and both saved, before
   the note is sent (the Outbox's `prepare`), so a resend is the same
   request. The token never goes to the storage form.
