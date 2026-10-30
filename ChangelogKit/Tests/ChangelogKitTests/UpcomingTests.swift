@@ -150,6 +150,17 @@ import Testing
     keys.reset()
     #expect(keys.key(for: .adding(fields), make: make) == "k3")
   }
+
+  /// Held past the editor, the key says a save may have landed unheard, so
+  /// Upcoming reads the list again when the editor closes.
+  @Test func aKeyStillHeldIsASaveNotKnownToHaveLanded() {
+    var keys = RequestKey<UpcomingBatch>()
+    #expect(!keys.pending)
+    _ = keys.key(for: .adding(Self.entry.fields))
+    #expect(keys.pending)
+    keys.reset()
+    #expect(!keys.pending)
+  }
 }
 
 @Suite struct UpcomingDraftTests {

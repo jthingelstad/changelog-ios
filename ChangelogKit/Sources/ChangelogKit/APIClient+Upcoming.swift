@@ -42,6 +42,10 @@ public struct RequestKey<Request: Equatable & Sendable>: Sendable {
     return current
   }
 
+  /// A request was tried and isn't known to have landed or been refused: its
+  /// answer may have been lost.
+  public var pending: Bool { !current.isEmpty }
+
   /// Once a request has landed, the next one is new even if it looks alike.
   public mutating func reset() {
     request = nil
