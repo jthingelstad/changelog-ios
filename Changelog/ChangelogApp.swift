@@ -17,6 +17,9 @@ struct ChangelogApp: App {
         .task { await model.start() }
         .onChange(of: scenePhase) { _, phase in
           if phase == .active, model.phase == .signedIn { Task { await model.refresh() } }
+          // Off the screen, iOS may end the app before it is back: the
+          // draft is kept now, not a moment later.
+          if phase != .active { model.keepDraft() }
         }
         // A widget's link: Log, ready to write.
         .onOpenURL { url in

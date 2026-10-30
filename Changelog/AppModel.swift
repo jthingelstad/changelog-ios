@@ -39,22 +39,36 @@ final class AppModel {
   /// until then.
   private(set) var activityNotices: Set<ActivityNoticeKind>
   private(set) var activityProblem: String?
-  var draft = ""
+  /// The draft, with its files and place below, is kept on this phone as
+  /// it changes (`DraftStore`), so a relaunch finds it.
+  var draft = "" {
+    didSet { if draft != oldValue { keepDraftSoon() } }
+  }
   /// Files on the draft, their bytes already beside the queue.
-  private(set) var draftFiles: [QueuedFile] = []
+  private(set) var draftFiles: [QueuedFile] = [] {
+    didSet { keepDraftSoon() }
+  }
   /// Small pictures of the draft's photos, for the composer only.
   private(set) var thumbnails: [UUID: CGImage] = [:]
 
   /// Where the draft was written: the phone's spot, and the place Release
   /// Notes named for it (nil offline, named when the note is sent).
-  private(set) var spot: Spot?
-  private(set) var here: Here?
+  private(set) var spot: Spot? {
+    didSet { keepDraftSoon() }
+  }
+  private(set) var here: Here? {
+    didSet { keepDraftSoon() }
+  }
   /// A business nearby the owner picked, if any.
-  private(set) var venue: String?
+  private(set) var venue: String? {
+    didSet { keepDraftSoon() }
+  }
   private(set) var locating = false
   private var spotAt: Date?
   /// The owner left the place off this draft.
-  private var placeOff = false
+  private var placeOff = false {
+    didSet { keepDraftSoon() }
+  }
   /// The spot a Here under way is naming, and the notes committed meanwhile,
   /// which that Here names when it answers rather than a second lookup.
   private var naming: Spot?
@@ -86,14 +100,23 @@ final class AppModel {
 
   private let tokens: TokenStore
   private let outbox: Outbox
+  private let drafts: DraftStore
   private let defaults: UserDefaults
   private var token: String?
+  /// Nothing is kept until the draft kept before is back, so a launch (a
+  /// background refresh among them) can't write an empty box over it.
+  @ObservationIgnored private var draftRestored = false
+  /// Commits putting the draft in the queue: until it is there, the draft
+  /// kept stays as it was.
+  @ObservationIgnored private var committing = 0
+  @ObservationIgnored private var keeping: Task<Void, Never>?
 
   init(tokens: TokenStore = KeychainTokenStore(accessGroup: AppGroup.id), defaults: UserDefaults = .standard,
        outboxFile: URL? = AppModel.outboxFile) {
     self.tokens = tokens
     self.defaults = defaults
     self.outbox = Outbox(file: outboxFile)
+    self.drafts = DraftStore(file: outboxFile?.deletingLastPathComponent().appending(path: "draft.json"))
     self.sticky = defaults.string(forKey: "sticky")
     self.remindersOn = defaults.bool(forKey: "reminders")
     self.promptOn = defaults.bool(forKey: "prompt")
@@ -134,10 +157,12 @@ final class AppModel {
     // to the App Group, for the share extension.
     (tokens as? KeychainTokenStore)?.share()
     token = tokens.read()
-    // Shares the extension couldn't send come in first, so the sweep after
-    // keeps their files.
+    // The draft a run that ended left (iOS ends an app it isn't showing),
+    // and shares the extension couldn't send, come in first, so the sweep
+    // after keeps their files.
+    restoreDraft()
     await adoptShares()
-    // A draft's files left by a run that ended; the queue's own stay.
+    // Files nothing holds, left by a run that ended; the queue's own stay.
     await outbox.sweep(keeping: Set(draftFiles.map(\.id)))
     #if DEBUG
     // `simctl launch` with SIMCTL_CHILD_CHANGELOG_DEV_TOKEN (or a UI test)
@@ -522,6 +547,7 @@ final class AppModel {
     var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
     let files = draftFiles
     guard !text.isEmpty || !files.isEmpty else { return }
+    committing += 1
     if let sticky { text = Hashtags.adding(sticky, to: text) }
     let placed = (spot: placeOff ? nil : spot, here: here, venue: venue, spotAt: spotAt)
     var place = placed.here?.place
@@ -548,9 +574,14 @@ final class AppModel {
         venue = placed.venue
         spotAt = placed.spotAt
       }
+      committing -= 1
+      keepDraft()
       problem = Self.notKept
       return
     }
+    // In the queue: what is kept now is what's left in the box.
+    committing -= 1
+    keepDraft()
     for file in files { thumbnails[file.id] = nil }
     waiting = await outbox.waiting
     // Here is still naming this spot: that answer names the note, then sends.
@@ -638,6 +669,54 @@ final class AppModel {
   }
 
   func clearToast() { toast = nil }
+
+  // MARK: Keeping the draft
+
+  /// Keeps the draft a moment after it last changed, so typing doesn't
+  /// write on every letter.
+  private func keepDraftSoon() {
+    guard draftRestored, committing == 0 else { return }
+    keeping?.cancel()
+    keeping = Task {
+      try? await Task.sleep(for: .seconds(1))
+      if !Task.isCancelled { keepDraft() }
+    }
+  }
+
+  /// Keeps the draft now: as the app leaves the screen, and once a commit
+  /// has put it in the queue. Never logged; a draft the phone can't write
+  /// is still in the box.
+  func keepDraft() {
+    keeping?.cancel()
+    guard draftRestored, committing == 0 else { return }
+    drafts.save(Draft(text: draft, files: draftFiles, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff))
+  }
+
+  /// Puts back the draft a run that ended left, and its photos' pictures.
+  private func restoreDraft() {
+    guard !draftRestored else { return }
+    defer { draftRestored = true }
+    guard let kept = drafts.load(filesIn: outbox) else { return }
+    draft = kept.text
+    draftFiles = kept.files
+    spot = kept.spot
+    here = kept.here
+    venue = kept.venue
+    spotAt = kept.spotAt
+    placeOff = kept.placeOff
+    let outbox = self.outbox
+    for file in kept.files where file.isPhoto {
+      Task {
+        let thumbnail = await Task.detached {
+          outbox.url(for: file).flatMap { try? Data(contentsOf: $0) }.flatMap { MediaType.thumbnail($0) }
+        }.value
+        if draftFiles.contains(where: { $0.id == file.id }) { thumbnails[file.id] = thumbnail }
+      }
+    }
+    // Ended before the phone was found: with "Add where I am" on, it is
+    // found now, as for any draft begun.
+    if spot == nil, token != nil { Task { await draftStarted() } }
+  }
 
   // MARK: Files
 
