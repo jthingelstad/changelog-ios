@@ -21,6 +21,9 @@ public struct APIError: Error, Sendable, Equatable {
     status == 0 || status == 429 || status >= 500 || code == "busy"
   }
 
+  /// Release Notes did what was asked; only its answer couldn't be read.
+  public var done: Bool { (200..<300).contains(status) }
+
   static func network(_ error: Error) -> APIError {
     APIError(status: 0, code: "network", message: error.localizedDescription)
   }
@@ -166,12 +169,19 @@ public struct APIClient: Sendable {
 
   static func error(_ http: HTTPURLResponse, _ data: Data) -> APIError {
     let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+    var error: APIError
     if let body = try? decoder.decode(ErrorBody.self, from: data) {
-      return APIError(status: http.statusCode, code: body.error.code, message: body.error.message,
-                      field: body.error.field, revision: body.error.revision, retryAfter: retryAfter)
+      error = APIError(status: http.statusCode, code: body.error.code, message: body.error.message,
+                       field: body.error.field, revision: body.error.revision, retryAfter: retryAfter)
+    } else {
+      error = APIError(status: http.statusCode, code: http.statusCode >= 500 ? "unavailable" : "http_\(http.statusCode)",
+                       message: HTTPURLResponse.localizedString(forStatusCode: http.statusCode), retryAfter: retryAfter)
     }
-    let message = HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-    return APIError(status: http.statusCode, code: http.statusCode >= 500 ? "unavailable" : "http_\(http.statusCode)",
-                    message: message, retryAfter: retryAfter)
+    // Busy or failing, Release Notes' sentence is for whoever writes the
+    // client ("with the same Idempotency-Key"): the app says it its own way.
+    if error.status >= 500 || error.code == "busy" { error.message = busy }
+    return error
   }
+
+  public static let busy = "Release Notes is busy just now. Try again in a moment."
 }

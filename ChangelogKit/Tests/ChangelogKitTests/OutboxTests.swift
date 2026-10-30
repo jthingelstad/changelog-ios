@@ -194,4 +194,134 @@ private actor Script {
     await #expect(throws: OutboxNotKept.self) { try await outbox.enqueue(text: "one") }
     #expect(await outbox.waiting.isEmpty)
   }
+
+  /// A 2xx this build can't read was still done: the note is sent, never set
+  /// aside for a Fix that would file it a second time.
+  @Test func aDoneAnswerItCantReadIsSent() async throws {
+    let outbox = Outbox(file: nil)
+    try await outbox.enqueue(text: "one")
+    try await outbox.enqueue(text: "two")
+    let unread = APIError(status: 201, code: "unreadable", message: "Release Notes answered in a way this version doesn't understand.")
+    let script = Script([.failure(unread), .success(.filed(receipt("b")))])
+    let report = await outbox.flush { item throws(APIError) in try await script.next(item) }
+    #expect(report.sent.map(\.result) == [.done, .filed(receipt("b"))])
+    #expect(report.refused.isEmpty && report.stopped == nil)
+    #expect(await outbox.waiting.isEmpty)
+  }
+
+  /// Before the note itself is asked for (a file's form, say), a 2xx it
+  /// can't read is no sign of a note.
+  @Test func aDoneAnswerWhilePreparingIsNoNote() async throws {
+    let outbox = Outbox(file: nil)
+    let photo = QueuedFile(type: "image/jpeg", name: "lake.jpg", size: 5)
+    try await outbox.enqueue(.post(NotePost(text: "The lake", writtenAt: "2026-10-29T07:45:00-05:00", files: [photo])))
+    let unread = APIError(status: 201, code: "unreadable", message: "Release Notes answered in a way this version doesn't understand.")
+    let script = Script([])
+    let prepare: Outbox.Preparer = { _, _ throws(APIError) in throw unread }
+    let report = await outbox.flush(prepare: prepare) { item throws(APIError) in try await script.next(item) }
+    #expect(report.sent.isEmpty && report.refused.count == 1)
+    #expect(await script.sent.isEmpty)
+  }
+
+  /// Log says why a note waits: a day's limit, Release Notes busy, or (the
+  /// view's own words) no connection.
+  @Test func eachWaitSaysWhy() async throws {
+    let outbox = Outbox(file: nil)
+    try await outbox.enqueue(text: "one")
+    try await outbox.enqueue(text: "two")
+    #expect(await outbox.waiting.map(\.status) == ["Sending…", "Sending…"])
+    let limited = APIError(status: 429, code: "rate_limited", message: "That's today's 100 notes through tokens.", retryAfter: 3600)
+    let busy = APIError(status: 503, code: "unavailable", message: APIClient.busy)
+    let offline = APIError(status: 0, code: "network", message: "offline")
+    let script = Script([.failure(limited), .failure(busy), .failure(offline)])
+    let send: Outbox.Sender = { item throws(APIError) in try await script.next(item) }
+    // The note behind, never tried, waits for the same reason.
+    _ = await outbox.flush(send)
+    #expect(await outbox.waiting.map(\.status) == ["Waiting for today’s limit to reset", "Waiting for today’s limit to reset"])
+    _ = await outbox.flush(send)
+    #expect(await outbox.waiting.map(\.status) == ["Waiting for Release Notes", "Waiting for Release Notes"])
+    _ = await outbox.flush(send)
+    #expect(await outbox.waiting.map(\.status) == ["Waiting for a connection", "Waiting for a connection"])
+    #expect(await script.sent.map(\.text) == ["one", "one", "one"])
+  }
+
+  /// The day's uploads used holds back only notes with files to post. The
+  /// words-only note, the edit (of a note already filed) and the pins behind
+  /// go, in order, and the next note with files doesn't ask for a form.
+  @Test func aDaysUploadsUsedHoldsOnlyNotesWithFiles() async throws {
+    let outbox = Outbox(file: nil)
+    let photo = QueuedFile(type: "image/jpeg", name: "lake.jpg", size: 5)
+    let memo = QueuedFile(type: "audio/mp4", name: "Voice memo.m4a", size: 5)
+    let first = try await outbox.enqueue(.post(NotePost(text: "The lake", writtenAt: "2026-10-29T07:45:00-05:00", files: [photo])))
+    try await outbox.enqueue(text: "words")
+    try await outbox.enqueue(.edit(date: "2026-10-28", id: "t-1", text: "better", revision: "r-1"))
+    let later = try await outbox.enqueue(.post(NotePost(text: "Later", writtenAt: "2026-10-29T08:00:00-05:00", files: [memo])))
+    try await outbox.enqueue(.pins(["running"]))
+    let limited = APIError(status: 429, code: "rate_limited", message: "That's today's 200 files or 2 GB of uploads for this account.",
+                           retryAfter: 3600)
+    let ref = NoteRef(id: "t-1", date: "2026-10-28", version: "4.5.136", revision: "r-2", token: "Changelog")
+    let tags = Tags(pinned: ["running"], recent: [], windowDays: 30)
+    let script = Script([.success(.filed(receipt("b"))), .success(.edited(ref)), .success(.pinned(tags))])
+    let forms = Script([.failure(limited)])
+    let prepare: Outbox.Preparer = { item, _ throws(APIError) in
+      _ = try await forms.next(item)
+      return item
+    }
+    let report = await outbox.flush(prepare: prepare) { item throws(APIError) in try await script.next(item) }
+    #expect(await forms.sent.map(\.id) == [first.id])
+    #expect(await script.sent.map(\.text) == ["words", "better", nil])
+    #expect(report.stopped == limited)
+    let waiting = await outbox.waiting
+    #expect(waiting.map(\.id) == [first.id, later.id])
+    #expect(waiting.map(\.status) == ["Waiting for today’s file limit to reset", "Waiting for today’s file limit to reset"])
+  }
+
+  private func folder() -> URL {
+    FileManager.default.temporaryDirectory.appending(path: "changelog queue " + UUID().uuidString, directoryHint: .isDirectory)
+  }
+
+  /// A queue this build can't read (a newer build's, or damaged) is moved
+  /// aside as it was, never written over, and the files it names stay.
+  @Test func aQueueItCantReadIsSetAsideNotWrittenOver() async throws {
+    let dir = folder()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let file = dir.appending(path: "outbox.json")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let photo = QueuedFile(type: "image/jpeg", name: "lake.jpg", size: 5)
+    let newer = """
+      [{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","queuedAt":783000000,"attempts":0,
+        "operation":{"video":{"text":"one","files":[{"id":"\(photo.id.uuidString)","type":"image/jpeg","name":"lake.jpg","size":5}]}}}]
+      """
+    try Data(newer.utf8).write(to: file)
+    let outbox = Outbox(file: file)
+    try outbox.keep(Data("BYTES".utf8), as: photo)
+    #expect(await outbox.waiting.isEmpty)
+    try await outbox.enqueue(text: "two")
+    await outbox.sweep()
+    let aside = try #require(SetAside.files(of: file).first)
+    #expect(try Data(contentsOf: aside) == Data(newer.utf8))
+    #expect(outbox.url(for: photo).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } == true)
+    // Read again by this build, it stays aside, as it was.
+    let again = Outbox(file: file)
+    #expect(await again.waiting.map(\.text) == ["two"])
+    #expect(SetAside.files(of: file) == [aside])
+  }
+
+  /// A queue set aside comes back once it reads, ahead of what was queued
+  /// since, under its own keys; its copy aside goes.
+  @Test func aQueueSetAsideComesBackOnceItReads() async throws {
+    let dir = folder()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let file = dir.appending(path: "outbox.json")
+    let old = try await Outbox(file: file).enqueue(text: "typed offline")
+    #expect(SetAside.move(file))
+    // Queued since, by a run that couldn't read it.
+    let since = dir.appending(path: "since.json")
+    let new = try await Outbox(file: since).enqueue(text: "typed later")
+    try FileManager.default.moveItem(at: since, to: file)
+    let outbox = Outbox(file: file)
+    #expect(await outbox.waiting.map(\.id) == [old.id, new.id])
+    #expect(SetAside.files(of: file).isEmpty)
+    #expect(await Outbox(file: file).waiting.map(\.id) == [old.id, new.id])
+  }
 }

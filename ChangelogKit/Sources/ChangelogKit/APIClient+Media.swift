@@ -16,12 +16,20 @@ public extension APIClient {
     do {
       try Multipart.write(fields: form.fields, file: file, name: name, type: form.type, boundary: boundary, to: body)
     } catch {
-      throw APIError(status: 400, code: "file_missing", message: Self.fileMissing)
+      // A file gone from the phone is gone for good. One still here whose
+      // upload can't be written (the phone full, or locked since it started)
+      // waits, with the notes after it.
+      guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else {
+        throw APIError(status: 400, code: "file_missing", message: Self.fileMissing)
+      }
+      throw APIError(status: 507, code: "no_room", message: Self.noRoom)
     }
     try await send(upload: body, boundary: boundary, to: form)
   }
 
   static let fileMissing = "A file for this note is no longer on this phone. Discard it, or fix it to send the words alone."
+  static let noRoom = "This phone couldn't get a file ready to send. Free up some space and it will try again."
+  static let uploadRefused = "File storage turned away a file for this note. Fix it to try again, or discard it."
 
   /// The form goes to file storage, not to Release Notes, so it carries no
   /// token and no cookie.
@@ -48,10 +56,15 @@ public extension APIClient {
       throw APIError(status: 0, code: "unreadable", message: "No answer from file storage.")
     }
     guard (200..<300).contains(http.statusCode) else {
-      // A storage refusal (the form expired, the size was wrong) is worth
-      // one more try with a new form; its body is storage's, never shown.
-      throw APIError(status: http.statusCode >= 500 ? http.statusCode : 0, code: "upload_failed",
-                     message: "A file didn't upload. It will be tried again.")
+      // Its body is storage's, never shown, and so is its status: a 401 from
+      // storage says nothing of the token. Busy or failing, it is tried
+      // again; a refusal (the form expired, the size was wrong) is the
+      // note's, once a new form has been tried too (`prepare`), so it never
+      // holds back the notes after it.
+      if http.statusCode >= 500 || http.statusCode == 429 {
+        throw APIError(status: 503, code: "upload_failed", message: "A file didn't upload. It will be tried again.")
+      }
+      throw APIError(status: 400, code: "upload_refused", message: uploadRefused)
     }
   }
 

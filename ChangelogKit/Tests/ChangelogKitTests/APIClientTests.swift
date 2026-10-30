@@ -139,6 +139,34 @@ func stubbedClient(_ host: String) -> APIClient {
     }
   }
 
+  /// Busy or failing, the server's sentence is for developers: the app says
+  /// it in its own words, and keeps the code.
+  @Test func busyIsSaidInTheAppsWords() async throws {
+    let developers = #"{"error":{"code":"%@","message":"Try again shortly with the same Idempotency-Key."}}"#
+    StubProtocol.set("queue-unavailable.test", .init(status: 503, body: developers.replacingOccurrences(of: "%@", with: "unavailable")))
+    StubProtocol.set("queue-busy.test", .init(status: 409, body: developers.replacingOccurrences(of: "%@", with: "busy")))
+    for (host, code) in [("queue-unavailable.test", "unavailable"), ("queue-busy.test", "busy")] {
+      do {
+        _ = try await stubbedClient(host).createNote(NoteRequest(text: "x"), idempotencyKey: "k")
+        Issue.record("expected an error")
+      } catch {
+        #expect(error.code == code && error.retryable)
+        #expect(error.message == APIClient.busy)
+      }
+    }
+  }
+
+  /// A 2xx this build can't read is done, not refused and not retried.
+  @Test func aDoneAnswerItCantReadIsDone() async throws {
+    StubProtocol.set("queue-unread.test", .init(status: 201, body: #"{"receipt":{"shape":"from a newer server"}}"#))
+    do {
+      _ = try await stubbedClient("queue-unread.test").createNote(NoteRequest(text: "x"), idempotencyKey: "k")
+      Issue.record("expected an error")
+    } catch {
+      #expect(error.done && !error.retryable && !error.signedOut)
+    }
+  }
+
   @Test func deleteTakesAnEmptyAnswer() async throws {
     StubProtocol.set("delete.test", .init(status: 204, body: ""))
     try await stubbedClient("delete.test").deleteNote(date: "2026-10-29", id: "t-1", idempotencyKey: "k")

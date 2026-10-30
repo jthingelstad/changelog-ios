@@ -40,10 +40,12 @@ public struct ShareInbox: Sendable {
   /// sheet swiped away), and its files with it.
   public static let draftLife: TimeInterval = 24 * 60 * 60
 
-  /// A new share's queue, while the extension sends it.
+  /// A new share's queue, while the extension sends it. Should the app take
+  /// it in while the extension is suspended, the queue writes and sends no
+  /// more once the extension wakes.
   public func open() -> (outbox: Outbox, file: URL) {
     let file = folder.appending(path: UUID().uuidString.lowercased() + ".sending.json")
-    return (Outbox(file: file, files: files), file)
+    return (Outbox(file: file, files: files, claimable: true), file)
   }
 
   /// Marks `files` as an open draft's, so the sweep leaves them for as
@@ -83,17 +85,21 @@ public struct ShareInbox: Sendable {
     let manager = FileManager.default
     guard let names = try? manager.contentsOfDirectory(atPath: folder.path(percentEncoded: false)) else { return 0 }
     var adopted = 0
-    for name in names.sorted() where name.hasSuffix(".json") {
+    for name in names.sorted() where name.hasSuffix(".json") || name.hasSuffix(SetAside.suffix) {
       let file = folder.appending(path: name)
       if name.hasSuffix(".sending.json") {
         guard Self.changed(file, or: now) < now.addingTimeInterval(-Self.abandoned) else { continue }
       }
       guard let data = try? Data(contentsOf: file), let items = try? JSONDecoder().decode([OutboxItem].self, from: data) else {
-        try? manager.removeItem(at: file)
+        // Never removed: set aside, with its files, for a build that reads it.
+        if !name.hasSuffix(SetAside.suffix) { SetAside.move(file) }
         continue
       }
       var kept = true
       for item in items {
+        // Taken in before: its extension, suspended mid-send, closed it
+        // again on waking. It went, or waits, under the app's own copy.
+        guard !(await outbox.knows(item.id)) else { continue }
         let moved = move(item.files, to: outbox)
         do { try await outbox.adopt(item) } catch {
           // The phone is full: the share stays here for the next try.
@@ -131,15 +137,21 @@ public struct ShareInbox: Sendable {
   }
 
   /// Removes shared files no share or open draft holds, once they're old
-  /// enough that no extension can still be writing them.
+  /// enough that no extension can still be writing them. A share set aside
+  /// keeps the files it names, and all of them should it not read at all.
   private func sweep(now: Date) {
     let manager = FileManager.default
     guard let names = try? manager.contentsOfDirectory(atPath: files.path(percentEncoded: false)) else { return }
     var held = Set<String>()
+    var aside: [URL] = []
     for name in (try? manager.contentsOfDirectory(atPath: folder.path(percentEncoded: false))) ?? [] {
       let file = folder.appending(path: name)
       if name.hasSuffix(".draft"), Self.changed(file, or: now) < now.addingTimeInterval(-Self.draftLife) {
         try? manager.removeItem(at: file)
+        continue
+      }
+      if name.hasSuffix(SetAside.suffix) {
+        aside.append(file)
         continue
       }
       guard let data = try? Data(contentsOf: file) else { continue }
@@ -149,7 +161,9 @@ public struct ShareInbox: Sendable {
         held.formUnion(drafted.map(\.fileName))
       }
     }
+    guard let unread = SetAside.contents(of: aside) else { return }
     for name in names where !held.contains(name) {
+      if let id = UUID(uuidString: String(name.prefix(36))), SetAside.names(id, in: unread) { continue }
       let file = files.appending(path: name)
       if Self.changed(file, or: now) < now.addingTimeInterval(-Self.abandoned) { try? manager.removeItem(at: file) }
     }
