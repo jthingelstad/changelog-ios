@@ -329,6 +329,8 @@ final class ChangelogUITests: XCTestCase {
     let held = row.staticTexts["held"]
     expect(held, "the other account's note is held", in: app, timeout: 20)
     XCTAssertEqual(held.label, "Written while signed in to another account.")
+    // Log opens with the keyboard up, over the waiting rows.
+    hideKeyboard(app)
     // Nothing held goes by itself.
     try await Task.sleep(for: .seconds(3))
     let now = Set(try await filed().map(\.id))
