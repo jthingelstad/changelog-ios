@@ -225,6 +225,27 @@ private actor Script {
 
   /// Log says why a note waits: a day's limit, Release Notes busy, or no
   /// connection, for the note a run stopped at and those behind it.
+  /// A moment from a day Release Notes won't take (before the birthday,
+  /// which the app never learns) files to the day it was written, once,
+  /// under a new key. A note with no day of its own is refused as before.
+  @Test func aDayOutOfRangeFilesToTheDayItWasWritten() async throws {
+    let outbox = Outbox(file: nil)
+    let dated = try await outbox.enqueue(.note(text: "An old one", date: "1900-01-01", writtenAt: "2026-10-29T07:45:00-05:00"))
+    try await outbox.enqueue(.post(NotePost(text: "With a place", date: "1900-01-01", writtenAt: "2026-10-29T07:46:00-05:00")))
+    try await outbox.enqueue(.note(text: "Undated", date: nil, writtenAt: "2026-10-29T07:47:00-05:00"))
+    let range = APIError(status: 400, code: "date_out_of_range", message: "Choose a day from your birthday through today.", field: "date")
+    let script = Script([.failure(range), .success(.filed(receipt("a"))), .failure(range), .success(.filed(receipt("b"))),
+                         .failure(range)])
+    let report = await outbox.flush { item throws(APIError) in try await script.next(item) }
+    let sent = await script.sent
+    #expect(sent.map(\.text) == ["An old one", "An old one", "With a place", "With a place", "Undated"])
+    #expect(sent[0].idempotencyKey == dated.idempotencyKey && sent[1].idempotencyKey != dated.idempotencyKey)
+    #expect(sent[1].operation == .note(text: "An old one", date: nil, writtenAt: "2026-10-29T07:45:00-05:00"))
+    if case .post(let post) = sent[3].operation { #expect(post.date == nil) } else { Issue.record("not a post") }
+    #expect(report.filed.map(\.note.id) == ["a", "b"])
+    #expect(report.refused.map(\.text) == ["Undated"])
+  }
+
   @Test func eachWaitSaysWhy() async throws {
     let outbox = Outbox(file: nil)
     try await outbox.enqueue(text: "one")

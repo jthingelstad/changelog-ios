@@ -14,6 +14,22 @@ public enum OutboxOperation: Codable, Sendable, Equatable {
   case post(NotePost)
 }
 
+extension OutboxOperation {
+  /// A new note filed to a day of its own, made to file to the day it was
+  /// written; nil for anything else.
+  var undated: OutboxOperation? {
+    switch self {
+    case .note(let text, .some, let writtenAt):
+      return .note(text: text, date: nil, writtenAt: writtenAt)
+    case .post(var post) where post.date != nil:
+      post.date = nil
+      return .post(post)
+    default:
+      return nil
+    }
+  }
+}
+
 /// A note with files or a place, as queued. The files' bytes wait in the
 /// Outbox's folder; each `upload` and the `place` are filled in, and saved,
 /// before the note is sent, so every resend is the same request.
@@ -388,6 +404,16 @@ public actor Outbox {
           post.reuploads += 1
           for f in post.files.indices { post.files[f].upload = nil }
           items[i].operation = .post(post)
+          items[i].id = UUID()
+          try? save()
+          continue
+        }
+        // A day Release Notes won't take (a moment from before the
+        // birthday, which the app never learns) files to the day the words
+        // were written instead, once, under a new key for the same reason.
+        if error.code == "date_out_of_range", let i = items.firstIndex(where: { $0.id == item.id }),
+           let undated = items[i].operation.undated {
+          items[i].operation = undated
           items[i].id = UUID()
           try? save()
           continue

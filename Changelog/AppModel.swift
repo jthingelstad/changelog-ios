@@ -72,12 +72,36 @@ final class AppModel {
   private(set) var venue: String? {
     didSet { keepDraftSoon() }
   }
-  private(set) var locating = false
+  /// Heres under way: the phone being found and named, or a moment's place
+  /// being named.
+  private var finding = 0
+  var locating: Bool { finding > 0 }
+  /// Moves on each time a place is asked for, so a fix of the phone that
+  /// comes after a moment's place was picked doesn't replace it.
+  private var placeAsk = 0
   private var spotAt: Date?
   /// The owner left the place off this draft.
   private var placeOff = false {
     didSet { keepDraftSoon() }
   }
+  /// The place is a moment's, not where the phone is: "Add where I am"
+  /// never moves it, and it goes with this note alone.
+  private var placeFromMoment = false {
+    didSet { keepDraftSoon() }
+  }
+  /// The day a moment files the draft to; nil for today.
+  private(set) var day: String? {
+    didSet { keepDraftSoon() }
+  }
+  /// What the last moment picked left out (a video), for the person, never
+  /// the note.
+  private(set) var momentNotice: String?
+  /// A moment going into the draft: its photos copied, its place named.
+  private(set) var addingMoment = false
+  /// The versions of days besides today and those ahead that the app has
+  /// seen, from activity rows and receipts, in memory only. Never worked
+  /// out here.
+  private var versions: [String: String] = [:]
   /// The spot a Here under way is naming, and the notes committed meanwhile,
   /// which that Here names when it answers rather than a second lookup.
   private var naming: Spot?
@@ -268,6 +292,7 @@ final class AppModel {
     tags = nil
     today = []
     todayWords = [:]
+    versions = [:]
     todayGeneration += 1
     phase = .signedOut
     // The next sign-in asks again before any reminder comes.
@@ -315,6 +340,7 @@ final class AppModel {
     todayGeneration += 1
     let generation = todayGeneration
     guard let page = try? await client.activity(limit: 100), generation == todayGeneration else { return }
+    for item in page.items { if let day = item.day, let version = item.version { versions[day] = version } }
     today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
     let mine = today.filter(isMine).compactMap { item in
       item.day.flatMap { day in item.note.map { TodayWords.Note(date: day, id: $0) } }
@@ -606,22 +632,29 @@ final class AppModel {
     // after the app ended mid-commit can tell whether that note reached
     // the queue.
     let handing = Draft(text: typed, files: files, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff,
-                        handover: Draft.Handover(text: text, writtenAt: stamp))
-    let placed = (spot: placeOff ? nil : spot, here: here, venue: venue, spotAt: spotAt)
+                        placeFromMoment: placeFromMoment, day: day, handover: Draft.Handover(text: text, writtenAt: stamp))
+    let placed = (spot: placeOff ? nil : spot, here: here, venue: venue, spotAt: spotAt, fromMoment: placeFromMoment)
     var place = placed.here?.place
     place?.venue = placed.venue
+    // A moment's day, while it is still before today; without `/v1/me` yet,
+    // as it was when the moment was picked.
+    let filedDay = day
+    let date = filedDay.flatMap { day in me.map { day < $0.today ? day : nil } ?? day }
     draft = ""
     draftFiles = []
+    day = nil
+    momentNotice = nil
     // With "Add where I am" on, the next note within ten minutes takes the
-    // same place; a Here asked for once goes with this note alone.
-    if hereByDefault { placeOff = false } else { clearPlace(off: false) }
+    // same place; a Here asked for once, or a moment's place, goes with
+    // this note alone.
+    if hereByDefault && !placed.fromMoment { placeOff = false } else { clearPlace(off: false) }
     if draftRestored { drafts.save(handing) }
     let item: OutboxItem
     do {
       if files.isEmpty && placed.spot == nil {
-        item = try await outbox.enqueue(.note(text: text, date: nil, writtenAt: stamp))
+        item = try await outbox.enqueue(.note(text: text, date: date, writtenAt: stamp))
       } else {
-        item = try await outbox.enqueue(.post(NotePost(text: text, writtenAt: stamp, files: files,
+        item = try await outbox.enqueue(.post(NotePost(text: text, date: date, writtenAt: stamp, files: files,
                                                        spot: placed.spot, place: placed.spot == nil ? nil : place)))
       }
     } catch {
@@ -632,7 +665,9 @@ final class AppModel {
         here = placed.here
         venue = placed.venue
         spotAt = placed.spotAt
+        placeFromMoment = placed.fromMoment
       }
+      if day == nil { day = filedDay }
       committing -= 1
       keepDraft()
       problem = Self.notKept
@@ -715,6 +750,7 @@ final class AppModel {
     for sent in report.sent {
       if case .pinned(let answer) = sent.result { tags = answer }
     }
+    for receipt in report.filed { versions[receipt.note.date] = receipt.note.version }
     // Filed, in an answer this build couldn't read: no version to show, so
     // `/v1/me` says whether today has a note now.
     let unread = report.sent.contains { $0.item.isNote && $0.result == .done }
@@ -795,7 +831,8 @@ final class AppModel {
   func keepDraft() {
     keeping?.cancel()
     guard draftRestored, committing == 0 else { return }
-    drafts.save(Draft(text: draft, files: draftFiles, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff))
+    drafts.save(Draft(text: draft, files: draftFiles, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff,
+                      placeFromMoment: placeFromMoment, day: day))
   }
 
   /// Puts back the draft a run that ended left, and its photos' pictures.
@@ -810,6 +847,8 @@ final class AppModel {
     venue = kept.venue
     spotAt = kept.spotAt
     placeOff = kept.placeOff
+    placeFromMoment = kept.placeFromMoment
+    day = kept.day
     let outbox = self.outbox
     for file in kept.files where file.isPhoto {
       Task {
@@ -884,14 +923,16 @@ final class AppModel {
   /// What the draft's place will be named, if it has one.
   var placeLabel: String? {
     guard !placeOff, spot != nil else { return nil }
-    return venue ?? here?.place.label ?? "Here"
+    return venue ?? here?.place.label ?? (placeFromMoment ? "The moment's place" : "Here")
   }
 
   /// A new draft: with "Add where I am" on, find the phone now, while the
   /// words are typed, so the note never waits for it. A spot more than ten
   /// minutes old is found again.
   func draftStarted() async {
-    guard hereByDefault, !placeOff, !locating else { return }
+    // A moment's place, or a moment from another day, isn't where the
+    // phone is now.
+    guard hereByDefault, !placeOff, !locating, !placeFromMoment, day == nil else { return }
     if let spotAt, spotAt > .now.addingTimeInterval(-600) { return }
     await locate()
   }
@@ -900,8 +941,10 @@ final class AppModel {
   /// businesses nearby. Offline, the spot is kept and named when it sends.
   func locate() async {
     guard !locating else { return }
-    locating = true
-    defer { locating = false }
+    finding += 1
+    defer { finding -= 1 }
+    placeAsk += 1
+    let ask = placeAsk
     placeOff = false
     switch await Locator.spot() {
     case .denied:
@@ -909,36 +952,101 @@ final class AppModel {
     case .unavailable:
       problem = "This phone couldn't find where it is just now."
     case .spot(let found):
+      // A moment's place, picked while the phone was found, stays.
+      guard ask == placeAsk else { return }
+      placeFromMoment = false
+      await name(found)
+    }
+  }
+
+  /// Has Release Notes name a spot, the phone's or a moment's, with the
+  /// businesses nearby: one Here each time it is asked. Offline, the spot
+  /// is kept and named when the note is sent.
+  private func name(_ found: Spot) async {
+    spot = found
+    spotAt = .now
+    here = nil
+    venue = nil
+    guard let client else { return }
+    naming = found
+    let answer: Result<Here, APIError>
+    do { answer = .success(try await client.here(found)) } catch { answer = .failure(error) }
+    naming = nil
+    let queued = waitingOnName
+    waitingOnName = []
+    switch answer {
+    case .success(let named):
+      // The owner may have left it off, or committed, while it was named.
+      if spot == found { here = named }
+      for id in queued { await outbox.name(id, spot: found, place: named.place) }
+    case .failure(let error):
+      if error.signedOut { return handle(error, from: client) }
+      // Offline: the note names its spot as it sends.
+      guard !error.retryable || error.status == 429 else { break }
+      // Nowhere a city can be named (at sea), or the day's spots used.
+      if spot == found { clearPlace(off: true) }
+      problem = error.message
+      for id in queued { await outbox.name(id, spot: found, place: nil) }
+    }
+    if !queued.isEmpty {
+      waiting = await outbox.waiting
+      await send()
+    }
+  }
+
+  // MARK: Moments
+
+  /// Puts a moment picked in Moments in the draft, and sends nothing: its
+  /// photos as the photo picker's are, its lines in the box, its place
+  /// named by Here as the location button's is (once a pick), and its day.
+  /// What it left out (a video) is said beside the draft, never in it.
+  func addMoment(_ moment: Moment) async {
+    guard !addingMoment else { return }
+    addingMoment = true
+    defer { addingMoment = false }
+    let zone = me.flatMap { TimeZone(identifier: $0.tz) } ?? .current
+    guard let today = me?.today ?? Moment.day(of: .now, in: zone) else { return }
+    let made = moment.draft(today: today, timeZone: zone, room: roomForFiles, canAddFiles: canAddFiles)
+    momentNotice = made.notice
+    guard !made.isEmpty else { return }
+    day = made.day
+    // The place before the photos, so "Add where I am" doesn't find the
+    // phone as the first photo starts the draft.
+    if let found = made.spot {
+      placeAsk += 1
+      placeOff = false
+      placeFromMoment = true
       spot = found
       spotAt = .now
       here = nil
       venue = nil
-      guard let client else { return }
-      naming = found
-      let answer: Result<Here, APIError>
-      do { answer = .success(try await client.here(found)) } catch { answer = .failure(error) }
-      naming = nil
-      let queued = waitingOnName
-      waitingOnName = []
-      switch answer {
-      case .success(let named):
-        // The owner may have left it off, or committed, while it was named.
-        if spot == found { here = named }
-        for id in queued { await outbox.name(id, spot: found, place: named.place) }
-      case .failure(let error):
-        if error.signedOut { return handle(error, from: client) }
-        // Offline: the note names its spot as it sends.
-        guard !error.retryable || error.status == 429 else { break }
-        // Nowhere a city can be named (at sea), or the day's spots used.
-        if spot == found { clearPlace(off: true) }
-        problem = error.message
-        for id in queued { await outbox.name(id, spot: found, place: nil) }
-      }
-      if !queued.isEmpty {
-        waiting = await outbox.waiting
-        await send()
+    }
+    for url in made.photos {
+      await addPhoto(await Task.detached { try? Data(contentsOf: url) }.value)
+    }
+    if !made.lines.isEmpty {
+      let lines = made.lines.joined(separator: "\n")
+      if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        draft = lines
+      } else {
+        draft += (draft.hasSuffix("\n") ? "" : "\n") + lines
       }
     }
+    if let found = made.spot, spot == found, placeFromMoment {
+      finding += 1
+      defer { finding -= 1 }
+      await name(found)
+    }
+  }
+
+  /// The version of the day the draft files to, when the app has seen it.
+  var dayVersion: String? {
+    day.flatMap { day in me?.version(on: day) ?? versions[day] }
+  }
+
+  /// "File to today", from the day's menu.
+  func fileToToday() {
+    day = nil
   }
 
   /// A business nearby, or nil for the neighbourhood or city alone.
@@ -953,6 +1061,7 @@ final class AppModel {
     venue = nil
     spotAt = nil
     placeOff = off
+    placeFromMoment = false
   }
 
   // MARK: Notes this token wrote
