@@ -70,7 +70,12 @@ public enum QuickNote {
   /// nil when no one is signed in.
   public static func client(userAgent: String) -> APIClient? {
     guard let token = KeychainTokenStore(accessGroup: AppGroup.id).read() else { return nil }
+    #if DEBUG
     let server = AppGroup.defaults?.string(forKey: "server").flatMap(URL.init(string:)) ?? APIClient.production
+    #else
+    // A release build sends to Release Notes alone, as the app does.
+    let server = APIClient.production
+    #endif
     return APIClient(baseURL: server, token: token, userAgent: userAgent)
   }
 }

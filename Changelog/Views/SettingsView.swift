@@ -10,15 +10,17 @@ struct SettingsView: View {
     @Bindable var model = model
     NavigationStack {
       Form {
-        if let me = model.me {
-          Section("This connection") {
+        Section("This connection") {
+          if let me = model.me {
             LabeledContent("Token", value: me.token.name)
             LabeledContent("Can", value: me.token.scopes.map(Self.scopeName).joined(separator: ", "))
             if let expires = me.token.expiresAt.flatMap({ try? Date($0, strategy: .iso8601) }) {
               LabeledContent("Expires", value: expires.formatted(date: .abbreviated, time: .omitted))
             }
-            Button("Sign out", role: .destructive) { confirmSignOut = true }
           }
+          // There before /v1/me answers too, so a phone that can't reach
+          // Release Notes can still sign out.
+          Button("Sign out", role: .destructive) { confirmSignOut = true }
         }
 
         Section {
@@ -61,6 +63,7 @@ struct SettingsView: View {
           Button("Open Release Notes") { openURL(Links.site) }
           Button("Settings on the web") { openURL(Links.settings) }
           Button("The guide") { openURL(Links.guide) }
+          Button("Privacy") { openURL(Links.privacy) }
           Button("Delete your account") { openURL(Links.delete) }
         }
 

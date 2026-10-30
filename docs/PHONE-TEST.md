@@ -78,11 +78,15 @@ Upcoming and the activity log.
     notifications switches. A note added on the web or by an agent brings
     a notice minutes or hours later: iOS decides when the app looks.
 14. **Activity.** Rows from every channel; "Older" loads more.
-15. **The build.** The foot of Settings names the version and the commit
-    (`Changelog 0.0.0, build 571b43d`).
+15. **The build.** The foot of Settings names the version, the commit and
+    when it was made (`Changelog 0.0.0, build 571b43d, made Oct 29 at
+    1:25 PM CDT.`). "Privacy", under Release Notes, opens the privacy page.
 16. **Sign out.** Settings, "Sign out", then "Sign out and revoke
     this token". The token shows as revoked on the web, anything still
-    waiting stays on the phone, and the widgets say to sign in.
+    waiting stays on the phone, Notification Center holds nothing of
+    Changelog's, and the widgets say to sign in. In Airplane Mode the same
+    steps sign out too, and the sign-in screen says to end the token on
+    the web, since Release Notes couldn't be reached to end it.
 17. **Last, a pasted token.** "Sign in with Release Notes", then Cancel on
     the page: back on the sign-in screen, with nothing to read. Then, under
     "Or use a token", "Paste token" with the token from the web: Log opens.

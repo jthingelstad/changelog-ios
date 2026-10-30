@@ -46,7 +46,9 @@ there first, never work around it here.
 - The token is in the Keychain under the App Group's access group, so the
   extension can read it; a token kept by an earlier build moves there when
   the app starts. The app mirrors the server and the sticky tag into the
-  group's defaults.
+  group's defaults. Only a debug build reads a saved server: a release
+  build, and the share extension and Siri in one, always use Release Notes
+  itself (`APIClient.production`).
 - `Widgets/` is the widget extension: Today (small and medium on the Home
   Screen, three on the Lock Screen) and the New Note control (Control
   Center, the Lock Screen, the Action Button). A widget never calls the

@@ -20,6 +20,12 @@ struct SignInView: View {
       Form {
         Section {
           Text("Changelog sends notes, photos, voice memos and where you are into your Release Notes, and keeps your Upcoming dates. It can read back only the notes it sent, never the rest.")
+        } footer: {
+          // Why the app signed out (a token revoked or expired, or one it
+          // couldn't end), until a sign-in here has its own answer.
+          if problem == nil, pasteProblem == nil, let reason = model.problem {
+            Text(reason).foregroundStyle(.orange).accessibilityIdentifier("signed-out-reason")
+          }
         }
         Section {
           Button("Sign in with Release Notes") { signInWithReleaseNotes() }
@@ -49,6 +55,9 @@ struct SignInView: View {
           Text("Or use a token")
         } footer: {
           if let pasteProblem { Text(pasteProblem).foregroundStyle(.orange) }
+        }
+        Section {
+          Button("Privacy") { openURL(Links.privacy) }
         }
         #if DEBUG
         Section {
