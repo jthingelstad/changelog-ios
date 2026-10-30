@@ -34,7 +34,10 @@ Upcoming and the activity log.
    Activity says "Signed in Changelog as the API token …".
 2. **A note.** A line with a #tag, then Commit. It shows under Today with
    its words, and on the web. Swipe it left: Edit (change a word, Save; the
-   new words show under Today), then Delete, which asks first.
+   new words show under Today), then Delete, which asks first. Leave one
+   note under Today, swipe Changelog away in the app switcher and open it
+   again: it opens, with the note's words back under Today (builds 52 and
+   53 closed on opening here, 2026-10-30).
 3. **Tags.** Tap a pinned tag to add it. Touch and hold one: it goes on
    every note until Settings, "Stop adding #… to every note". Settings,
    Pinned tags: add one; it shows on the web too.
