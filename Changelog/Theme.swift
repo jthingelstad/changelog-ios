@@ -72,17 +72,19 @@ struct Face {
   static let time = Face(family: .martian, size: 12, weight: 400, style: .caption)
 
   func font(size: CGFloat) -> Font {
-    var axes: [NSNumber: NSNumber] = [Self.wght: NSNumber(value: Double(weight)), Self.wdth: 100]
+    var axes: [NSNumber: NSNumber] = [NSNumber(value: Self.wght): NSNumber(value: Double(weight)),
+                                      NSNumber(value: Self.wdth): NSNumber(value: 100.0)]
     // The web's optical sizing is automatic: the axis follows the size.
-    if family == .bricolage { axes[Self.opsz] = NSNumber(value: Double(min(max(size, 12), 96))) }
+    if family == .bricolage { axes[NSNumber(value: Self.opsz)] = NSNumber(value: Double(min(max(size, 12), 96))) }
     let name = family == .bricolage ? "BricolageGrotesque-96ptExtraBold" : "MartianMono-SemiExpandedRegular"
     let attributes: [CFString: Any] = [kCTFontNameAttribute: name, kCTFontVariationAttribute: axes]
     return Font(CTFontCreateWithFontDescriptor(CTFontDescriptorCreateWithAttributes(attributes as CFDictionary), size, nil))
   }
 
-  private static let wght = NSNumber(value: 0x7767_6874)
-  private static let wdth = NSNumber(value: 0x7764_7468)
-  private static let opsz = NSNumber(value: 0x6F70_737A)
+  // The axes' tags, as CoreText names them: 'wght', 'wdth', 'opsz'.
+  private static let wght: UInt32 = 0x7767_6874
+  private static let wdth: UInt32 = 0x7764_7468
+  private static let opsz: UInt32 = 0x6F70_737A
 }
 
 /// A face at the size Dynamic Type asks for.
