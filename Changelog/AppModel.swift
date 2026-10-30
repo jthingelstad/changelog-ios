@@ -717,10 +717,7 @@ final class AppModel {
     }
     // Filed, in an answer this build couldn't read: no version to show, so
     // `/v1/me` says whether today has a note now.
-    let unread = report.sent.contains { sent in
-      guard case .post = sent.item.operation else { return false }
-      return sent.result == .done
-    }
+    let unread = report.sent.contains { $0.item.isNote && $0.result == .done }
     if unread, report.filed.isEmpty {
       toast = "Filed."
       if let fresh = try? await client.me(), holds(client) {
