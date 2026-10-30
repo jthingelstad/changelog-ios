@@ -151,6 +151,37 @@ final class AppModel {
     guard let candidate = TokenFormat.extract(raw) else {
       return "That isn't a Release Notes token. It starts with rn_."
     }
+    return await keep(candidate)
+  }
+
+  /// Signs in on Release Notes' own page, which `authenticate` shows (the
+  /// sign-in sheet) and answers the app's callback from, or nil when the
+  /// sheet was closed. The owner names the token there and chooses what it
+  /// may do; it comes back kept as a pasted one is. Nil when signed in, or
+  /// when the owner chose Cancel; else what went wrong.
+  func signInWithReleaseNotes(through authenticate: (URL) async throws -> URL?) async -> String? {
+    let flow = SignIn(server: server, userAgent: Self.userAgent)
+    let clientID: String
+    do throws(SignInError) { clientID = try await flow.register() } catch { return error.message }
+    let callback: URL?
+    do { callback = try await authenticate(flow.authorizeURL(clientID: clientID)) } catch {
+      return "The sign-in page couldn't open. Try again, or use a token."
+    }
+    guard let callback else { return nil }
+    let grant: SignIn.Grant
+    do throws(SignInError) {
+      guard let code = try flow.code(from: callback) else { return nil }
+      grant = try await flow.exchange(code: code, clientID: clientID)
+    } catch { return error.message }
+    guard let problem = await keep(grant.accessToken) else { return nil }
+    // A token this sign-in made that the app can't keep is ended, not left
+    // behind in the owner's list.
+    try? await APIClient(baseURL: server, token: grant.accessToken, userAgent: Self.userAgent).revokeToken()
+    return grant.scope.split(separator: " ").contains("notes:write")
+      ? problem : "Changelog needs “Add notes” to send notes. Sign in again with it ticked."
+  }
+
+  private func keep(_ candidate: String) async -> String? {
     let probe = APIClient(baseURL: server, token: candidate, userAgent: Self.userAgent)
     do {
       let me = try await probe.me()

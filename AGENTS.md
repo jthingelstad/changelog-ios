@@ -14,22 +14,25 @@ there first, never work around it here.
   `APIClient` (every `/v1` call, typed errors), `Outbox` (the offline queue),
   `Media` (uploads, the types Release Notes keeps, the storage form),
   `Hashtags` (a port of Release Notes' `packages/domain/tags.ts`; keep them
-  in step), `TokenStore` (the Keychain), `Shares` (the App Group and the
-  extension's hand-off to the app), `Upcoming` (the dates and their
-  batch), `NotificationPlan` (Upcoming reminders and the daily prompt,
-  within iOS's 64 waiting notifications), `ActivityNotices` (which
-  activity rows tell the phone something), `QuickNote` (a note sent from
-  outside the app's screens, within a deadline, else left for the app)
-  and `WidgetSnapshot` (what the widgets show, one day per local
-  midnight). It has its own tests:
+  in step), `TokenStore` (the Keychain), `SignIn` (signing in with
+  Release Notes: OAuth with PKCE for the app's own scheme, registered
+  afresh each time, the code spent once for an ordinary API token; no
+  refresh token), `Shares` (the App Group and the extension's hand-off to
+  the app), `Upcoming` (the dates and their batch), `NotificationPlan`
+  (Upcoming reminders and the daily prompt, within iOS's 64 waiting
+  notifications), `ActivityNotices` (which activity rows tell the phone
+  something), `QuickNote` (a note sent from outside the app's screens,
+  within a deadline, else left for the app) and `WidgetSnapshot` (what the
+  widgets show, one day per local midnight). It has its own tests:
   `swift test --package-path ChangelogKit`.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
-  screens (Log, Upcoming, Activity, Settings, sign-in), `Locator` one
-  location fix, `Recorder` a voice memo, `PhoneReminders` the phone's own
-  notifications (there is no push server: they are scheduled ahead, or
-  found by background refresh), `Intents` Shortcuts' and Siri's "Add a
-  Note" (sent as a share is, without opening the app) and the phrases
-  Siri knows.
+  screens (Log, Upcoming, Activity, Settings, sign-in: Release Notes'
+  page in a sign-in sheet on Safari's shared session, or a pasted token),
+  `Locator` one location fix, `Recorder` a voice memo, `PhoneReminders`
+  the phone's own notifications (there is no push server: they are
+  scheduled ahead, or found by background refresh), `Intents` Shortcuts'
+  and Siri's "Add a Note" (sent as a share is, without opening the app)
+  and the phrases Siri knows.
 - `Shared/` is built into both the app and the widget extension:
   `AppRoute` (the tab or the new note the app opens to) and `NewNoteIntent`
   ("New Note", which opens Log ready to write; a control can only name an

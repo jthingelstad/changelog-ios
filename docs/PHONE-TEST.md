@@ -20,13 +20,18 @@ The words in quotes are the iPhone app's.
 
 ## Before you start
 
-On the web, Settings, API tokens, make a token with all four ticked: Add
-notes, Add files, Upcoming and the activity log.
+Nothing: signing in makes the token. For step 17, have a token made on
+the web, Settings, API tokens, with all four ticked: Add notes, Add files,
+Upcoming and the activity log.
 
 ## The list
 
-1. **Sign in.** "Paste token", then "Sign in". Log opens on today's
-   version.
+1. **Sign in.** "Sign in with Release Notes". iOS asks to use
+   notes.yourversionnumber.com; Continue. Sign in on the page if Safari
+   isn't already, then "Changelog wants to sign in" with all four ticked:
+   Allow. Log opens on today's version, and Settings shows the token's
+   name and what it can do. On the web, Settings, API tokens lists it, and
+   Activity says "Signed in Changelog as the API token …".
 2. **A note.** A line with a #tag, then Commit. It shows under Today and
    on the web. Swipe it left: Edit (change a word, Save), then Delete.
 3. **Tags.** Tap a pinned tag to add it. Touch and hold one: it goes on
@@ -74,9 +79,13 @@ notes, Add files, Upcoming and the activity log.
 14. **Activity.** Rows from every channel; "Older" loads more.
 15. **The build.** The foot of Settings names the version and the commit
     (`Changelog 0.0.0, build 571b43d`).
-16. **Last, sign out.** Settings, "Sign out", then "Sign out and revoke
+16. **Sign out.** Settings, "Sign out", then "Sign out and revoke
     this token". The token shows as revoked on the web, anything still
     waiting stays on the phone, and the widgets say to sign in.
+17. **Last, a pasted token.** "Sign in with Release Notes", then Cancel on
+    the page: back on the sign-in screen, with nothing to read. Then, under
+    "Or use a token", "Paste token" with the token from the web: Log opens.
+    Sign out again.
 
 Anything wrong, slow or oddly worded becomes an issue here, with a
 screenshot of the dev server's fictional account if it needs one, never of
