@@ -19,6 +19,9 @@ final class AppModel {
   /// The words of today's notes this token wrote, by note id, read back on
   /// each refresh (`TodayWords`). In memory only.
   private var todayWords: [String: String] = [:]
+  /// Each read of Today, so one that finishes after a newer read (or after
+  /// signing out) changes nothing.
+  private var todayGeneration = 0
   private(set) var waiting: [OutboxItem] = []
   private(set) var lastFiled: NoteReceipt?
   private(set) var toast: String?
@@ -218,6 +221,7 @@ final class AppModel {
     tags = nil
     today = []
     todayWords = [:]
+    todayGeneration += 1
     phase = .signedOut
     // The next sign-in asks again before any reminder comes.
     remindersOn = false
@@ -256,14 +260,17 @@ final class AppModel {
 
   private func loadToday() async {
     guard let client, let me, me.token.scopes.contains("activity") else { return }
-    guard let page = try? await client.activity(limit: 100) else { return }
+    todayGeneration += 1
+    let generation = todayGeneration
+    guard let page = try? await client.activity(limit: 100), generation == todayGeneration else { return }
     today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
     let mine = today.filter(isMine).compactMap { item in
       item.day.flatMap { day in item.note.map { TodayWords.Note(date: day, id: $0) } }
     }
-    todayWords = await TodayWords.read(mine, keeping: todayWords) { note throws(APIError) in
+    let words = await TodayWords.read(mine, keeping: todayWords) { note throws(APIError) in
       try await client.note(date: note.date, id: note.id).text
     }
+    if generation == todayGeneration { todayWords = words }
   }
 
   // MARK: Reminders and the daily prompt
