@@ -16,6 +16,10 @@ struct UpcomingView: View {
   @State private var editing: UpcomingTarget?
   @State private var deleting: UpcomingEntry?
   @State private var deleteKey = RequestKey<UpcomingRemoval>()
+  /// The key of the last add or change, held past its editor: a save whose
+  /// answer was lost, made again as it was from a new editor, is still one
+  /// date.
+  @State private var saveKey = RequestKey<UpcomingBatch>()
 
   struct Banner: Equatable {
     var text: String
@@ -74,8 +78,8 @@ struct UpcomingView: View {
         if model.me == nil { await model.refresh() } else { await load() }
       }
       .task(id: model.canKeepUpcoming) { await load() }
-      .sheet(item: $editing) { target in
-        UpcomingEditor(target: target, today: list?.today ?? model.me?.today ?? Day.string(.now)) { outcome in
+      .sheet(item: $editing, onDismiss: closed) { target in
+        UpcomingEditor(target: target, today: list?.today ?? model.me?.today ?? Day.string(.now), saveKey: $saveKey) { outcome in
           Task { await finished(outcome) }
         }
       }
@@ -114,6 +118,12 @@ struct UpcomingView: View {
     } catch {
       loadProblem = error.status == 0 ? "Couldn't reach Release Notes. Pull down to try again." : error.message
     }
+  }
+
+  /// Closed after a save that may have landed unheard: the list shows
+  /// whether it did, so the date isn't added twice.
+  private func closed() {
+    if saveKey.pending { Task { await load() } }
   }
 
   private func finished(_ outcome: UpcomingOutcome) async {
@@ -232,7 +242,7 @@ struct UpcomingEditor: View {
   @State private var draft: UpcomingDraft
   @State private var problem: String?
   @State private var saving = false
-  @State private var saveKey = RequestKey<UpcomingBatch>()
+  @Binding var saveKey: RequestKey<UpcomingBatch>
   /// The city a dry run found for the destination typed, or why not.
   @State private var found: String?
   @State private var placeProblem: String?
@@ -240,9 +250,11 @@ struct UpcomingEditor: View {
   @State private var confirmDelete = false
   @FocusState private var placeFocused: Bool
 
-  init(target: UpcomingTarget, today: String, done: @escaping (UpcomingOutcome) -> Void) {
+  init(target: UpcomingTarget, today: String, saveKey: Binding<RequestKey<UpcomingBatch>>,
+       done: @escaping (UpcomingOutcome) -> Void) {
     self.target = target
     self.done = done
+    _saveKey = saveKey
     _draft = State(initialValue: target.entry.map { UpcomingDraft(entry: $0, today: today) } ?? UpcomingDraft(kind: .birthday, today: today))
   }
 
@@ -437,6 +449,7 @@ struct UpcomingEditor: View {
         done(.saved(badges.isEmpty ? nil : "Unlocked: \(badges.joined(separator: ", "))"))
         dismiss()
       } catch {
+        settle(error)
         switch error.code {
         case "revision_mismatch":
           done(.changedElsewhere)
@@ -451,15 +464,24 @@ struct UpcomingEditor: View {
     }
   }
 
+  /// A refusal is an answer, so the next Save is a new request. Only a save
+  /// that may have landed unheard keeps its key, for Save again, or a new
+  /// editor with the same date, to send under it.
+  private func settle(_ error: APIError) {
+    if !(error.status == 0 || error.retryable) { saveKey.reset() }
+  }
+
   private func delete() async {
     guard let entry = target.entry else { return }
     saving = true
     defer { saving = false }
     do {
       try await model.deleteUpcoming(entry, idempotencyKey: saveKey.key(for: .removing(entry)))
+      saveKey.reset()
       done(.deleted)
       dismiss()
     } catch {
+      settle(error)
       switch error.code {
       case "not_found":
         done(.deleted)
