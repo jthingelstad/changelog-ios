@@ -67,7 +67,7 @@ struct LogView: View {
               .foregroundStyle(.secondary)
           }
           ForEach(model.today) { item in
-            ActivityRow(item: item)
+            ActivityRow(item: item, words: model.words(of: item))
               .swipeActions {
                 if model.isMine(item) {
                   Button("Delete", role: .destructive) { Task { await model.delete(item) } }

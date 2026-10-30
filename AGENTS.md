@@ -21,7 +21,8 @@ there first, never work around it here.
   the app), `Upcoming` (the dates and their batch), `NotificationPlan`
   (Upcoming reminders and the daily prompt, within iOS's 64 waiting
   notifications), `ActivityNotices` (which activity rows tell the phone
-  something), `QuickNote` (a note sent from outside the app's screens,
+  something), `TodayWords` (the words of today's notes this token wrote,
+  read back for Log), `QuickNote` (a note sent from outside the app's screens,
   within a deadline, else left for the app) and `WidgetSnapshot` (what the
   widgets show, one day per local midnight). It has its own tests:
   `swift test --package-path ChangelogKit`.
@@ -101,7 +102,11 @@ there first, never work around it here.
   I am" on), never in the background. Each Here is a lookup Release Notes
   pays for, capped at 100 a day: ask once a draft, never as words change.
 - The app reads back only notes this token wrote, and the activity log
-  (which has no words in it). It never asks for `notes:read`.
+  (which has no words in it). It never asks for `notes:read`. Log's Today
+  shows the words of today's notes this token wrote (Jamie, 2026-10-29:
+  "just add the API calls to read what was sent"), read back by id on
+  each refresh (`TodayWords`) and held in memory only: never on disk, in
+  the App Group, a widget, a notification or what Siri says.
 - iOS 26 and later, iPhone only, Swift 6 strict concurrency.
 - What each version brought is "Release Notes for Changelog" on Release
   Notes' public site (`/guide/changelog/`, `site/guide/changelog.md` in

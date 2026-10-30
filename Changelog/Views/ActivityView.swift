@@ -77,6 +77,8 @@ struct ActivityView: View {
 
 struct ActivityRow: View {
   let item: ActivityItem
+  /// What the note said, on Log's Today alone, for a note this token wrote.
+  var words: String?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
@@ -84,6 +86,9 @@ struct ActivityRow: View {
         Text(item.headline)
         Spacer()
         Text(item.time).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+      }
+      if let words {
+        Text(verbatim: words).lineLimit(6)
       }
       if let detail = item.detail {
         Text(detail).font(.caption).foregroundStyle(.secondary)

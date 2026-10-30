@@ -32,8 +32,9 @@ Upcoming and the activity log.
    Allow. Log opens on today's version, and Settings shows the token's
    name and what it can do. On the web, Settings, API tokens lists it, and
    Activity says "Signed in Changelog as the API token …".
-2. **A note.** A line with a #tag, then Commit. It shows under Today and
-   on the web. Swipe it left: Edit (change a word, Save), then Delete.
+2. **A note.** A line with a #tag, then Commit. It shows under Today with
+   its words, and on the web. Swipe it left: Edit (change a word, Save; the
+   new words show under Today), then Delete.
 3. **Tags.** Tap a pinned tag to add it. Touch and hold one: it goes on
    every note until Settings, "Stop adding #… to every note". Settings,
    Pinned tags: add one; it shows on the web too.
