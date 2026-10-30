@@ -45,6 +45,8 @@ struct ComposerTools: View {
     }
     .buttonStyle(.borderless)
     .font(.title3)
+    // Ink-3 until pressed, as the web's icon buttons are.
+    .tint(Color.ink3)
     .onChange(of: picks) { _, items in
       guard !items.isEmpty else { return }
       picks = []
@@ -126,7 +128,7 @@ struct PlaceMenu: View {
       } label: {
         Label(label, systemImage: "location.fill").lineLimit(1)
       }
-      .font(.caption)
+      .face(.hint)
       .buttonStyle(.borderless)
       .accessibilityLabel("Place: \(label)")
     }

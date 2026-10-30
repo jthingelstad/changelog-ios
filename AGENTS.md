@@ -34,7 +34,14 @@ there first, never work around it here.
   scheduled ahead, or found by background refresh), `Intents` Shortcuts'
   and Siri's "Add a Note" (sent as a share is, without opening the app,
   within 5 seconds, well inside Siri's own wait, else left for the app;
-  Jamie, 2026-10-30) and the phrases Siri knows.
+  Jamie, 2026-10-30) and the phrases Siri knows. `Theme` is Release
+  Notes' look, from its web app (`web/src/styles/site.css`): type on
+  paper, its colours light and dark, Bricolage Grotesque and Martian Mono
+  (`Fonts/`, OFL, named in `Config/Info.plist`'s `UIAppFonts`) at the size
+  Dynamic Type asks for (`.face(_:)`), the tangerine Commit and the rest.
+  Log, Upcoming and Activity are on the paper (Jamie, 2026-10-30: align
+  the app with the website); the tab bar, sheets and menus stay as iOS
+  draws them. A colour or a size changes on the web first, then here.
 - `Shared/` is built into both the app and the widget extension:
   `AppRoute` (the tab or the new note the app opens to) and `NewNoteIntent`
   ("New Note", which opens Log ready to write; a control can only name an

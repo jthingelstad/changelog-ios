@@ -29,28 +29,43 @@ struct UpcomingView: View {
   var body: some View {
     NavigationStack {
       List {
-        if model.me == nil {
-          ProgressView()
-        } else if !model.canKeepUpcoming {
-          Section {
-            Text("This token can't keep your Upcoming dates. On the web, under Settings, API tokens, make one with “Read and change your Upcoming dates and their reminders” ticked, then sign in with it here.")
-            Button("Settings on the web") { openURL(Links.settings) }
-          }
-        } else {
-          if let banner {
-            Section {
-              Label(banner.text, systemImage: banner.problem ? "exclamationmark.triangle" : "checkmark.circle")
-                .foregroundStyle(banner.problem ? .orange : .secondary)
+        Group {
+          BrandBar {
+            if model.canKeepUpcoming {
+              Button("Add a date", systemImage: "plus") { open(.new) }
+                .buttonStyle(QuietButtonStyle())
             }
           }
-          if let loadProblem {
-            Section { Label(loadProblem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-          }
-          if let list {
-            Section {
+          PageTitle(title: "Upcoming", lede: "Soonest first. The morning email reminds you, and so can this phone.")
+            .padding(.top, 22).padding(.bottom, 10)
+        }
+        .paperRow()
+
+        Group {
+          if model.me == nil {
+            ProgressView()
+          } else if !model.canKeepUpcoming {
+            Text("This token can't keep your Upcoming dates. On the web, under Settings, API tokens, make one with “Read and change your Upcoming dates and their reminders” ticked, then sign in with it here.")
+              .face(.hint)
+              .foregroundStyle(Color.ink2)
+            Button("Settings on the web") { openURL(Links.settings) }
+              .buttonStyle(QuietButtonStyle())
+          } else {
+            if let banner {
+              Label(banner.text, systemImage: banner.problem ? "exclamationmark.triangle" : "checkmark.circle")
+                .face(.hint)
+                .foregroundStyle(banner.problem ? Color.tangerineInk : Color.ink2)
+            }
+            if let loadProblem {
+              Label(loadProblem, systemImage: "exclamationmark.triangle")
+                .face(.hint)
+                .foregroundStyle(Color.tangerineInk)
+            }
+            if let list {
               if list.entries.isEmpty {
                 Text("Nothing upcoming. Add a birthday, an anniversary, a trip or an event, and the morning email reminds you.")
-                  .foregroundStyle(.secondary)
+                  .face(.hint)
+                  .foregroundStyle(Color.ink2)
               }
               ForEach(list.entries) { entry in
                 Button { open(.entry(entry)) } label: { UpcomingRow(entry: entry, today: list.today) }
@@ -59,20 +74,21 @@ struct UpcomingView: View {
                     Button("Delete", role: .destructive) { deleting = entry }
                   }
               }
-            } footer: {
-              if let footer = footer(list) { Text(footer) }
+              if let footer = footer(list) {
+                Text(footer).face(.meta).foregroundStyle(Color.ink3)
+              }
+            } else if loadProblem == nil {
+              ProgressView()
             }
-          } else if loadProblem == nil {
-            ProgressView()
           }
         }
+        .paperRow(top: 8, bottom: 8)
+        // Room to scroll the last row clear of the tab bar.
+        Color.clear.frame(height: 24).paperRow()
       }
+      .paperList()
       .navigationTitle("Upcoming")
-      .toolbar {
-        if model.canKeepUpcoming {
-          Button("Add a date", systemImage: "plus") { open(.new) }
-        }
-      }
+      .toolbar(.hidden, for: .navigationBar)
       .refreshable {
         // Not read yet who this is (offline at launch): read that first.
         if model.me == nil { await model.refresh() } else { await load() }
@@ -198,23 +214,31 @@ struct UpcomingRow: View {
   let today: String
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 3) {
-      Text(entry.line)
-        .foregroundStyle(.primary)
-      HStack(spacing: 6) {
+    // When, in cobalt mono capitals, over the date's own words, as the
+    // web's day lists set a day.
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Text(when)
+          .textCase(.uppercase)
+          .face(.stamp)
+          .foregroundStyle(Color.cobalt)
         Image(systemName: UpcomingKind.icon(entry.fields.kind))
           .imageScale(.small)
+          .foregroundStyle(Color.ink3)
           .accessibilityLabel(UpcomingKind.name(entry.fields.kind))
-        Text(when)
-        if let tag = entry.fields.tag { Text("#\(tag)") }
         if !entry.fields.email {
           Image(systemName: "bell.slash")
             .imageScale(.small)
+            .foregroundStyle(Color.ink3)
             .accessibilityLabel("No reminders")
         }
       }
-      .font(.caption)
-      .foregroundStyle(.secondary)
+      Text(entry.line)
+        .face(.note)
+        .foregroundStyle(Color.ink)
+      if let tag = entry.fields.tag {
+        Text("#\(tag)").face(.meta).foregroundStyle(Color.ink3)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .contentShape(.rect)
@@ -315,7 +339,7 @@ struct UpcomingEditor: View {
             Text(draft.kind == .trip ? "Destination" : "Place")
           } footer: {
             if let placeProblem {
-              Text(placeProblem).foregroundStyle(.orange)
+              Text(placeProblem).foregroundStyle(Color.tangerineInk)
             } else if let found {
               Text(found)
             } else {
@@ -348,7 +372,7 @@ struct UpcomingEditor: View {
         }
 
         if let problem {
-          Section { Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+          Section { Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(Color.tangerineInk) }
         }
 
         if target.entry != nil {

@@ -71,12 +71,6 @@ struct RootView: View {
   }
 }
 
-/// Monospace for versions, as the web and the email show them.
-extension Font {
-  static let version = Font.system(.title2, design: .monospaced).weight(.semibold)
-  static let versionSmall = Font.system(.footnote, design: .monospaced)
-}
-
 enum Links {
   static let site = URL(string: "https://notes.yourversionnumber.com/")!
   static let guide = URL(string: "https://notes.yourversionnumber.com/guide/")!
