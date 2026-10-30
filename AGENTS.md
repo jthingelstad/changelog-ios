@@ -100,6 +100,14 @@ there first, never work around it here.
 - The app reads back only notes this token wrote, and the activity log
   (which has no words in it). It never asks for `notes:read`.
 - iOS 26 and later, iPhone only, Swift 6 strict concurrency.
+- What each version brought is "Release Notes for Changelog" on Release
+  Notes' public site (`/guide/changelog/`, `site/guide/changelog.md` in
+  the Release Notes repo; Jamie, 2026-10-29: "Please make sure that there
+  is a changelog page for changelog itself on the public site."). When a
+  build that changes what someone using the app sees goes to TestFlight,
+  its lines go there, in a PR in that repo, under Changelog's version for
+  that day: what you can do now, in that page's voice, never internal
+  work. A build of docs or CI alone adds nothing.
 - Codex reviews every PR (`chatgpt-codex-connector[bot]`). Read its
   findings and fix or answer each before calling the work done.
 

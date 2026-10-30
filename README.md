@@ -54,7 +54,10 @@ Changelog numbers its builds the way Release Notes does, by Your Version
 Number's arithmetic from its own start on 29 October 2026 to the day a
 build is made, in Chicago: 0.0.0 on the first day, 0.1.0 a year on.
 `scripts/version.sh` stamps every build with it and the commit, which the
-foot of Settings shows (`Changelog 0.0.0, build 571b43d`).
+foot of Settings shows (`Changelog 0.0.0, build 571b43d`). What each
+version brought is [Release Notes for
+Changelog](https://notes.yourversionnumber.com/guide/changelog/), on Release
+Notes' public site.
 
 `ChangelogKit/` holds everything that isn't a screen (the API client, the
 offline queue, hashtags, the token's storage) and is tested on its own. The
