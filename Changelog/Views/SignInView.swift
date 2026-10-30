@@ -1,13 +1,17 @@
+import AuthenticationServices
 import ChangelogKit
 import SwiftUI
 
-/// Sign-in by token, until OAuth comes (Changelog 1.0). The owner makes a
-/// token in Release Notes' Settings and pastes it here.
+/// Sign-in with Release Notes: its own page, in a sheet, asks the owner to
+/// name the token Changelog keeps and choose what it may do. A token made in
+/// Release Notes' Settings and pasted here works as well.
 struct SignInView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
+  @Environment(\.webAuthenticationSession) private var webAuthenticationSession
   @State private var pasted = ""
   @State private var problem: String?
+  @State private var pasteProblem: String?
   @State private var checking = false
 
   var body: some View {
@@ -16,10 +20,20 @@ struct SignInView: View {
       Form {
         Section {
           Text("Changelog sends notes, photos, voice memos and where you are into your Release Notes, and keeps your Upcoming dates. It can read back only the notes it sent, never the rest.")
-          Text("Make a token in Release Notes under Settings, API tokens, with all four ticked: “Add notes”, “Add files”, “Read and change your Upcoming dates” and “Read the activity log”. Then paste it here.")
-            .foregroundStyle(.secondary)
         }
         Section {
+          Button("Sign in with Release Notes") { signInWithReleaseNotes() }
+            .bold()
+            .disabled(checking)
+        } footer: {
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Release Notes asks you to name the token Changelog keeps, what it may do and when it ends. You can end it there any time, under Settings, API tokens.")
+            if let problem { Text(problem).foregroundStyle(.orange) }
+          }
+        }
+        Section {
+          Text("Make a token in Release Notes under Settings, API tokens, with all four ticked: “Add notes”, “Add files”, “Read and change your Upcoming dates” and “Read the activity log”. Then paste it here.")
+            .foregroundStyle(.secondary)
           SecureField("rn_…", text: $pasted)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
@@ -28,13 +42,13 @@ struct SignInView: View {
           Button("Paste token") {
             if let text = UIPasteboard.general.string { check(text) }
           }
-        } footer: {
-          if let problem { Text(problem).foregroundStyle(.orange) }
-        }
-        Section {
-          Button("Sign in") { check(pasted) }
+          Button("Sign in with this token") { check(pasted) }
             .disabled(checking || pasted.isEmpty)
           Button("Open Release Notes Settings") { openURL(Links.settings) }
+        } header: {
+          Text("Or use a token")
+        } footer: {
+          if let pasteProblem { Text(pasteProblem).foregroundStyle(.orange) }
         }
         #if DEBUG
         Section {
@@ -54,12 +68,34 @@ struct SignInView: View {
     }
   }
 
+  private func signInWithReleaseNotes() {
+    checking = true
+    problem = nil
+    pasteProblem = nil
+    Task {
+      problem = await model.signInWithReleaseNotes { url in
+        do {
+          // The shared browser session, so someone already signed in to
+          // Release Notes in Safari goes straight to what Changelog asks.
+          return try await webAuthenticationSession.authenticate(
+            using: url, callback: .customScheme(SignIn.callbackScheme),
+            preferredBrowserSession: .shared, additionalHeaderFields: [:])
+        } catch ASWebAuthenticationSessionError.canceledLogin {
+          return nil
+        }
+      }
+      checking = false
+    }
+  }
+
   private func check(_ raw: String) {
     checking = true
+    problem = nil
+    pasteProblem = nil
     Task {
-      problem = await model.signIn(with: raw)
+      pasteProblem = await model.signIn(with: raw)
       checking = false
-      if problem != nil { pasted = "" }
+      if pasteProblem != nil { pasted = "" }
     }
   }
 }

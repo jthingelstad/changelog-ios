@@ -34,8 +34,9 @@ look back on the web. Changelog is for getting things in, in two taps.
   Button. A tap opens Log ready to write. A widget never shows a note's
   words.
 
-It talks only to Release Notes' public `/v1` API, with a token you make in
-Release Notes' Settings. The API is designed in
+It talks only to Release Notes' public `/v1` API. You sign in with Release
+Notes, which asks you to name the token Changelog keeps and what it may do,
+or paste a token you made in Release Notes' Settings. The API is designed in
 [`docs/API.md`](https://github.com/jthingelstad/yvn-release-notes/blob/main/docs/API.md)
 in the Release Notes repo, which is also the guide for anyone writing their
 own client, on any platform.
@@ -65,9 +66,12 @@ app in `Changelog/` is SwiftUI on top of it, and the share sheet's
 Changelog is `ShareExtension/`. The widgets and the New Note control are
 `Widgets/`; `Shared/` is built into both the app and the widgets.
 
-Release Notes' `/v1` API is live. Signing in with Release Notes (OAuth,
-its phase 5) is still to come, so for now you sign in with a token you
-make on the web and paste.
+Release Notes' `/v1` API is live, and so is signing in with Release Notes
+(OAuth with PKCE, its phase 5): the app registers its own scheme
+(`com.yourversionnumber.changelog:/oauth`), Release Notes' page in a
+sign-in sheet lets you choose the token, and the code that comes back is
+spent once for an ordinary API token. There is no refresh token; the token
+lasts as long as you chose. A pasted token works as well.
 
 To try it without touching real notes, run the Release Notes dev server
 (`npm run build`, then `node --import tsx tools/dev-server.ts` in that repo;
