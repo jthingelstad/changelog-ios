@@ -4,6 +4,13 @@
 # from a clean commit on main: Apple's build number is the commit count, so
 # it only goes up, and Settings names the commit.
 #
+#   scripts/testflight.sh               internal testers only
+#   scripts/testflight.sh --external    a build outside testers can get too,
+#                                       once Apple's Beta App Review passes it
+#
+# Every --external upload is Jamie's call (docs/DISTRIBUTION.md); the
+# standing go covers internal builds of main alone.
+#
 # Needs the developer account signed in to Xcode (Settings > Accounts), its
 # team in Config/Signing.local.xcconfig, and the app made in App Store
 # Connect for com.yourversionnumber.changelog. The first run registers the
@@ -19,6 +26,13 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
+
+options=Config/ExportOptions-TestFlight.plist
+case ${1:-} in
+  "") ;;
+  --external) external=1 ;;
+  *) echo "Usage: scripts/testflight.sh [--external]" >&2; exit 64 ;;
+esac
 
 if ! grep -qE '^[[:space:]]*DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*[A-Z0-9]{10}' Config/Signing.local.xcconfig 2>/dev/null; then
   echo "Put DEVELOPMENT_TEAM = <your team ID> in Config/Signing.local.xcconfig first." >&2
@@ -48,11 +62,20 @@ fi
 
 out=$root/build/testflight
 rm -rf "$out"
+mkdir -p "$out"
+if [[ -n ${external:-} ]]; then
+  # Apple: builds uploaded as internal only "can only be added to internal
+  # tester groups", so an outside testers' build leaves the key out.
+  cp "$options" "$out/ExportOptions-external.plist"
+  options=$out/ExportOptions-external.plist
+  /usr/libexec/PlistBuddy -c "Delete :testFlightInternalTestingOnly" "$options"
+  echo "For outside testers too, once Beta App Review passes it."
+fi
 echo "Changelog $(scripts/version.sh), build $(git rev-list --count HEAD) ($(git rev-parse --short HEAD))"
 xcodebuild -project Changelog.xcodeproj -scheme Changelog -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$out/Changelog.xcarchive" \
   -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} -quiet archive
 xcodebuild -exportArchive -archivePath "$out/Changelog.xcarchive" \
-  -exportOptionsPlist Config/ExportOptions-TestFlight.plist -exportPath "$out/export" \
+  -exportOptionsPlist "$options" -exportPath "$out/export" \
   -allowProvisioningUpdates ${auth[@]+"${auth[@]}"}
 echo "Uploaded. App Store Connect takes a few minutes to process it; then it is in TestFlight."
