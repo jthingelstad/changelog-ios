@@ -20,7 +20,8 @@ The words in quotes are the iPhone app's.
 
 ## Before you start
 
-Nothing: signing in makes the token. For step 18, have a token made on
+Nothing: signing in makes the token. For step 18, a second account to
+sign in to (another address of yours). For step 19, have a token made on
 the web, Settings, API tokens, with all four ticked: Add notes, Add files,
 Upcoming and the activity log.
 
@@ -102,7 +103,16 @@ Upcoming and the activity log.
     Changelog's, and the widgets say to sign in. In Airplane Mode the same
     steps sign out too, and the sign-in screen says to end the token on
     the web, since Release Notes couldn't be reached to end it.
-18. **Last, a pasted token.** "Sign in with Release Notes", then Cancel on
+18. **Another account's note.** Signed in to your account, Airplane mode,
+    a note with a photo, Commit: it waits. Settings, "Sign out", Airplane
+    mode off, then sign in to the second account. The note is under
+    "Waiting to send", "Written while signed in to another account.", with
+    "Send to this account" and "Delete", and goes nowhere by itself: on
+    the web, neither account has it. "Delete" asks first; Cancel. "Send to
+    this account": it goes, once, to the second account, photo and all.
+    Then the same again, but sign back in to your own account instead: the
+    note sends by itself, once, as before.
+19. **Last, a pasted token.** "Sign in with Release Notes", then Cancel on
     the page: back on the sign-in screen, with nothing to read. Then, under
     "Or use a token", "Paste token" with the token from the web: Log opens.
     Sign out again.

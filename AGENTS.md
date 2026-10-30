@@ -11,7 +11,8 @@ there first, never work around it here.
 ## Layout
 
 - `ChangelogKit/` is a Swift package with everything that isn't a screen:
-  `APIClient` (every `/v1` call, typed errors), `Outbox` (the offline queue),
+  `APIClient` (every `/v1` call, typed errors), `Outbox` (the offline queue,
+  each write with the account it was written under),
   `Media` (uploads, the types Release Notes keeps, the storage form),
   `Hashtags` (a port of Release Notes' `packages/domain/tags.ts`; keep them
   in step), `TokenStore` (the Keychain), `SignIn` (signing in with
@@ -70,10 +71,10 @@ there first, never work around it here.
   extension can read it; a token kept by an earlier build moves there when
   the app starts. It outlives deleting the app, as Keychain items do, so a
   reinstall is still signed in (Jamie, 2026-10-30, asked whether to clear
-  it: "No leave it"). The app mirrors the server and the sticky tag into the
-  group's defaults. Only a debug build reads a saved server: a release
-  build, and the share extension and Siri in one, always use Release Notes
-  itself (`APIClient.production`).
+  it: "No leave it"). The app mirrors the server, the sticky tag and the
+  account into the group's defaults. Only a debug build reads a saved
+  server: a release build, and the share extension and Siri in one, always
+  use Release Notes itself (`APIClient.production`).
 - `Widgets/` is the widget extension: Today (small and medium on the Home
   Screen, three on the Lock Screen) and the New Note control (Control
   Center, the Lock Screen, the Action Button). A widget never calls the
@@ -125,6 +126,21 @@ there first, never work around it here.
   never works out a version: each day's is the server's, from `/v1/me`'s
   `days`. Activity notices never tell of this token's own rows or the
   daily email.
+- Every write waiting in the Outbox knows the account it was written
+  under (`/v1/me`'s `account`, API 1.4.0): the app's own, and the share
+  extension's and Siri's, stamped from the account the app mirrors into the
+  App Group at each read of `/v1/me` (kept after signing out, so a share
+  made then is the last account's). A write of another account, or of none
+  known, is held, never sent, until the owner chooses on Log (Jamie,
+  2026-10-30): "Send to this account" (the same key, its files posted again,
+  since uploads are each account's; its place stays, being only names) or
+  Delete, which asks first. An edit or a delete of another account's note
+  can only be deleted. Signing back in to its own account sends it as
+  before. Writes an earlier build queued carry no account: the first read
+  of `/v1/me` by the token still signed in stamps them with its account.
+- Today's "mine" (words read back, Edit and Delete) is the activity row's
+  `token_id` against `/v1/me`'s `token.id`; the token's name decides only
+  for a row from before API 1.4.0, which has no `token_id`.
 - A note's files are posted and its place named, and both saved, before
   the note is sent (the Outbox's `prepare`), so a resend is the same
   request. The token never goes to the storage form.
@@ -202,9 +218,11 @@ simulator in Minneapolis, and drives a note, a photo, Here, a moment (the
 stand-in, filed to its day and then to today), a voice memo,
 Upcoming (a date added and deleted), Activity and Settings, and a share
 from Photos against the dev server, checking `/v1/activity` that each made
-exactly one note (and `/v1/upcoming` the date). Name tests after
-the simulator to run only those. A simulator records with the Mac's
-microphone, which can fail to answer; the voice memo test skips then.
+exactly one note (and `/v1/upcoming` the date); and a note held for
+another account, a new fictional one it makes on the dev server's web API,
+sent and deleted. Name tests after the simulator to run only those. A
+simulator records with the Mac's microphone, which can fail to answer; the
+voice memo test skips then.
 
 `scripts/testflight.sh` uploads a clean commit on main to TestFlight, for
 internal testers only (`Config/ExportOptions-TestFlight.plist`; Xcode

@@ -24,6 +24,16 @@ final class AppModel {
   /// signing out) changes nothing.
   private var todayGeneration = 0
   private(set) var waiting: [OutboxItem] = []
+  /// The account the token signed in now opens (`/v1/me`'s `account`, API
+  /// 1.4.0), kept on this phone so a launch offline knows it, and mirrored
+  /// into the App Group for shares and Siri. Every write is stamped with it,
+  /// and a note written under another account is held (`isHeld`).
+  private(set) var account: String?
+  /// The token an earlier build left signed in, whose queued notes carry no
+  /// account: they were written under it, and its first read of `/v1/me`
+  /// here stamps them with its account (`took`).
+  @ObservationIgnored private var unstamped: String?
+  @ObservationIgnored private var accountsBegun = false
   private(set) var lastFiled: NoteReceipt?
   private(set) var toast: String?
   private(set) var problem: String?
@@ -190,6 +200,7 @@ final class AppModel {
     // to the App Group, for the share extension.
     (tokens as? KeychainTokenStore)?.share()
     token = tokens.read()
+    beginAccounts()
     // The draft a run that ended left (iOS ends an app it isn't showing),
     // and shares the extension couldn't send, come in first, so the sweep
     // after keeps their files.
@@ -208,6 +219,7 @@ final class AppModel {
       let other = environment["CHANGELOG_DEV_URL"].flatMap(URL.init(string:))
       server = other.flatMap { ["localhost", "127.0.0.1"].contains($0.host() ?? "") ? $0 : nil } ?? APIClient.devServer
       token = nil
+      account = nil
       problem = await signIn(with: dev)
       if problem == nil { return }
     }
@@ -260,7 +272,7 @@ final class AppModel {
       }
       try tokens.write(candidate)
       token = candidate
-      self.me = me
+      await took(me, from: probe)
       phase = .signedIn
       await refresh()
       return nil
@@ -289,6 +301,11 @@ final class AppModel {
     tokens.clear()
     token = nil
     me = nil
+    // Notes still waiting keep their account: signing in to it again sends
+    // them, and signing in to another holds them. The account stays in the
+    // App Group too, for a share made while signed out.
+    account = nil
+    if unstamped != nil { endStamping() }
     tags = nil
     today = []
     todayWords = [:]
@@ -319,7 +336,8 @@ final class AppModel {
     do {
       async let me = client.me()
       async let tags = client.tags()
-      self.me = try await me
+      let fresh = try await me
+      await took(fresh, from: client)
       self.tags = try? await tags
       problem = nil
       await readSoon()
@@ -347,9 +365,7 @@ final class AppModel {
       if let day = item.day, let version = item.version { versions[day] = version }
     }
     today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
-    let mine = today.filter(isMine).compactMap { item in
-      item.day.flatMap { day in item.note.map { TodayWords.Note(date: day, id: $0) } }
-    }
+    let mine = TodayWords.notes(in: today, by: me.token)
     let words = await TodayWords.read(mine, keeping: todayWords) { note in
       try await client.note(date: note.date, id: note.id).text
     }
@@ -470,7 +486,7 @@ final class AppModel {
   /// Release Notes asked: a day's limit runs to midnight UTC), and asks
   /// for a refresh to fit.
   private func retryLater(_ stopped: APIError?) {
-    queueAfter = waiting.contains { $0.refusal == nil }
+    queueAfter = waiting.contains { $0.refusal == nil && !isHeld($0) }
       ? .now.addingTimeInterval(max(Self.soonestRetry, stopped?.retryAfter ?? 0)) : nil
     scheduleRefresh()
   }
@@ -480,9 +496,11 @@ final class AppModel {
   /// for activity to tell of.
   func backgroundRefresh() async {
     if token == nil { token = tokens.read() }
+    beginAccounts()
     guard let client else { return }
     do {
-      me = try await client.me()
+      let fresh = try await client.me()
+      await took(fresh, from: client)
       await readSoon()
       updateWidgets()
     } catch {
@@ -660,10 +678,11 @@ final class AppModel {
     let item: OutboxItem
     do {
       if files.isEmpty && placed.spot == nil {
-        item = try await outbox.enqueue(.note(text: text, date: date, writtenAt: stamp))
+        item = try await outbox.enqueue(.note(text: text, date: date, writtenAt: stamp), account: account)
       } else {
         item = try await outbox.enqueue(.post(NotePost(text: text, date: date, writtenAt: stamp, files: files,
-                                                       spot: placed.spot, place: placed.spot == nil ? nil : place)))
+                                                       spot: placed.spot, place: placed.spot == nil ? nil : place)),
+                                        account: account)
       }
     } catch {
       draft = draft.isEmpty ? typed : typed + "\n" + draft
@@ -709,7 +728,7 @@ final class AppModel {
   /// is sent. False when the phone couldn't keep it.
   private func queue(_ operation: OutboxOperation) async -> Bool {
     do {
-      try await outbox.enqueue(operation)
+      try await outbox.enqueue(operation, account: account)
     } catch {
       problem = Self.notKept
       return false
@@ -726,14 +745,14 @@ final class AppModel {
   }
 
   func send() async {
-    guard let client else { return }
+    guard let client, let recipient else { return }
     await adoptShares()
     // Each write checks first that the token is still this phone's: signed
     // out (or in again) meanwhile, the rest wait for the new session, and
     // the stop (a 401) is never shown.
     let outbox = self.outbox
     let run = Task {
-      await outbox.flush(prepare: { item, folder throws(APIError) in
+      await outbox.flush(for: recipient, prepare: { item, folder throws(APIError) in
         guard await self.holds(client) else { throw .notSignedIn }
         return try await client.prepare(item, files: folder)
       }) { item throws(APIError) in
@@ -765,7 +784,7 @@ final class AppModel {
     if unread, report.filed.isEmpty {
       toast = "Filed."
       if let fresh = try? await client.me(), holds(client) {
-        me = fresh
+        await took(fresh, from: client)
         updateWidgets()
       }
     }
@@ -788,6 +807,81 @@ final class AppModel {
 
   /// Whether `client` holds the token this phone is signed in with.
   private func holds(_ client: APIClient) -> Bool { client.token == token }
+
+  // MARK: Whose notes
+
+  static let accountKey = "account"
+  /// Set once the notes an earlier build queued have their account, or
+  /// can't have one (no token at launch, or signed out first).
+  static let stampedKey = "outbox.accounts"
+
+  /// At launch: the account kept is the signed-in token's, since it is
+  /// kept at each read of `/v1/me` and a new token is read before it is
+  /// kept. Notes an earlier build queued carry none; they wait for this
+  /// token's first read.
+  private func beginAccounts() {
+    guard !accountsBegun else { return }
+    accountsBegun = true
+    account = token == nil ? nil : defaults.string(forKey: Self.accountKey)
+    guard !defaults.bool(forKey: Self.stampedKey) else { return }
+    if let token { unstamped = token } else { defaults.set(true, forKey: Self.stampedKey) }
+  }
+
+  /// What each read of `/v1/me` tells: who this is and whose notes go. The
+  /// first read by a token an earlier build left signed in stamps that
+  /// build's notes, and its extension's shares, with this account: they were
+  /// written under this token.
+  private func took(_ fresh: Me, from client: APIClient) async {
+    guard holds(client) else { return }
+    me = fresh
+    account = fresh.account
+    defaults.set(fresh.account, forKey: Self.accountKey)
+    AppGroup.defaults?.set(fresh.account, forKey: AppGroup.accountKey)
+    guard let unstamped else { return }
+    // Another token signed in since: nothing says whose those notes were.
+    guard client.token == unstamped else { return endStamping() }
+    // A server before API 1.4.0: nothing to stamp them with yet.
+    guard let account = fresh.account else { return }
+    await adoptShares()
+    guard holds(client), self.unstamped != nil else { return }
+    // Unsaved, they wait, and the next read stamps them.
+    guard (try? await outbox.stamp(unknownWith: account)) != nil else { return }
+    endStamping()
+    waiting = await outbox.waiting
+  }
+
+  private func endStamping() {
+    unstamped = nil
+    defaults.set(true, forKey: Self.stampedKey)
+  }
+
+  /// Whose writes go now: this account's, once it is known. A server from
+  /// before API 1.4.0 names no account, so everything goes, as then. Before
+  /// a token whose account this phone never kept (an earlier build's) has
+  /// read `/v1/me`, nothing goes.
+  private var recipient: OutboxRecipient? {
+    guard token != nil else { return nil }
+    if let account { return .account(account) }
+    return me == nil ? nil : .anyone
+  }
+
+  /// Written while signed in to another account, or before signing in to
+  /// this one: Log asks before it goes (Jamie, 2026-10-30).
+  func isHeld(_ item: OutboxItem) -> Bool {
+    recipient.map(item.isHeld(for:)) ?? false
+  }
+
+  /// "Send to this account": a held note goes under this account, at the
+  /// owner's word, with its own key and its files posted again.
+  func sendHere(_ item: OutboxItem) async {
+    guard let account, item.canMove else { return }
+    do { try await outbox.move(item.id, to: account) } catch {
+      problem = Self.notKept
+      return
+    }
+    waiting = await outbox.waiting
+    await send()
+  }
 
   /// Sends what waits each time the phone is back online while the app is
   /// open; in the background, a refresh does. For as long as the window is.
@@ -1086,7 +1180,7 @@ final class AppModel {
   /// Whether a row is a note this phone's token wrote, the only ones it may
   /// change.
   func isMine(_ item: ActivityItem) -> Bool {
-    item.kind == "note.added" && item.via == "token" && item.token == me?.token.name && item.note != nil
+    me.map { TodayWords.isMine(item, token: $0.token) } ?? false
   }
 
   /// What a row of Today said, when it is a note this token wrote and its

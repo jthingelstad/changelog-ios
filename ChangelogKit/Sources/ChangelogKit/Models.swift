@@ -20,6 +20,11 @@ public struct Me: Codable, Sendable, Equatable {
   public var days: [DayVersion]
   public var token: TokenInfo
   public var apiVersion: String
+  /// Whose account the token opens (API 1.4.0): `acct_` and 32 hex
+  /// characters, the same for every token of the account and never
+  /// changing. A queued note is stamped with it (`OutboxItem.account`). Nil
+  /// from a server before 1.4.0.
+  public var account: String? = nil
 
   /// The version for a local day the server listed in `days`, so a widget or
   /// an offline header can show tomorrow's number without the arithmetic.
@@ -37,6 +42,10 @@ public struct TokenInfo: Codable, Sendable, Equatable {
   public var name: String
   public var scopes: [String]
   public var expiresAt: String?
+  /// The token's own record id (API 1.4.0), 32 hex characters, which each
+  /// activity row it writes carries as `token_id`. It grants nothing: never
+  /// the token or its hash. Nil from a server before 1.4.0.
+  public var id: String? = nil
 }
 
 /// `POST /v1/notes`. `writtenAt` is the moment the words were typed, so a
@@ -125,8 +134,21 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
   public var outcome: String?
   public var name: String?
   public var title: String?
+  /// The `token.id` of the token that wrote the row (API 1.4.0). A row
+  /// written before then has none (the field is left out, never null).
+  public var tokenId: String? = nil
 
   public var family: String { String(kind.split(separator: ".").first ?? Substring(kind)) }
+
+  /// Whether `token` wrote this row: by id when the row and `/v1/me` both
+  /// have one, so a later token given the same name is never taken for this
+  /// one; by the token's name only for a row from before API 1.4.0, which
+  /// has no `token_id`.
+  public func isBy(_ token: TokenInfo) -> Bool {
+    guard via == "token" else { return false }
+    if let tokenId { return tokenId == token.id }
+    return self.token == token.name
+  }
 }
 
 /// `GET /v1/upcoming/reminders`: the reminders each morning's email

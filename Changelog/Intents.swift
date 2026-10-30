@@ -30,7 +30,8 @@ struct AddNoteIntent: AppIntent {
     guard let inbox = ShareInbox.shared else { throw AddNoteProblem.noGroup }
     let share = inbox.open()
     do {
-      try await share.outbox.enqueue(.post(NotePost(text: words, writtenAt: Timestamp.string(.now))))
+      // Stamped as a share is, with the account the app last read.
+      try await share.outbox.enqueue(.post(NotePost(text: words, writtenAt: Timestamp.string(.now))), account: AppGroup.account)
     } catch {
       try? FileManager.default.removeItem(at: share.file)
       throw AddNoteProblem.notKept

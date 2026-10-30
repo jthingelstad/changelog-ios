@@ -19,6 +19,20 @@ public enum TodayWords {
   /// At most this many notes are read on one refresh, the first given.
   public static let limit = 20
 
+  /// Whether a row of Today is a note `token` wrote, the only kind it may
+  /// read back, edit or delete: by `token_id` where the row has one, else
+  /// by the token's name (`ActivityItem.isBy`).
+  public static func isMine(_ item: ActivityItem, token: TokenInfo) -> Bool {
+    item.kind == "note.added" && item.note != nil && item.isBy(token)
+  }
+
+  /// The notes among Today's rows that `token` wrote, to read back.
+  public static func notes(in rows: [ActivityItem], by token: TokenInfo) -> [Note] {
+    rows.filter { isMine($0, token: token) }.compactMap { item in
+      item.day.flatMap { day in item.note.map { Note(date: day, id: $0) } }
+    }
+  }
+
   /// Each note's words, by id, as read now. A note gone since (404) or no
   /// longer this token's (403) drops out; any other failure, offline
   /// included, keeps what was read before. Notes not asked about drop out.
