@@ -15,6 +15,11 @@ public struct Draft: Codable, Sendable, Equatable {
   public var spotAt: Date?
   /// The owner left the place off this draft.
   public var placeOff: Bool
+  /// The place is a moment's (Moments), not where the phone is: "Add where
+  /// I am" never moves it, and it goes with this note alone.
+  public var placeFromMoment: Bool
+  /// The day a moment files the note to; nil for today.
+  public var day: String?
   /// Set as the draft is committed, until the note is in the queue.
   public var handover: Handover?
 
@@ -44,7 +49,8 @@ public struct Draft: Codable, Sendable, Equatable {
   }
 
   public init(text: String = "", files: [QueuedFile] = [], spot: Spot? = nil, here: Here? = nil, venue: String? = nil,
-              spotAt: Date? = nil, placeOff: Bool = false, handover: Handover? = nil) {
+              spotAt: Date? = nil, placeOff: Bool = false, placeFromMoment: Bool = false, day: String? = nil,
+              handover: Handover? = nil) {
     self.text = text
     self.files = files
     self.spot = spot
@@ -52,7 +58,24 @@ public struct Draft: Codable, Sendable, Equatable {
     self.venue = venue
     self.spotAt = spotAt
     self.placeOff = placeOff
+    self.placeFromMoment = placeFromMoment
+    self.day = day
     self.handover = handover
+  }
+
+  /// A draft an earlier build kept, before moments, still reads.
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    text = try c.decode(String.self, forKey: .text)
+    files = try c.decode([QueuedFile].self, forKey: .files)
+    spot = try c.decodeIfPresent(Spot.self, forKey: .spot)
+    here = try c.decodeIfPresent(Here.self, forKey: .here)
+    venue = try c.decodeIfPresent(String.self, forKey: .venue)
+    spotAt = try c.decodeIfPresent(Date.self, forKey: .spotAt)
+    placeOff = try c.decodeIfPresent(Bool.self, forKey: .placeOff) ?? false
+    placeFromMoment = try c.decodeIfPresent(Bool.self, forKey: .placeFromMoment) ?? false
+    day = try c.decodeIfPresent(String.self, forKey: .day)
+    handover = try c.decodeIfPresent(Handover.self, forKey: .handover)
   }
 
   /// No words, files or place: nothing to keep.
