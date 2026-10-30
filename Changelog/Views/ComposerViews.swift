@@ -11,11 +11,14 @@ struct ComposerTools: View {
   @State private var picks: [PhotosPickerItem] = []
   @State private var camera = false
   @State private var recording = false
+  /// Room between the buttons once big text makes the symbols wider than
+  /// their 44 points.
+  @ScaledMetric(relativeTo: .title3) private var gap: CGFloat = 2
 
   var body: some View {
     // Each button a 44-point square to tap, which keeps the symbols about
     // as far apart as the 18 points between them did.
-    HStack(spacing: 0) {
+    HStack(spacing: gap) {
       if model.canAddFiles {
         Group {
           PhotosPicker(selection: $picks, maxSelectionCount: max(1, model.roomForFiles), matching: .images,
