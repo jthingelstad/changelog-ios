@@ -165,7 +165,11 @@ phone. Jamie, 2026-10-29: "Claude may upload Changelog to TestFlight for
 internal testing after work merges to main, without asking each time." So
 after a merge that changes the app, upload main; a merge of docs or CI
 alone needs no build. Every other upload (for outside testers, for the App
-Store, from anything but main) is still Jamie's call each time. It needs
+Store, from anything but main) is still Jamie's call each time.
+`--external` makes the build outside testers can get, and
+`scripts/asc.swift` makes the App Store Connect calls Xcode doesn't (test
+information, the review sign-in, groups), with the same key; both are in
+`docs/DISTRIBUTION.md`. `testflight.sh` needs
 one phone registered to the team (automatic signing archives with a
 development profile, which Apple makes only for a team with a device), and
 either an App Store Connect API key, which works from any shell (an Admin
