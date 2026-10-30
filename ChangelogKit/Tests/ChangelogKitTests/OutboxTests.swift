@@ -246,6 +246,29 @@ private actor Script {
     #expect(report.refused.map(\.text) == ["Undated"])
   }
 
+  /// A note remade under a new key is saved first. When the queue can't be
+  /// written, it stays as it was and isn't sent, so a relaunch never remakes
+  /// it under a third key and files it twice.
+  @Test func aRemadeNoteThatCantBeSavedIsNotSent() async throws {
+    let dir = FileManager.default.temporaryDirectory.appending(path: "outbox remade \(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let outbox = Outbox(file: dir.appending(path: "outbox.json"))
+    let dated = try await outbox.enqueue(.note(text: "An old one", date: "1900-01-01", writtenAt: "2026-10-29T07:45:00-05:00"))
+    // The phone fills up: the queue can no longer be written.
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path(percentEncoded: false))
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path(percentEncoded: false)) }
+    let range = APIError(status: 400, code: "date_out_of_range", message: "Choose a day from your birthday through today.", field: "date")
+    let script = Script([.failure(range), .success(.filed(receipt("a")))])
+    let report = await outbox.flush { item throws(APIError) in try await script.next(item) }
+    #expect(await script.sent.map(\.idempotencyKey) == [dated.idempotencyKey])
+    #expect(report.stopped?.code == "not_kept" && report.filed.isEmpty && report.refused.isEmpty)
+    // Still the dated request under its key, waiting for a run that can keep it.
+    let waiting = try #require(await outbox.waiting.first)
+    #expect(waiting.id == dated.id && waiting.idempotencyKey == dated.idempotencyKey && waiting.operation == dated.operation)
+    #expect(waiting.refusal == nil)
+  }
+
   @Test func eachWaitSaysWhy() async throws {
     let outbox = Outbox(file: nil)
     try await outbox.enqueue(text: "one")
