@@ -27,6 +27,23 @@ import Testing
     #expect(Hashtags.adding("house", to: "Fixed the #House faucet") == "Fixed the #House faucet")
   }
 
+  /// As `removingTag` in Release Notes' `packages/domain/tags.ts`: the space
+  /// before a tag goes with it, or for a tag leading the text, the one after.
+  @Test(arguments: [
+    ("#fixed the bug", "the bug"),
+    ("#fixed", ""),
+    ("#fixed ", ""),
+    ("Fixed the bug #fixed", "Fixed the bug"),
+    ("the #fixed bug", "the bug"),
+    ("#fixed the bug #fixed", "the bug"),
+    ("#fixed #fixed", ""),
+    ("one\n#fixed two", "one\ntwo"),
+    ("#fixed  two", " two"),
+  ])
+  func takesATagOffWithTheSpaceBesideIt(text: String, left: String) {
+    #expect(Hashtags.removing("fixed", from: text) == left)
+  }
+
   @Test func theRowIsPinnedThenRecentThenQuick() {
     let tags = Tags(pinned: ["house", "work"],
                     recent: [RecentTag(tag: "running", count: 6, lastUsed: nil), RecentTag(tag: "work", count: 3, lastUsed: nil)],

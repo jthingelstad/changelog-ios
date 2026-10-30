@@ -53,13 +53,15 @@ public enum Hashtags {
     return trimmed.isEmpty ? "#\(tag) " : "\(trimmed) #\(tag)"
   }
 
-  /// Takes every `#tag` for this tag out, tidying the space it leaves.
+  /// Takes every `#tag` for this tag out with the space beside it: the one
+  /// before, or for a tag with none before (one leading the text), the one
+  /// after, as `removingTag` does.
   public static func removing(_ tag: String, from text: String) -> String {
     var chars = Array(text)
     for span in spans(text).reversed() where span.tag == tag {
-      var start = span.start
-      if start > 0, chars[start - 1] == " " { start -= 1 }
-      chars.removeSubrange(start..<span.end)
+      let before = span.start > 0 && chars[span.start - 1] == " "
+      let after = !before && span.end < chars.count && chars[span.end] == " "
+      chars.removeSubrange((before ? span.start - 1 : span.start)..<(after ? span.end + 1 : span.end))
     }
     return String(chars)
   }
