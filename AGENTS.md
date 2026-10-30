@@ -23,8 +23,10 @@ there first, never work around it here.
   notifications), `ActivityNotices` (which activity rows tell the phone
   something), `TodayWords` (the words of today's notes this token wrote,
   read back for Log), `QuickNote` (a note sent from outside the app's screens,
-  within a deadline, else left for the app) and `WidgetSnapshot` (what the
-  widgets show, one day per local midnight). It has its own tests:
+  within a deadline, else left for the app), `Moment` (a moment picked in
+  Apple's Journaling Suggestions, as plain values, and what it puts in the
+  draft) and `WidgetSnapshot` (what the widgets show, one day per local
+  midnight). It has its own tests:
   `swift test --package-path ChangelogKit`.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
   screens (Log, Upcoming, Activity, Settings, sign-in: Release Notes'
@@ -34,7 +36,14 @@ there first, never work around it here.
   scheduled ahead, or found by background refresh), `Intents` Shortcuts'
   and Siri's "Add a Note" (sent as a share is, without opening the app,
   within 5 seconds, well inside Siri's own wait, else left for the app;
-  Jamie, 2026-10-30) and the phrases Siri knows.
+  Jamie, 2026-10-30) and the phrases Siri knows, `Moments` the
+  Journaling Suggestions picker's moment read into `Moment`. That
+  framework is in the phone's SDK only, so `Moments` and Log's Moments
+  button are inside `#if canImport(JournalingSuggestions)`; a simulator's
+  debug build has a fictional stand-in moment instead, behind
+  `CHANGELOG_MOMENT`, for the test cycle. The picker needs the
+  `com.apple.developer.journal.allow` entitlement (and the capability on
+  the App ID) and asks no permission.
 - `Shared/` is built into both the app and the widget extension:
   `AppRoute` (the tab or the new note the app opens to) and `NewNoteIntent`
   ("New Note", which opens Log ready to write; a control can only name an
@@ -111,6 +120,17 @@ there first, never work around it here.
 - Location is When In Use, one fix when the owner asks (or has "Add where
   I am" on), never in the background. Each Here is a lookup Release Notes
   pays for, capped at 100 a day: ask once a draft, never as words change.
+- A moment only fills the draft: nothing is sent until the person
+  commits. Its photos go through `addPhoto` within the draft's room, its
+  place through the same Here naming as the location button, once a pick,
+  and every other kind becomes one plain line by `Moment`'s rules, in the
+  person's units, never by a model. Videos are left out, with a line the
+  person sees, not in the note. A moment from an earlier day files to it
+  (`/v1`'s `date`), shown under the box with "File to today"; the version
+  shows only if the app already has it, else the date. A later day files
+  to today, and a day Release Notes refuses (`date_out_of_range`, before
+  the birthday, which the app never learns) is filed to the day it was
+  written by the Outbox, once, under a new key.
 - The app reads back only notes this token wrote, and the activity log
   (which has no words in it). It never asks for `notes:read`. Log's Today
   shows the words of today's notes this token wrote (Jamie, 2026-10-29:
@@ -167,7 +187,8 @@ Keychain.
 
 `scripts/ui-test-cycle.sh` (`ChangelogUITests`) is the test cycle: it
 builds ad-hoc signed, grants photos, location and the microphone, sets the
-simulator in Minneapolis, and drives a note, a photo, Here, a voice memo,
+simulator in Minneapolis, and drives a note, a photo, Here, a moment (the
+stand-in, filed to its day and then to today), a voice memo,
 Upcoming (a date added and deleted), Activity and Settings, and a share
 from Photos against the dev server, checking `/v1/activity` that each made
 exactly one note (and `/v1/upcoming` the date). Name tests after

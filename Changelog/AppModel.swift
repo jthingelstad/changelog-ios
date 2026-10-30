@@ -340,7 +340,12 @@ final class AppModel {
     todayGeneration += 1
     let generation = todayGeneration
     guard let page = try? await client.activity(limit: 100), generation == todayGeneration else { return }
-    for item in page.items { if let day = item.day, let version = item.version { versions[day] = version } }
+    // A note's row has its day's version. Another kind's can pair a note's
+    // day with the version it happened in (a badge earned today for a note
+    // two days back), so only these name a day's version.
+    for item in page.items where item.kind == "note.added" {
+      if let day = item.day, let version = item.version { versions[day] = version }
+    }
     today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
     let mine = today.filter(isMine).compactMap { item in
       item.day.flatMap { day in item.note.map { TodayWords.Note(date: day, id: $0) } }
