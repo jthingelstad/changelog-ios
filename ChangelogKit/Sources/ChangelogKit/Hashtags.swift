@@ -2,9 +2,12 @@ import Foundation
 
 /// Hashtags live in the note's text, as Release Notes reads them
 /// (`packages/domain/tags.ts`): a `#` not after a letter, digit or one of
-/// `_#&/=`, then letters and digits joined by single hyphens, lowercased and
-/// folded to ASCII, at most 50 characters, with at least one letter. The
-/// server stays the authority; this is for the tag row's on and off.
+/// `_#&/=`, then letters and digits joined by single hyphens, at most 50
+/// characters, with at least one letter. One with an a-z letter is the old
+/// slug, lowercased and folded to ASCII (#Café is cafe), so no tag moves;
+/// one without is its own letters in any script, lowercased (#東京 is 東京,
+/// #Москва is москва; Release Notes API 1.7.0, 2026-10-30). The server stays
+/// the authority; this is for the tag row's on and off and the pinned tags.
 public enum Hashtags {
   public static let maxTag = 50
 
@@ -26,13 +29,57 @@ public enum Hashtags {
     return out
   }
 
+  /// Has a letter, in any script: what a tag needs.
   public static func valid(_ tag: String) -> Bool {
+    tag.contains { $0.isLetter }
+  }
+
+  /// Has an a-z letter: a tag the old slug makes, kept exactly as it was.
+  static func latin(_ tag: String) -> Bool {
     tag.unicodeScalars.contains { ("a"..."z").contains($0) }
   }
 
-  /// A tag as the owner typed it ("#Maine 2016"), or nil if it has no letter.
+  static func isWord(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+
+  /// A name's tag in any script, as the server's `wide`: its words,
+  /// lowercased (NFC), joined by hyphens, at most 50 code points and never
+  /// cut inside a letter (a Character keeps its marks and joiners).
+  static func wide(_ name: String) -> String {
+    var words: [String] = []
+    var word = ""
+    for c in name.lowercased().precomposedStringWithCanonicalMapping {
+      if isWord(c) {
+        word.append(c)
+      } else if !word.isEmpty {
+        words.append(word)
+        word = ""
+      }
+    }
+    if !word.isEmpty { words.append(word) }
+    var out = ""
+    var count = 0
+    for c in words.joined(separator: "-") {
+      count += c.unicodeScalars.count
+      if count > maxTag { break }
+      out.append(c)
+    }
+    while let last = out.unicodeScalars.last, ["-", "\u{200C}", "\u{200D}"].contains(last) {
+      out.unicodeScalars.removeLast()
+    }
+    return out
+  }
+
+  /// A name as a tag, as the server's `tagName`: the old slug when it has
+  /// a-z letters, otherwise its letters in any script.
+  public static func tagName(_ name: String) -> String {
+    let old = slug(name)
+    return latin(old) ? old : wide(name)
+  }
+
+  /// A tag as the owner typed it ("#Maine 2016", "Москва"), or nil if it has
+  /// no letter.
   public static func normalize(_ raw: String) -> String? {
-    let tag = slug(raw.hasPrefix("#") ? String(raw.dropFirst()) : raw)
+    let tag = tagName(raw.hasPrefix("#") ? String(raw.dropFirst()) : raw)
     return valid(tag) ? tag : nil
   }
 
@@ -77,7 +124,7 @@ public enum Hashtags {
     let chars = Array(text)
     var out: [Span] = []
     var start = 0
-    func word(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+    let word = isWord
     while start < chars.count {
       defer { start += 1 }
       guard chars[start] == "#" else { continue }
@@ -89,8 +136,15 @@ public enum Hashtags {
         end += 1
         while end < chars.count, word(chars[end]) { end += 1 }
       }
-      let tag = slug(String(chars[(start + 1)..<end]))
-      if valid(tag) { out.append(Span(start: start, end: end, tag: tag)) }
+      let body = String(chars[(start + 1)..<end])
+      let old = slug(body)
+      if latin(old) {
+        out.append(Span(start: start, end: end, tag: old))
+      } else {
+        // No a-z letter: its own letters are the tag, if it has one.
+        let own = wide(body)
+        if valid(own), tagName(own) == own { out.append(Span(start: start, end: end, tag: own)) }
+      }
       start = end - 1
     }
     return out
