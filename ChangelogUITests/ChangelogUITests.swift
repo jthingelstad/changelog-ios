@@ -37,6 +37,15 @@ final class ChangelogUITests: XCTestCase {
     // Today reads back what this token sent and shows its words.
     let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
     expect(row, "Today shows the note's words", in: app)
+    // A swipe's Delete asks first; the note goes only once confirmed.
+    row.swipeLeft()
+    app.buttons["Delete"].firstMatch.tap()
+    expect(app.staticTexts["Delete this note?"], "deleting a note asks first", in: app)
+    let confirm = app.sheets.buttons["Delete"].exists ? app.sheets.buttons["Delete"]
+      : app.buttons.matching(identifier: "Delete").element(boundBy: app.buttons.matching(identifier: "Delete").count - 1)
+    XCTAssertTrue(row.exists, "nothing is deleted before the confirmation")
+    confirm.tap()
+    XCTAssertTrue(row.waitForNonExistence(timeout: 20), "the note leaves Today")
   }
 
   @MainActor func testAPhoto() async throws {

@@ -9,6 +9,8 @@ struct LogView: View {
   @FocusState private var typing: Bool
   @State private var editing: ActivityItem?
   @State private var fixing: OutboxItem?
+  /// The note a swipe asked to delete, waiting for the confirmation.
+  @State private var deleting: ActivityItem?
 
   var body: some View {
     @Bindable var model = model
@@ -76,7 +78,7 @@ struct LogView: View {
             ActivityRow(item: item, words: model.words(of: item))
               .swipeActions {
                 if model.isMine(item) {
-                  Button("Delete", role: .destructive) { Task { await model.delete(item) } }
+                  Button("Delete", role: .destructive) { deleting = item }
                   Button("Edit") { editing = item }
                 }
               }
@@ -98,6 +100,13 @@ struct LogView: View {
       }
       .overlay(alignment: .bottom) { Toast() }
       .sheet(item: $editing) { item in EditNoteView(item: item) }
+      // Jamie, 2026-10-30: a swipe asks before a note goes for good.
+      .confirmationDialog("Delete this note?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                          titleVisibility: .visible, presenting: deleting) { item in
+        Button("Delete", role: .destructive) { Task { await model.delete(item) } }
+      } message: { _ in
+        Text("It goes from Release Notes, with its photos and files. This can't be undone.")
+      }
       .sheet(item: $fixing) { item in
         // A refused edit opens with its words, to save from the newest
         // revision; a refused note, to send again.

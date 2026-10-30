@@ -35,8 +35,10 @@ struct AddNoteIntent: AppIntent {
       try? FileManager.default.removeItem(at: share.file)
       throw AddNoteProblem.notKept
     }
-    // Siri doesn't wait long: what isn't sent in time, the app sends.
-    let outcome = await QuickNote.send(share, from: inbox, with: QuickNote.client(userAgent: AppModel.userAgent), within: .seconds(10))
+    // Siri doesn't wait long: what isn't sent in 5 seconds, the app sends,
+    // well inside Siri's own patience, so it never asks to be said again
+    // (which would be a second note).
+    let outcome = await QuickNote.send(share, from: inbox, with: QuickNote.client(userAgent: AppModel.userAgent), within: .seconds(5))
     if case .filed(let receipt) = outcome {
       if WidgetSnapshot.filed(on: receipt.note.date) { WidgetCenter.shared.reloadAllTimelines() }
       // Written today: today's prompt has nothing left to ask.
