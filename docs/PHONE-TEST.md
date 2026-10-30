@@ -67,7 +67,9 @@ Upcoming and the activity log.
     ready to write. The next morning the version has turned without
     opening the app. In Control Center, add "New Note".
 11. **Offline.** Airplane mode, a note with a photo, Commit: it waits
-    under "Waiting to send". Airplane mode off: it sends, once. A share,
+    under "Waiting to send", "Waiting for a connection". Airplane mode
+    off, the app still open: it sends, once, without leaving Log. A note
+    committed just before going to the Home Screen still sends. A share,
     or "Add a Note" in Shortcuts, made offline says "Saved. Changelog
     sends it when it can." and sends the next time the app opens, once.
 12. **Upcoming.** "Add a date" (a birthday), Save, then edit it and delete
