@@ -1,6 +1,7 @@
 import ChangelogKit
 import CoreGraphics
 import Foundation
+import Network
 import Observation
 import UIKit
 import WidgetKit
@@ -32,6 +33,14 @@ final class AppModel {
   /// Moves on when reminders are turned on or off or the session ends, so
   /// an update still waiting on the server can't schedule them again.
   private var remindersGeneration = 0
+  /// The rebuild of the reminders under way, one at a time; asked for again
+  /// meanwhile, it runs once more when it ends.
+  @ObservationIgnored private var remindersRun: Task<Void, Never>?
+  @ObservationIgnored private var remindersAgain = false
+  /// When the queue next wants a try, for the background refresh: after a
+  /// run that left notes waiting (offline, a day's limit, Release Notes
+  /// busy). Nil when nothing waits to go.
+  @ObservationIgnored private var queueAfter: Date?
   /// The daily prompt, off by default.
   private(set) var promptOn: Bool
   private(set) var promptProblem: String?
@@ -274,7 +283,8 @@ final class AppModel {
     WidgetSnapshot.clear()
     WidgetCenter.shared.reloadAllTimelines()
     PhoneReminders.clearShown()
-    Task { await stopReminders() }
+    // After any rebuild under way, so none schedules them again.
+    Task { await updateReminders() }
   }
 
   // MARK: Reading
@@ -293,7 +303,10 @@ final class AppModel {
       await send()
       await updateReminders()
     } catch let error as APIError {
-      handle(error)
+      handle(error, from: client)
+      // Unreachable: a refresh later sends what waits, should the
+      // connection not come back while the app is open.
+      if holds(client) { retryLater(error) }
     } catch {}
   }
 
@@ -349,8 +362,27 @@ final class AppModel {
   /// within iOS's limit on waiting notifications (`NotificationPlan`).
   /// Offline, the reminders scheduled stay and the prompts are topped up
   /// from the last `/v1/me`; a token that can't read Upcoming clears its
-  /// reminders.
+  /// reminders. One rebuild at a time, so an older read never lands after a
+  /// newer one, nor two add and take back the same notifications: asked
+  /// for while one runs, it runs again after, and this returns once that
+  /// is done.
   func updateReminders() async {
+    if let running = remindersRun {
+      remindersAgain = true
+      return await running.value
+    }
+    let run = Task {
+      repeat {
+        remindersAgain = false
+        await rebuildReminders()
+      } while remindersAgain
+      remindersRun = nil
+    }
+    remindersRun = run
+    await run.value
+  }
+
+  private func rebuildReminders() async {
     let generation = remindersGeneration
     guard token != nil, remindersOn || promptOn else { return await stopReminders() }
     // A background launch that couldn't reach /v1/me doesn't know the
@@ -388,11 +420,28 @@ final class AppModel {
     scheduleRefresh()
   }
 
-  /// A background refresh while anything needs one: sooner for activity,
-  /// which only a refresh reads; none once everything is off.
+  /// A background refresh for as long as this phone is signed in: at least
+  /// daily, so the widgets move on to each day's version without the app
+  /// being opened; more often for reminders and the prompt, and for
+  /// activity, which only a refresh reads; and as soon as Release Notes
+  /// allows while notes wait to go. None once signed out.
   private func scheduleRefresh() {
-    guard token != nil, remindersOn || promptOn || !activityNotices.isEmpty else { return PhoneReminders.cancelRefresh() }
-    PhoneReminders.askForRefresh(after: activityNotices.isEmpty ? 6 * 3600 : 3600)
+    guard token != nil else { return PhoneReminders.cancelRefresh() }
+    var after: TimeInterval = !activityNotices.isEmpty ? 3600 : remindersOn || promptOn ? 6 * 3600 : 12 * 3600
+    if let queueAfter { after = min(after, max(Self.soonestRetry, queueAfter.timeIntervalSinceNow)) }
+    PhoneReminders.askForRefresh(after: after)
+  }
+
+  /// The soonest a background refresh is asked for to send what waits.
+  static let soonestRetry: TimeInterval = 15 * 60
+
+  /// Sets when the queue next wants a try, after `stopped` (no sooner than
+  /// Release Notes asked: a day's limit runs to midnight UTC), and asks
+  /// for a refresh to fit.
+  private func retryLater(_ stopped: APIError?) {
+    queueAfter = waiting.contains { $0.refusal == nil }
+      ? .now.addingTimeInterval(max(Self.soonestRetry, stopped?.retryAfter ?? 0)) : nil
+    scheduleRefresh()
   }
 
   /// iOS's background refresh, which may start the app without a window:
@@ -407,7 +456,7 @@ final class AppModel {
       updateWidgets()
     } catch {
       // A revoked or expired token signs out here as it would on screen.
-      if error.signedOut { return handle(error) }
+      if error.signedOut { return handle(error, from: client) }
     }
     await send()
     await updateReminders()
@@ -453,7 +502,7 @@ final class AppModel {
     do {
       page = try await client.activity(after: cursor.isEmpty ? nil : cursor, kinds: ActivityNotices.families, limit: 100)
     } catch {
-      if error.signedOut { handle(error) }
+      if error.signedOut { handle(error, from: client) }
       return
     }
     // Turned off, or signed out, while the read was out.
@@ -477,7 +526,7 @@ final class AppModel {
       updateWidgets()
       return list
     } catch {
-      if error.signedOut { handle(error) }
+      if error.signedOut { handle(error, from: client) }
       throw error
     }
   }
@@ -493,7 +542,7 @@ final class AppModel {
       if !batch.dryRun { Task { await updateReminders() } }
       return saved
     } catch {
-      if error.signedOut { handle(error) }
+      if error.signedOut { handle(error, from: client) }
       throw error
     }
   }
@@ -504,7 +553,7 @@ final class AppModel {
       try await client.deleteUpcoming(id: entry.id, revision: entry.revision, idempotencyKey: idempotencyKey)
       Task { await updateReminders() }
     } catch {
-      if error.signedOut { handle(error) }
+      if error.signedOut { handle(error, from: client) }
       throw error
     }
   }
@@ -633,12 +682,48 @@ final class AppModel {
   func send() async {
     guard let client else { return }
     await adoptShares()
-    let report = await outbox.flush(prepare: { item, folder throws(APIError) in
-      try await client.prepare(item, files: folder)
-    }) { item throws(APIError) in try await client.perform(item) }
+    // Each write checks first that the token is still this phone's: signed
+    // out (or in again) meanwhile, the rest wait for the new session, and
+    // the stop (a 401) is never shown.
+    let outbox = self.outbox
+    let run = Task {
+      await outbox.flush(prepare: { item, folder throws(APIError) in
+        guard await self.holds(client) else { throw .notSignedIn }
+        return try await client.prepare(item, files: folder)
+      }) { item throws(APIError) in
+        guard await self.holds(client) else { throw .notSignedIn }
+        return try await client.perform(item)
+      }
+    }
+    // A send under way when the app goes to the background finishes there.
+    // Out of time, it is cancelled, and the note it was sending waits under
+    // the same key.
+    let time = BackgroundTime("Send notes") { run.cancel() }
+    let report = await run.value
+    time.end()
     waiting = await outbox.waiting
+    // Signed out, or in again, while it went: its answers were for a session
+    // that has ended. What still waits goes with the new token.
+    guard holds(client) else {
+      if token != nil { await send() }
+      return
+    }
+    retryLater(report.stopped)
     for sent in report.sent {
       if case .pinned(let answer) = sent.result { tags = answer }
+    }
+    // Filed, in an answer this build couldn't read: no version to show, so
+    // `/v1/me` says whether today has a note now.
+    let unread = report.sent.contains { sent in
+      guard case .post = sent.item.operation else { return false }
+      return sent.result == .done
+    }
+    if unread, report.filed.isEmpty {
+      toast = "Filed."
+      if let fresh = try? await client.me(), holds(client) {
+        me = fresh
+        updateWidgets()
+      }
     }
     if let last = report.filed.last {
       lastFiled = last
@@ -654,7 +739,21 @@ final class AppModel {
       }
     }
     if report.sent.contains(where: { $0.item.text != nil || $0.result == .deleted }) { await loadToday() }
-    if let stopped = report.stopped { handle(stopped) }
+    if let stopped = report.stopped { handle(stopped, from: client) }
+  }
+
+  /// Whether `client` holds the token this phone is signed in with.
+  private func holds(_ client: APIClient) -> Bool { client.token == token }
+
+  /// Sends what waits each time the phone is back online while the app is
+  /// open; in the background, a refresh does. For as long as the window is.
+  func watchConnection() async {
+    var online = true
+    for await path in NWPathMonitor() {
+      let now = path.status == .satisfied
+      if now, !online, phase == .signedIn, UIApplication.shared.applicationState == .active { await send() }
+      online = now
+    }
   }
 
   func discard(_ item: OutboxItem) async {
@@ -912,10 +1011,14 @@ final class AppModel {
 
   func activity(before: String? = nil, kinds: [String] = []) async -> ActivityPage? {
     guard let client else { return nil }
-    do { return try await client.activity(before: before, kinds: kinds) } catch { handle(error); return nil }
+    do { return try await client.activity(before: before, kinds: kinds) } catch { handle(error, from: client); return nil }
   }
 
-  private func handle(_ error: APIError) {
+  /// `used` is the client that got the answer: one for a token this phone no
+  /// longer holds (signed out, or in again, while it was out) says nothing
+  /// of this session, and never signs it out.
+  private func handle(_ error: APIError, from used: APIClient? = nil) {
+    if let used, used.token != token { return }
     if error.signedOut {
       forget()
       problem = Self.signedOutReason(error)
@@ -924,5 +1027,26 @@ final class AppModel {
     } else {
       problem = error.message
     }
+  }
+}
+
+/// Time iOS gives a task to finish once the app goes to the background.
+/// `expired` runs should that time run out first; the time ends then, or
+/// at `end`, whichever comes first.
+@MainActor
+private final class BackgroundTime {
+  private var id = UIBackgroundTaskIdentifier.invalid
+
+  init(_ name: String, expired: @escaping @MainActor @Sendable () -> Void) {
+    id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+      expired()
+      self?.end()
+    }
+  }
+
+  func end() {
+    guard id != .invalid else { return }
+    UIApplication.shared.endBackgroundTask(id)
+    id = .invalid
   }
 }

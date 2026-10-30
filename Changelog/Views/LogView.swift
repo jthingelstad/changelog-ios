@@ -187,7 +187,7 @@ struct WaitingRow: View {
       if let refusal = item.refusal {
         Text(refusal).font(.caption).foregroundStyle(.orange)
       } else {
-        Text(item.attempts == 0 ? "Sending…" : "Waiting for a connection")
+        Text(item.status)
           .font(.caption).foregroundStyle(.secondary)
       }
     }

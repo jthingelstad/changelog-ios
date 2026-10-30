@@ -15,6 +15,8 @@ struct ChangelogApp: App {
       RootView()
         .environment(model)
         .task { await model.start() }
+        // Back online with the app open: what waits goes.
+        .task { await model.watchConnection() }
         .onChange(of: scenePhase) { _, phase in
           if phase == .active, model.phase == .signedIn { Task { await model.refresh() } }
           // Off the screen, iOS may end the app before it is back: the
