@@ -624,9 +624,11 @@ final class AppModel {
     waiting = await outbox.waiting
   }
 
-  /// A refused note, fixed by hand. False when the phone couldn't keep it.
-  func retry(_ item: OutboxItem, text: String) async -> Bool {
-    do { try await outbox.retry(item.id, text: text) } catch {
+  /// A refused note or edit, fixed by hand: a note with the files it still
+  /// goes with, an edit from the revision read again. False when the phone
+  /// couldn't keep it.
+  func retry(_ item: OutboxItem, text: String, keeping files: Set<UUID>? = nil, revision: String? = nil) async -> Bool {
+    do { try await outbox.retry(item.id, text: text, keeping: files, revision: revision) } catch {
       problem = Self.notKept
       return false
     }
@@ -782,9 +784,14 @@ final class AppModel {
     isMine(item) ? item.note.flatMap { todayWords[$0] } : nil
   }
 
-  func load(_ item: ActivityItem) async -> NoteDetail? {
-    guard let client, let day = item.day, let id = item.note else { return nil }
-    do { return try await client.note(date: day, id: id) } catch { handle(error); return nil }
+  /// Reads a note this token wrote, to edit it. A token that no longer
+  /// works signs out; any other failure is for the editor to say.
+  func load(date: String, id: String) async throws(APIError) -> NoteDetail {
+    guard let client else { throw .notSignedIn }
+    do { return try await client.note(date: date, id: id) } catch {
+      if error.signedOut { handle(error) }
+      throw error
+    }
   }
 
   /// Queues an edit from the revision read. True once it is safely queued:

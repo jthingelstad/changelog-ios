@@ -55,7 +55,7 @@ struct LogView: View {
               WaitingRow(item: item)
                 .swipeActions {
                   Button("Discard", role: .destructive) { Task { await model.discard(item) } }
-                  if item.refusal != nil && item.isNote { Button("Fix") { fixing = item } }
+                  if item.refusal != nil && (item.isNote || item.isEdit) { Button("Fix") { fixing = item } }
                 }
             }
           }
@@ -92,7 +92,15 @@ struct LogView: View {
       }
       .overlay(alignment: .bottom) { Toast() }
       .sheet(item: $editing) { item in EditNoteView(item: item) }
-      .sheet(item: $fixing) { item in FixWaitingView(item: item) }
+      .sheet(item: $fixing) { item in
+        // A refused edit opens with its words, to save from the newest
+        // revision; a refused note, to send again.
+        if case .edit(let date, let id, _, _) = item.operation {
+          EditNoteView(date: date, id: id, title: "Fix and save", refused: item)
+        } else {
+          FixWaitingView(item: item)
+        }
+      }
     }
   }
 }
@@ -187,25 +195,62 @@ struct Toast: View {
   }
 }
 
-/// Edits a note this token wrote, from the revision it read.
+/// Edits a note this token wrote, from the revision it read. An edit
+/// Release Notes refused (changed since it was read, or too long) opens here
+/// too, with its own words, and saves from the revision read now.
 struct EditNoteView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
-  let item: ActivityItem
+  let date: String
+  let id: String
+  let title: String
+  let refused: OutboxItem?
   @State private var note: NoteDetail?
-  @State private var text = ""
+  @State private var failure: APIError?
+  @State private var text: String
   @State private var saving = false
+
+  init(item: ActivityItem) {
+    self.init(date: item.day ?? "", id: item.note ?? "", title: item.version.map { "Edit in \($0)" } ?? "Edit")
+  }
+
+  init(date: String, id: String, title: String, refused: OutboxItem? = nil) {
+    self.date = date
+    self.id = id
+    self.title = title
+    self.refused = refused
+    _text = State(initialValue: refused?.text ?? "")
+  }
 
   var body: some View {
     NavigationStack {
       Form {
-        if note == nil {
-          ProgressView()
-        } else {
+        if let refusal = refused?.refusal {
+          Section {
+            Text(refusal).foregroundStyle(.orange)
+          } footer: {
+            Text("Your words are below. Saving puts them in place of what the note says now.")
+          }
+        }
+        if let failure {
+          Section {
+            Label(Self.sentence(failure), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            if failure.retryable { Button("Try again") { Task { await read() } } }
+          }
+        }
+        if note != nil || refused != nil {
           TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
+        } else if failure == nil {
+          ProgressView()
+        }
+        if refused != nil {
+          Section { CopyWordsButton(text: text) }
+          if let note {
+            Section("What it says now") { Text(verbatim: note.text).foregroundStyle(.secondary).textSelection(.enabled) }
+          }
         }
       }
-      .navigationTitle(item.version.map { "Edit in \($0)" } ?? "Edit")
+      .navigationTitle(title)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .confirmationAction) {
@@ -213,33 +258,77 @@ struct EditNoteView: View {
             guard let note else { return }
             saving = true
             Task {
-              if await model.save(note, text: text) { dismiss() }
+              var kept = false
+              if let refused {
+                kept = await model.retry(refused, text: text, revision: note.revision)
+              } else {
+                kept = await model.save(note, text: text)
+              }
+              if kept { dismiss() }
               saving = false
             }
           }
           .disabled(note == nil || saving || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
       }
-      .task {
-        note = await model.load(item)
-        text = note?.text ?? ""
-      }
+      .task { await read() }
+    }
+  }
+
+  private func read() async {
+    failure = nil
+    do {
+      let read = try await model.load(date: date, id: id)
+      note = read
+      if refused == nil { text = read.text }
+    } catch {
+      failure = error
+    }
+  }
+
+  /// Why the note couldn't be read for editing, and what to do.
+  static func sentence(_ error: APIError) -> String {
+    switch error.code {
+    case "not_yours": "Another token sent this note, so this phone can't change it. Change it on the web."
+    case "not_found": "This note is gone: it was deleted somewhere else."
+    default:
+      error.signedOut ? "Sign in again to change this note."
+        : error.status == 0 ? "Couldn't reach Release Notes to read this note. Try again in a moment." : error.message
     }
   }
 }
 
-/// A note Release Notes refused, edited and sent again under a new key.
+/// A note Release Notes refused, fixed and sent again under a new key: its
+/// words changed, or the files it refused (a token that can't add files)
+/// left off, down to the words alone.
 struct FixWaitingView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   let item: OutboxItem
   @State private var text = ""
+  /// The files the note still goes with.
+  @State private var keeping: Set<UUID> = []
 
   var body: some View {
     NavigationStack {
       Form {
         if let refusal = item.refusal { Section { Text(refusal).foregroundStyle(.orange) } }
         TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
+        if !item.files.isEmpty {
+          Section {
+            ForEach(item.files) { file in
+              Toggle(isOn: Binding(get: { keeping.contains(file.id) },
+                                   set: { if $0 { keeping.insert(file.id) } else { keeping.remove(file.id) } })) {
+                Label(file.name, systemImage: file.isPhoto ? "photo" : file.isRecording ? "waveform" : "doc")
+              }
+            }
+          } header: {
+            Text("Files")
+          } footer: {
+            Text("A file turned off is left off the note and taken off this phone. With every file off, the words go alone.")
+          }
+        }
+        Section { CopyWordsButton(text: text) }
       }
       .navigationTitle("Fix and send")
       .toolbar {
@@ -247,12 +336,35 @@ struct FixWaitingView: View {
         ToolbarItem(placement: .confirmationAction) {
           Button("Send") {
             Task {
-              if await model.retry(item, text: text) { dismiss() }
+              if await model.retry(item, text: text, keeping: item.files.isEmpty ? nil : keeping) { dismiss() }
             }
           }
+          // Nothing left to send.
+          .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && keeping.isEmpty)
         }
       }
-      .onAppear { text = item.text ?? "" }
+      .onAppear {
+        text = item.text ?? ""
+        keeping = Set(item.files.map(\.id))
+      }
     }
+  }
+}
+
+/// Puts a refused note's words on the clipboard, so they outlive a Discard.
+struct CopyWordsButton: View {
+  let text: String
+
+  var body: some View {
+    Button("Copy the words", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
+      .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+  }
+}
+
+extension OutboxItem {
+  /// New words for a note this token wrote, which a refusal lets the owner
+  /// open again.
+  var isEdit: Bool {
+    if case .edit = operation { true } else { false }
   }
 }
