@@ -403,9 +403,10 @@ public actor Outbox {
            let i = items.firstIndex(where: { $0.id == item.id }) {
           post.reuploads += 1
           for f in post.files.indices { post.files[f].upload = nil }
-          items[i].operation = .post(post)
-          items[i].id = UUID()
-          try? save()
+          guard remake(i, as: .post(post)) else {
+            report.stopped = APIError(status: 507, code: "not_kept", message: Self.notKept)
+            break sending
+          }
           continue
         }
         // A day Release Notes won't take (a moment from before the
@@ -413,9 +414,10 @@ public actor Outbox {
         // were written instead, once, under a new key for the same reason.
         if error.code == "date_out_of_range", let i = items.firstIndex(where: { $0.id == item.id }),
            let undated = items[i].operation.undated {
-          items[i].operation = undated
-          items[i].id = UUID()
-          try? save()
+          guard remake(i, as: undated) else {
+            report.stopped = APIError(status: 507, code: "not_kept", message: Self.notKept)
+            break sending
+          }
           continue
         }
         if error.retryable || error.signedOut {
@@ -482,6 +484,21 @@ public actor Outbox {
     items[i].operation = .post(post)
     // Unsaved, the note still goes: it asks Here again as it is prepared.
     try? save()
+  }
+
+  /// The item at `i` as `operation`, under a new key, saved before it is
+  /// sent. Unsaved, it stays as it was and isn't sent: a relaunch would
+  /// have the old request refused again and remake it under yet another
+  /// key, filing the note twice.
+  private func remake(_ i: Int, as operation: OutboxOperation) -> Bool {
+    let before = items[i]
+    items[i].operation = operation
+    items[i].id = UUID()
+    do { try save() } catch {
+      items[i] = before
+      return false
+    }
+    return true
   }
 
   private func save() throws(OutboxNotKept) {
