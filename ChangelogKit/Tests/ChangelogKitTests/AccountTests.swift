@@ -159,6 +159,21 @@ import Testing
     #expect(sentPost.request.place?.venue == "Corner Café")
   }
 
+  /// Refused under the other account (its token couldn't add files, say):
+  /// sent to this one, it is asked afresh, under the same key.
+  @Test func aRefusalUnderTheOtherAccountIsAskedAfreshHere() async throws {
+    let outbox = Outbox(file: nil)
+    let theirs = try await outbox.enqueue(text: "theirs", account: Self.other)
+    let refused = APIError(status: 403, code: "insufficient_scope", message: "This token can't add files.")
+    _ = await outbox.flush(for: .account(Self.other)) { _ throws(APIError) in throw refused }
+    #expect(await outbox.waiting.first?.refusal != nil)
+    try await outbox.move(theirs.id, to: Self.mine)
+    #expect(await outbox.waiting.first?.refusal == nil)
+    let sent = Sent()
+    let report = await outbox.flush(for: .account(Self.mine)) { item throws(APIError) in await sent.send(item) }
+    #expect(report.sent.map(\.item.idempotencyKey) == [theirs.idempotencyKey])
+  }
+
   @Test func anEditOrADeleteOfAnotherAccountsNoteNeverMoves() async throws {
     let outbox = Outbox(file: nil)
     let edit = try await outbox.enqueue(.edit(date: "2026-10-30", id: "t-1", text: "better", revision: "r-1"), account: Self.other)

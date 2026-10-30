@@ -361,13 +361,16 @@ public actor Outbox {
   /// seen (a receipt is the account's). Its files are posted again, since
   /// an upload is the account's own (`media/<user>/api/`); its place is
   /// only names and the spot, as Here gave them, the same for any account,
-  /// and stays, with the business picked. An edit or a delete can't move
-  /// (`canMove`).
+  /// and stays, with the business picked. A refusal the other account gave
+  /// (its token couldn't add files, say) is that account's: this one is
+  /// asked afresh, and refuses it again if it would. An edit or a delete
+  /// can't move (`canMove`).
   public func move(_ id: UUID, to account: String) throws(OutboxNotKept) {
     guard let i = items.firstIndex(where: { $0.id == id }), items[i].account != account, items[i].canMove else { return }
     let before = items[i]
     items[i].account = account
     items[i].held = nil
+    items[i].refusal = nil
     items[i].attempts = 0
     if case .post(var post) = items[i].operation {
       for f in post.files.indices { post.files[f].upload = nil }
