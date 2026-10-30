@@ -93,6 +93,56 @@ private actor Script {
     #expect(again.idempotencyKey != old.idempotencyKey)
   }
 
+  /// A token that can't add files is refused on the photo, so Fix sends the
+  /// words without it, under a new key, and the photo leaves the phone.
+  @Test func aRefusedNoteGoesAgainWithoutTheFilesTakenOff() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "outbox retry " + UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let outbox = Outbox(file: root.appending(path: "Application Support/outbox.json"))
+    let photo = QueuedFile(type: "image/jpeg", name: "Photo 1.jpg", size: 4)
+    let memo = QueuedFile(type: "audio/mp4", name: "Voice memo.m4a", size: 4)
+    try outbox.keep(Data("jpeg".utf8), as: photo)
+    try outbox.keep(Data("m4a!".utf8), as: memo)
+    try await outbox.enqueue(.post(NotePost(text: "The new porch light", writtenAt: "2026-10-29T19:02:00-05:00", files: [photo, memo])))
+    let noFiles = APIError(status: 403, code: "scope_required", message: "This token can't add files. Make a token with Add files ticked.")
+    _ = await outbox.flush(prepare: { _, _ throws(APIError) in throw noFiles }) { _ throws(APIError) in .deleted }
+    let refused = try #require(await outbox.waiting.first)
+    #expect(refused.refusal == noFiles.message)
+
+    try await outbox.retry(refused.id, text: "The new porch light, at last", keeping: [memo.id])
+    let again = try #require(await outbox.waiting.first)
+    #expect(again.refusal == nil && again.idempotencyKey != refused.idempotencyKey)
+    #expect(again.text == "The new porch light, at last")
+    #expect(again.files == [memo])
+    let exists = { (file: QueuedFile) in outbox.url(for: file).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } }
+    #expect(exists(photo) == false)
+    #expect(exists(memo) == true)
+
+    // The words alone: every file off.
+    try await outbox.retry(again.id, text: "The new porch light", keeping: [])
+    #expect(await outbox.waiting.first?.files == [])
+    #expect(exists(memo) == false)
+  }
+
+  /// An edit refused as changed since it was read goes again from the
+  /// revision read now, with the owner's words, under a new key.
+  @Test func aRefusedEditGoesAgainFromTheNewRevision() async throws {
+    let outbox = Outbox(file: nil)
+    let edit = try await outbox.enqueue(.edit(date: "2026-10-29", id: "t-1", text: "Painted the shed green", revision: "r-1"))
+    let changed = APIError(status: 409, code: "revision_mismatch", message: "That note changed since it was read.", revision: "r-2")
+    _ = await outbox.flush { _ throws(APIError) in throw changed }
+    #expect(await outbox.waiting.first?.refusal == changed.message)
+
+    try await outbox.retry(edit.id, text: "Painted the shed sage green", revision: "r-2")
+    let again = try #require(await outbox.waiting.first)
+    #expect(again.operation == .edit(date: "2026-10-29", id: "t-1", text: "Painted the shed sage green", revision: "r-2"))
+    #expect(again.refusal == nil && again.idempotencyKey != edit.idempotencyKey)
+
+    // Too long, read at the same revision: it keeps that one.
+    try await outbox.retry(again.id, text: "Painted the shed")
+    #expect(await outbox.waiting.first?.operation == .edit(date: "2026-10-29", id: "t-1", text: "Painted the shed", revision: "r-2"))
+  }
+
   @Test func signedOutStops() async throws {
     let outbox = Outbox(file: nil)
     try await outbox.enqueue(text: "one")

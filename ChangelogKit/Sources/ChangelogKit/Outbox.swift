@@ -220,16 +220,28 @@ public actor Outbox {
     for file in files { if let url = url(for: file) { try? FileManager.default.removeItem(at: url) } }
   }
 
-  /// A refused note, edited by the owner, goes back in line under a new key:
-  /// the old key's receipt belongs to the request that was refused.
-  public func retry(_ id: UUID, text: String) throws(OutboxNotKept) {
+  /// A refused note or edit, fixed by the owner, goes back in line under a
+  /// new key: the old key's receipt belongs to the request that was refused.
+  /// A note goes with the files in `keeping` (nil: all it had); the rest
+  /// are taken off it and off the phone, so one Release Notes refused (a
+  /// token that can't add files) needn't hold back the words. An edit goes
+  /// from `revision` (nil: the one it was read at), read again after it
+  /// changed somewhere else.
+  public func retry(_ id: UUID, text: String, keeping files: Set<UUID>? = nil, revision: String? = nil) throws(OutboxNotKept) {
     guard let i = items.firstIndex(where: { $0.id == id }) else { return }
     let before = items[i]
+    var dropped: [QueuedFile] = []
     switch items[i].operation {
     case .note(_, let date, let writtenAt):
       items[i].operation = .note(text: text, date: date, writtenAt: writtenAt)
+    case .edit(let date, let note, _, let read):
+      items[i].operation = .edit(date: date, id: note, text: text, revision: revision ?? read)
     case .post(var post):
       post.text = text
+      if let files {
+        dropped = post.files.filter { !files.contains($0.id) }
+        post.files.removeAll { !files.contains($0.id) }
+      }
       // A refused note leaves its uploads for a day, so they go again as
       // they are (made again once should they be gone). A file never
       // posted whose bytes are no longer on the phone goes; the rest still do.
@@ -248,6 +260,7 @@ public actor Outbox {
       items[i] = before
       throw error
     }
+    removeFiles(dropped)
   }
 
   /// Sends what is waiting, oldest first. A refusal sets that item aside and
