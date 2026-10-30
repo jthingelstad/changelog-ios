@@ -1,8 +1,9 @@
 #!/bin/bash
 # One test cycle of Changelog on a simulator: a note, a photo, Here, a
-# moment, a voice memo, Upcoming, Activity and Settings, and a share from
-# Photos, against the Release Notes dev server's fictional account. Never
-# production: it runs only against localhost.
+# moment, a voice memo, Upcoming, Activity and Settings, a share from
+# Photos, and a note held for another account (a new fictional one, sent
+# and deleted), against the Release Notes dev server's fictional account.
+# Never production: it runs only against localhost.
 #
 #   CHANGELOG_DEV_TOKEN=rn_... scripts/ui-test-cycle.sh ["iPhone 17" [test ...]]
 #

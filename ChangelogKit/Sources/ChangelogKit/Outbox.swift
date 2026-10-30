@@ -80,6 +80,12 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   /// Why it waits, as the last run left it: no connection, a day's limit
   /// reached, Release Notes busy, no room on the phone.
   public var held: String? = nil
+  /// The account it was written under (`/v1/me`'s `account`, API 1.4.0):
+  /// the app's, or for a share or Siri's note the one the app mirrored into
+  /// the App Group. Nil for one an earlier build queued, until that build's
+  /// token, still signed in, reads `/v1/me` (`Outbox.stamp`), or one written
+  /// with no account known.
+  public var account: String? = nil
 
   public var idempotencyKey: String { id.uuidString.lowercased() }
 
@@ -110,6 +116,37 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   public var files: [QueuedFile] {
     if case .post(let post) = operation { post.files } else { [] }
   }
+
+  /// Written under another account than the one `recipient` sends for, or
+  /// under none known, which may be another's (Jamie, 2026-10-30: "Signing
+  /// in to another account with notes still waiting: hold them and ask?",
+  /// yes). It is never sent until the owner sends it to this account
+  /// (`Outbox.move`) or deletes it. Signed in to its own account again, it
+  /// goes as any other.
+  public func isHeld(for recipient: OutboxRecipient) -> Bool {
+    if case .account(let current) = recipient { account != current } else { false }
+  }
+
+  /// Whether it can be sent to another account than the one it was written
+  /// under: a new note or pins can, but an edit or a delete changes a note
+  /// that account's token wrote, which no other token may change.
+  public var canMove: Bool {
+    switch operation {
+    case .edit, .delete: false
+    case .note, .post, .pins: true
+    }
+  }
+}
+
+/// Whose writes a run of the Outbox sends.
+public enum OutboxRecipient: Sendable, Equatable {
+  /// The account the token signed in now opens (`/v1/me`'s `account`).
+  /// Items written under any other, or under none known, are held
+  /// (`OutboxItem.isHeld`).
+  case account(String)
+  /// Every item: a share's own queue, sent as it is written, or a server
+  /// from before API 1.4.0, which names no account.
+  case anyone
 }
 
 /// What Release Notes answered for each kind of write.
@@ -211,10 +248,11 @@ public actor Outbox {
 
   public var waiting: [OutboxItem] { items }
 
-  /// Queues a write, answering only once it is on disk.
+  /// Queues a write under `account`, the one it is written under, answering
+  /// only once it is on disk.
   @discardableResult
-  public func enqueue(_ operation: OutboxOperation) throws(OutboxNotKept) -> OutboxItem {
-    let item = OutboxItem(id: UUID(), operation: operation, queuedAt: .now, attempts: 0, refusal: nil)
+  public func enqueue(_ operation: OutboxOperation, account: String? = nil) throws(OutboxNotKept) -> OutboxItem {
+    let item = OutboxItem(id: UUID(), operation: operation, queuedAt: .now, attempts: 0, refusal: nil, account: account)
     items.append(item)
     do { try save() } catch {
       items.removeAll { $0.id == item.id }
@@ -225,10 +263,10 @@ public actor Outbox {
 
   /// Queues a new note, stamped with the moment it was typed.
   @discardableResult
-  public func enqueue(text: String, date: String? = nil, writtenAt: Date = .now, timeZone: TimeZone = .current)
-    throws(OutboxNotKept) -> OutboxItem
+  public func enqueue(text: String, date: String? = nil, writtenAt: Date = .now, timeZone: TimeZone = .current,
+                      account: String? = nil) throws(OutboxNotKept) -> OutboxItem
   {
-    try enqueue(.note(text: text, date: date, writtenAt: Timestamp.string(writtenAt, timeZone: timeZone)))
+    try enqueue(.note(text: text, date: date, writtenAt: Timestamp.string(writtenAt, timeZone: timeZone)), account: account)
   }
 
   /// Takes in a write queued elsewhere (a share from the share extension)
@@ -298,6 +336,50 @@ public actor Outbox {
     for file in files { if let url = url(for: file) { try? FileManager.default.removeItem(at: url) } }
   }
 
+  /// Stamps every item with no account with `account`: items an earlier
+  /// build queued, which were written under the token still signed in, read
+  /// now for the first time (and shares its extension left, taken in first).
+  /// Answers how many, once they are on disk.
+  @discardableResult
+  public func stamp(unknownWith account: String) throws(OutboxNotKept) -> Int {
+    let before = items
+    var stamped = 0
+    for i in items.indices where items[i].account == nil {
+      items[i].account = account
+      stamped += 1
+    }
+    guard stamped > 0 else { return 0 }
+    do { try save() } catch {
+      items = before
+      throw error
+    }
+    return stamped
+  }
+
+  /// "Send to this account": a held item, at the owner's word, becomes
+  /// `account`'s and goes under its own key, which that account has never
+  /// seen (a receipt is the account's). Its files are posted again, since
+  /// an upload is the account's own (`media/<user>/api/`); its place is
+  /// only names and the spot, as Here gave them, the same for any account,
+  /// and stays, with the business picked. An edit or a delete can't move
+  /// (`canMove`).
+  public func move(_ id: UUID, to account: String) throws(OutboxNotKept) {
+    guard let i = items.firstIndex(where: { $0.id == id }), items[i].account != account, items[i].canMove else { return }
+    let before = items[i]
+    items[i].account = account
+    items[i].held = nil
+    items[i].attempts = 0
+    if case .post(var post) = items[i].operation {
+      for f in post.files.indices { post.files[f].upload = nil }
+      post.reuploads = 0
+      items[i].operation = .post(post)
+    }
+    do { try save() } catch {
+      items[i] = before
+      throw error
+    }
+  }
+
   /// A refused note or edit, fixed by the owner, goes back in line under a
   /// new key: the old key's receipt belongs to the request that was refused.
   /// A note goes with the files in `keeping` (nil: all it had); the rest
@@ -341,10 +423,11 @@ public actor Outbox {
     removeFiles(dropped)
   }
 
-  /// Sends what is waiting, oldest first. A refusal sets that item aside and
-  /// carries on; anything worth retrying stops the run so order is kept.
-  /// Items queued while a run is sending join that run.
-  public func flush(prepare: Preparer? = nil, _ send: Sender) async -> FlushReport {
+  /// Sends what is waiting for `recipient`, oldest first; an item held for
+  /// another account is passed over and left as it is. A refusal sets that
+  /// item aside and carries on; anything worth retrying stops the run so
+  /// order is kept. Items queued while a run is sending join that run.
+  public func flush(for recipient: OutboxRecipient = .anyone, prepare: Preparer? = nil, _ send: Sender) async -> FlushReport {
     // One run at a time: a second caller leaves its items to the run under
     // way, which reads the queue afresh after every send, rather than sending
     // the same item alongside it.
@@ -359,7 +442,7 @@ public actor Outbox {
     // that goes on can depend on a note held here.
     var filesHeld: APIError?
     sending: while var item = items.first(where: {
-      $0.refusal == nil && !tried.contains($0.id) && !(filesHeld != nil && $0.needsUploads)
+      $0.refusal == nil && !tried.contains($0.id) && !(filesHeld != nil && $0.needsUploads) && !$0.isHeld(for: recipient)
     }) {
       tried.insert(item.id)
       // Set once the write itself is asked for: a 2xx then means it was done.
@@ -437,7 +520,7 @@ public actor Outbox {
     // Each note still waiting says why: the one the run stopped at and those
     // behind it for the same reason, a note with files on a day the uploads
     // are used for that.
-    for i in items.indices where items[i].refusal == nil {
+    for i in items.indices where items[i].refusal == nil && !items[i].isHeld(for: recipient) {
       if filesHeld != nil, items[i].needsUploads {
         items[i].held = Self.filesHeld
       } else if let stopped = report.stopped {

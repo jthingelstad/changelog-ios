@@ -12,6 +12,15 @@ public enum AppGroup {
   }
 
   public static var defaults: UserDefaults? { UserDefaults(suiteName: id) }
+
+  /// The account the app last read from `/v1/me` (API 1.4.0), mirrored
+  /// here at each read as the server is, so a share or Siri's note is
+  /// stamped with the account it was written under (`OutboxItem.account`).
+  /// It stays after signing out: a share made then belongs to the account
+  /// last signed in, and goes once that account is signed in again.
+  public static let accountKey = "account"
+
+  public static var account: String? { defaults?.string(forKey: accountKey) }
 }
 
 /// Notes shared from other apps. The share extension keeps each share in a

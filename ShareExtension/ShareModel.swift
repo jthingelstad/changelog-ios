@@ -150,7 +150,10 @@ final class ShareModel {
     phase = .sending
     let words = QuickNote.words(text)
     do {
-      try await share.outbox.enqueue(.post(NotePost(text: words, writtenAt: Timestamp.string(.now), files: files)))
+      // Stamped with the account the app last read, so should the app send
+      // it, it goes only to that account (`OutboxItem.account`).
+      try await share.outbox.enqueue(.post(NotePost(text: words, writtenAt: Timestamp.string(.now), files: files)),
+                                     account: AppGroup.account)
     } catch {
       phase = .ready
       problem = "This phone couldn't save that to send. Free up some space and try again."

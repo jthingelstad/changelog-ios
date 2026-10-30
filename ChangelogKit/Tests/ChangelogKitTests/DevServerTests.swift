@@ -173,6 +173,45 @@ struct DevServerTests {
     #expect(report.filed.first?.note.files == 1)
   }
 
+  /// API 1.4.0: the account and the token's id, this token's rows carrying
+  /// it; and a note held for another account, its file prepared there, goes
+  /// to this one only once moved, under its own key, its file posted again.
+  @Test func accountsAndTokenIds() async throws {
+    let client = DevServer.client()
+    let me = try await client.me()
+    let account = try #require(me.account)
+    let tokenId = try #require(me.token.id)
+    #expect(account.wholeMatch(of: /acct_[0-9a-f]{32}/) != nil)
+    #expect(tokenId.wholeMatch(of: /[0-9a-f]{32}/) != nil)
+    let made = try await client.createNote(NoteRequest(text: "Mine by id #devtest"), idempotencyKey: UUID().uuidString.lowercased())
+    let rows = try await client.activity(limit: 50).items
+    let row = try #require(rows.first { $0.kind == "note.added" && $0.note == made.note.id })
+    #expect(row.tokenId == tokenId)
+    #expect(TodayWords.isMine(row, token: me.token))
+
+    guard me.token.scopes.contains("media:write") else { return }
+    let folder = FileManager.default.temporaryDirectory.appending(path: "changelog dev " + UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let outbox = Outbox(file: nil, files: folder)
+    let prepare: Outbox.Preparer = { item, folder throws(APIError) in try await client.prepare(item, files: folder) }
+    let send: Outbox.Sender = { item throws(APIError) in try await client.perform(item) }
+    let png = Self.png()
+    var photo = QueuedFile(type: "image/png", name: "Photo 1.png", size: png.count)
+    try outbox.keep(png, as: photo)
+    // Its upload made under the other account: this one never had it.
+    photo.upload = String(repeating: "0", count: 32)
+    let held = try await outbox.enqueue(.post(NotePost(text: "Held #devtest", writtenAt: Timestamp.string(.now), files: [photo])),
+                                        account: "acct_" + String(repeating: "0", count: 32))
+    var report = await outbox.flush(for: .account(account), prepare: prepare, send)
+    #expect(report.sent.isEmpty && report.stopped == nil)
+    try await outbox.move(held.id, to: account)
+    report = await outbox.flush(for: .account(account), prepare: prepare, send)
+    #expect(report.refused.isEmpty && report.stopped == nil)
+    let went = try #require(report.sent.first?.item)
+    #expect(went.idempotencyKey == held.idempotencyKey)
+    #expect(report.filed.first?.note.files == 1)
+  }
+
   static func png() -> Data {
     let context = CGContext(data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0,
                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!

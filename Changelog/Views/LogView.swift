@@ -11,6 +11,8 @@ struct LogView: View {
   @State private var fixing: OutboxItem?
   /// The note a swipe asked to delete, waiting for the confirmation.
   @State private var deleting: ActivityItem?
+  /// A held note whose Delete was tapped, waiting for the confirmation.
+  @State private var discarding: OutboxItem?
 
   var body: some View {
     @Bindable var model = model
@@ -90,12 +92,19 @@ struct LogView: View {
             .accessibilityAddTraits(.isHeader)
             .paperRow(top: 28, bottom: 4)
           ForEach(model.waiting) { item in
-            WaitingRow(item: item)
-              .paperRow(top: 8, bottom: 8)
-              .swipeActions {
-                Button("Discard", role: .destructive) { Task { await model.discard(item) } }
-                if item.refusal != nil && (item.isNote || item.isEdit) { Button("Fix") { fixing = item } }
-              }
+            if model.isHeld(item) {
+              // Written under another account: nothing goes until the
+              // owner chooses (Jamie, 2026-10-30).
+              HeldRow(item: item) { discarding = item }
+                .paperRow(top: 8, bottom: 8)
+            } else {
+              WaitingRow(item: item)
+                .paperRow(top: 8, bottom: 8)
+                .swipeActions {
+                  Button("Discard", role: .destructive) { Task { await model.discard(item) } }
+                  if item.refusal != nil && (item.isNote || item.isEdit) { Button("Fix") { fixing = item } }
+                }
+            }
           }
         }
 
@@ -151,6 +160,15 @@ struct LogView: View {
         Button("Delete", role: .destructive) { Task { await model.delete(item) } }
       } message: { _ in
         Text("It goes from Release Notes, with its photos and files. This can't be undone.")
+      }
+      // A held note's Delete asks first too.
+      .confirmationDialog(discarding?.isNote == false ? "Delete this change?" : "Delete this note?",
+                          isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }),
+                          titleVisibility: .visible, presenting: discarding) { item in
+        Button("Delete", role: .destructive) { Task { await model.discard(item) } }
+      } message: { item in
+        Text(item.files.isEmpty ? "It goes from this phone and is never sent. This can't be undone."
+             : "It goes from this phone with its files and is never sent. This can't be undone.")
       }
       .sheet(item: $fixing) { item in
         // A refused edit opens with its words, to save from the newest
@@ -224,6 +242,8 @@ struct Streak: View {
 
 struct WaitingRow: View {
   let item: OutboxItem
+  /// Why it is held, in place of its status: written under another account.
+  var held: String? = nil
 
   private var summary: String {
     switch item.operation {
@@ -257,15 +277,53 @@ struct WaitingRow: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      if let refusal = item.refusal {
+      if let held {
+        Text(held).face(.meta).foregroundStyle(Color.tangerineInk).accessibilityIdentifier("held")
+      } else if let refusal = item.refusal {
         Text(refusal).face(.meta).foregroundStyle(Color.tangerineInk)
       } else {
         Text(item.status).face(.meta).foregroundStyle(Color.ink3)
       }
-      // Faded while it waits, as the web shows a note still saving.
-      Text(summary).face(.note).lineLimit(2).opacity(item.refusal == nil ? 0.6 : 1)
+      // Faded while it waits, as the web shows a note still saving; a note
+      // refused or held waits on its owner, not the network.
+      Text(summary).face(.note).lineLimit(2).opacity(item.refusal == nil && held == nil ? 0.6 : 1)
       if let extras {
         Label(extras, systemImage: "paperclip").face(.meta).foregroundStyle(Color.ink3)
+      }
+    }
+  }
+}
+
+/// A write held because it was written under another account than the one
+/// signed in now, or before signing in, with the owner's two choices: send
+/// it to this account, or delete it, which asks first. Nothing held goes
+/// without the first.
+struct HeldRow: View {
+  @Environment(AppModel.self) private var model
+  let item: OutboxItem
+  let delete: () -> Void
+
+  /// The plain line: whose it was, and for an edit or a delete, why it
+  /// can go only from there.
+  static func line(_ item: OutboxItem) -> String {
+    let whose = item.account == nil
+      ? "Written before you signed in, perhaps to another account."
+      : "Written while signed in to another account."
+    return item.canMove ? whose : whose + " It changes a note there, so it can go only from that account."
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      WaitingRow(item: item, held: Self.line(item))
+      // Two quiet actions, each its own button rather than the row's:
+      // cobalt to send, the refusal's tangerine ink to delete.
+      HStack(spacing: 24) {
+        if item.canMove {
+          Button("Send to this account") { Task { await model.sendHere(item) } }
+            .buttonStyle(QuietButtonStyle())
+        }
+        Button("Delete", role: .destructive, action: delete)
+          .buttonStyle(QuietButtonStyle(color: .tangerineInk))
       }
     }
   }
