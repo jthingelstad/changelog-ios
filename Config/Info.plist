@@ -17,6 +17,11 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchPaper</string>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>To add a photo you take to a note.</string>
 	<key>NSMicrophoneUsageDescription</key>

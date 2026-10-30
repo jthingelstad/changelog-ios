@@ -172,14 +172,16 @@ extension ActivityItem {
   }
 
   var headline: String {
-    let version = version.map { " \($0)" } ?? ""
+    // A row without a version (a deleted note's, say) reads whole without
+    // one, never "Deleted from".
+    func of(_ words: String, else bare: String) -> String { version.map { "\(words) \($0)" } ?? bare }
     switch kind {
-    case "note.added": return "Filed in\(version)"
-    case "note.edited": return "Edited in\(version)"
-    case "note.deleted": return "Deleted from\(version)"
-    case "note.files": return "Files added in\(version)"
-    case "mail": return outcome == "filed" ? "Reply filed in\(version)" : "Email not filed"
-    case "email.sent": return "Email sent for\(version)"
+    case "note.added": return of("Filed in", else: "Note filed")
+    case "note.edited": return of("Edited in", else: "Note edited")
+    case "note.deleted": return of("Deleted from", else: "Note deleted")
+    case "note.files": return of("Files added in", else: "Files added")
+    case "mail": return outcome == "filed" ? of("Reply filed in", else: "Reply filed") : "Email not filed"
+    case "email.sent": return of("Email sent for", else: "Email sent")
     case "reminder": return title.map { "Reminder: \($0)" } ?? "Reminder in the email"
     case "badge.earned": return name.map { "Badge: \($0)" } ?? "Badge earned"
     case "transcript.added": return "Recording written out"
