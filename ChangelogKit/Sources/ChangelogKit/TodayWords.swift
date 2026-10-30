@@ -22,26 +22,30 @@ public enum TodayWords {
   /// Each note's words, by id, as read now. A note gone since (404) or no
   /// longer this token's (403) drops out; any other failure, offline
   /// included, keeps what was read before. Notes not asked about drop out.
+  ///
+  /// One task a note, awaited in turn, never a task group: with Swift 6.4
+  /// (Xcode 27.1) a task group here, optimized, ends its loop before its
+  /// children finish, and a child finishing into the gone group crashed
+  /// build 53 on launch (2026-10-30). Debug never did. CI's optimized
+  /// `swift test -c release` holds it.
   public static func read(
     _ notes: [Note],
     keeping before: [String: String],
-    using fetch: @escaping @Sendable (Note) async throws(APIError) -> String
+    using fetch: @escaping @Sendable (Note) async throws -> String
   ) async -> [String: String] {
     var seen = Set<Note>()
     let asked = Array(notes.filter { seen.insert($0).inserted }.prefix(limit))
     var words = before.filter { id, _ in asked.contains { $0.id == id } }
-    await withTaskGroup(of: (String, Result<String, APIError>).self) { group in
-      for note in asked {
-        group.addTask {
-          do throws(APIError) { return (note.id, .success(try await fetch(note))) } catch { return (note.id, .failure(error)) }
-        }
-      }
-      for await (id, answer) in group {
-        switch answer {
-        case .success(let text): words[id] = text
-        case .failure(let error) where error.status == 404 || error.status == 403: words[id] = nil
-        case .failure: break
-        }
+    let reads = asked.map { note in
+      (note.id, Task { () -> Result<String, any Error> in
+        do { return .success(try await fetch(note)) } catch { return .failure(error) }
+      })
+    }
+    for (id, read) in reads {
+      switch await read.value {
+      case .success(let text): words[id] = text
+      case .failure(let error as APIError) where error.status == 404 || error.status == 403: words[id] = nil
+      case .failure: break
       }
     }
     return words

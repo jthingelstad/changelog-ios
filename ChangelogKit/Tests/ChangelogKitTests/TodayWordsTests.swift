@@ -15,7 +15,7 @@ import Testing
     let words = await TodayWords.read(
       [fixed, gone, offline],
       keeping: ["t-1": "Old words", "t-2": "Deleted since", "t-3": "Read before", "t-9": "Yesterday's"]
-    ) { note throws(APIError) in
+    ) { note in
       switch note.id {
       case "t-1": return "Fixed the gate #house"
       case "t-2": throw Self.failing(404)
@@ -26,7 +26,7 @@ import Testing
   }
 
   @Test func aNoteNoLongerThisTokensDropsOut() async {
-    let words = await TodayWords.read([fixed], keeping: ["t-1": "Mine once"]) { _ throws(APIError) in
+    let words = await TodayWords.read([fixed], keeping: ["t-1": "Mine once"]) { _ in
       throw Self.failing(403)
     }
     #expect(words.isEmpty)
@@ -35,7 +35,7 @@ import Testing
   @Test func readsEachNoteOnceAndNoMoreThanTheLimit() async {
     let asked = Asked()
     let notes = (0..<30).map { TodayWords.Note(date: "2026-10-28", id: "t-\($0)") }
-    let words = await TodayWords.read(notes + notes, keeping: [:]) { note throws(APIError) in
+    let words = await TodayWords.read(notes + notes, keeping: [:]) { note in
       await asked.add(note.id)
       return "Words of \(note.id)"
     }
@@ -48,7 +48,7 @@ import Testing
       {"id":"t-3f9c","date":"2026-10-28","text":"Fixed the gate #house","revision":"9c1e5b0a","written_at":"2026-10-28T07:45:00-05:00"}
       """))
     let client = stubbedClient("today-words.test")
-    let words = await TodayWords.read([TodayWords.Note(date: "2026-10-28", id: "t-3f9c")], keeping: [:]) { note throws(APIError) in
+    let words = await TodayWords.read([TodayWords.Note(date: "2026-10-28", id: "t-3f9c")], keeping: [:]) { note in
       try await client.note(date: note.date, id: note.id).text
     }
     #expect(words == ["t-3f9c": "Fixed the gate #house"])

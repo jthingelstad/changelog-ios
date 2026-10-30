@@ -25,6 +25,10 @@ jobs:
         run: scripts/version.sh test
       - name: ChangelogKit tests
         run: swift test --package-path ChangelogKit
+      # TestFlight builds are optimized, and the optimizer has broken code
+      # Debug ran fine (a task group, build 53's crash on launch).
+      - name: ChangelogKit tests, optimized
+        run: swift test -c release -Xswiftc -enable-testing --package-path ChangelogKit
       - name: Build the app for the simulator
         run: >
           xcodebuild -project Changelog.xcodeproj -scheme Changelog
