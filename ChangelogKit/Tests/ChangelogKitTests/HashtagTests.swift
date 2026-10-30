@@ -14,10 +14,30 @@ import Testing
     #expect(Hashtags.found(in: text) == tags)
   }
 
+  /// Letters in any script make a tag, as Release Notes reads them since
+  /// API 1.7.0: each expectation is what its `found` returns for the text.
+  @Test(arguments: [
+    ("Back in #東京 and #Москва", ["東京", "москва"]),
+    ("#שלום from #Αθήνα", ["שלום", "αθήνα"]),
+    ("#नमस्ते", ["नमस्ते"]),
+    ("#東京-大阪 trip", ["東京-大阪"]),
+    ("#東京2016 and #Ελλάδα2016", ["東京2016", "ελλάδα2016"]),
+    ("#Café stays #cafe", ["cafe"]),
+    ("a#東京 and 東#京", []),
+    ("#2026 and #🎉", []),
+  ])
+  func findsTagsInAnyScript(text: String, tags: [String]) {
+    #expect(Hashtags.found(in: text) == tags)
+  }
+
   @Test func normalizesWhatWasTyped() {
     #expect(Hashtags.normalize("#Maine 2016") == "maine-2016")
     #expect(Hashtags.normalize("2016") == nil)
     #expect(Hashtags.normalize(String(repeating: "a", count: 60))?.count == 50)
+    #expect(Hashtags.normalize("#Москва") == "москва")
+    #expect(Hashtags.normalize("東京") == "東京")
+    #expect(Hashtags.normalize(String(repeating: "東", count: 60))?.unicodeScalars.count == 50)
+    #expect(Hashtags.normalize("#🎉") == nil)
   }
 
   @Test func togglesATag() {
@@ -25,6 +45,9 @@ import Testing
     #expect(Hashtags.toggling("house", in: "Fixed the faucet #house") == "Fixed the faucet")
     #expect(Hashtags.toggling("house", in: "") == "#house ")
     #expect(Hashtags.adding("house", to: "Fixed the #House faucet") == "Fixed the #House faucet")
+    #expect(Hashtags.toggling("東京", in: "Landed") == "Landed #東京")
+    #expect(Hashtags.toggling("東京", in: "Landed #東京") == "Landed")
+    #expect(Hashtags.contains("москва", in: "Snow in #Москва"))
   }
 
   /// As `removingTag` in Release Notes' `packages/domain/tags.ts`: the space
