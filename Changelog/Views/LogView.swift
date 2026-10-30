@@ -319,31 +319,39 @@ struct EditNoteView: View {
   var body: some View {
     NavigationStack {
       Form {
-        if let refusal = refused?.refusal {
-          Section {
-            Text(refusal).foregroundStyle(Color.tangerineInk)
-          } footer: {
-            Text("Your words are below. Saving puts them in place of what the note says now.")
+        Group {
+          if let refusal = refused?.refusal {
+            Section {
+              Text(refusal).foregroundStyle(Color.tangerineInk)
+            } footer: {
+              SectionNote("Your words are below. Saving puts them in place of what the note says now.")
+            }
+          }
+          if let failure {
+            Section {
+              Label(Self.sentence(failure), systemImage: "exclamationmark.triangle").foregroundStyle(Color.tangerineInk)
+              if failure.retryable { Button("Try again") { Task { await read() } } }
+            }
+          }
+          if note != nil || refused != nil {
+            TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
+          } else if failure == nil {
+            ProgressView()
+          }
+          if refused != nil {
+            Section { CopyWordsButton(text: text) }
+            if let note {
+              Section {
+                Text(verbatim: note.text).foregroundStyle(Color.ink2).textSelection(.enabled)
+              } header: {
+                SectionHead("What it says now")
+              }
+            }
           }
         }
-        if let failure {
-          Section {
-            Label(Self.sentence(failure), systemImage: "exclamationmark.triangle").foregroundStyle(Color.tangerineInk)
-            if failure.retryable { Button("Try again") { Task { await read() } } }
-          }
-        }
-        if note != nil || refused != nil {
-          TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
-        } else if failure == nil {
-          ProgressView()
-        }
-        if refused != nil {
-          Section { CopyWordsButton(text: text) }
-          if let note {
-            Section("What it says now") { Text(verbatim: note.text).foregroundStyle(.secondary).textSelection(.enabled) }
-          }
-        }
+        .paperRows()
       }
+      .paperForm()
       .navigationTitle(title)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -406,24 +414,28 @@ struct FixWaitingView: View {
   var body: some View {
     NavigationStack {
       Form {
-        if let refusal = item.refusal { Section { Text(refusal).foregroundStyle(Color.tangerineInk) } }
-        TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
-        if !item.files.isEmpty {
-          Section {
-            ForEach(item.files) { file in
-              Toggle(isOn: Binding(get: { keeping.contains(file.id) },
-                                   set: { if $0 { keeping.insert(file.id) } else { keeping.remove(file.id) } })) {
-                Label(file.name, systemImage: file.isPhoto ? "photo" : file.isRecording ? "waveform" : "doc")
+        Group {
+          if let refusal = item.refusal { Section { Text(refusal).foregroundStyle(Color.tangerineInk) } }
+          TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
+          if !item.files.isEmpty {
+            Section {
+              ForEach(item.files) { file in
+                Toggle(isOn: Binding(get: { keeping.contains(file.id) },
+                                     set: { if $0 { keeping.insert(file.id) } else { keeping.remove(file.id) } })) {
+                  Label(file.name, systemImage: file.isPhoto ? "photo" : file.isRecording ? "waveform" : "doc")
+                }
               }
+            } header: {
+              SectionHead("Files")
+            } footer: {
+              SectionNote("A file turned off is left off the note and taken off this phone. With every file off, the words go alone.")
             }
-          } header: {
-            Text("Files")
-          } footer: {
-            Text("A file turned off is left off the note and taken off this phone. With every file off, the words go alone.")
           }
+          Section { CopyWordsButton(text: text) }
         }
-        Section { CopyWordsButton(text: text) }
+        .paperRows()
       }
+      .paperForm()
       .navigationTitle("Fix and send")
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

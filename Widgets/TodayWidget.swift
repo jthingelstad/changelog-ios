@@ -74,7 +74,8 @@ struct TodayView: View {
   var body: some View {
     content
       .widgetURL(AppRoute.newNoteURL)
-      .containerBackground(.fill.tertiary, for: .widget)
+      // The web's paper on the Home Screen; the Lock Screen draws its own.
+      .containerBackground(for: .widget) { Color.paper }
   }
 
   @ViewBuilder private var content: some View {
@@ -88,7 +89,7 @@ struct TodayView: View {
           AccessoryWidgetBackground()
           VStack(spacing: 1) {
             Text(day.version)
-              .font(.system(.caption, design: .monospaced).weight(.semibold))
+              .face(.stamp)
               .minimumScaleFactor(0.5)
               .lineLimit(1)
             Image(systemName: day.wrote ? "checkmark" : "square.and.pencil")
@@ -100,15 +101,15 @@ struct TodayView: View {
         .accessibilityLabel("\(day.version), \(day.wrote ? "written today" : "nothing yet today")")
       case .accessoryRectangular:
         VStack(alignment: .leading, spacing: 1) {
-          Text("Today").font(.caption2).foregroundStyle(.secondary)
-          Text(day.version).font(.system(.headline, design: .monospaced))
-          Text(day.wrote ? "Written today" : "Nothing yet").font(.caption)
+          Text("Today").textCase(.uppercase).face(.dateline).foregroundStyle(.secondary)
+          Text(day.version).face(.widgetVersionSmall).lineLimit(1).minimumScaleFactor(0.6)
+          Text(day.wrote ? "Written today" : "Nothing yet").face(.meta)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       case .systemMedium:
         HStack(alignment: .top, spacing: 16) {
           TodayColumn(day: day)
-          Divider()
+          Rectangle().fill(Color.rule).frame(width: 1)
           SoonColumn(day: day, tz: entry.tz)
         }
       default:
@@ -126,16 +127,23 @@ private struct TodayColumn: View {
   var day: WidgetSnapshot.Day
 
   var body: some View {
+    // The web's Today page, small: the day in mono capitals over the
+    // version, and whether anything is written yet.
     VStack(alignment: .leading, spacing: 4) {
-      Text("Today").font(.caption).foregroundStyle(.secondary)
+      HStack(spacing: 6) {
+        BrandMark(size: 16)
+        Text("Today").textCase(.uppercase).face(.dateline).foregroundStyle(Color.ink2)
+      }
       Text(day.version)
-        .font(.system(.title, design: .monospaced).weight(.semibold))
+        .face(.widgetVersion)
+        .monospacedDigit()
+        .foregroundStyle(Color.ink)
         .minimumScaleFactor(0.5)
         .lineLimit(1)
       Spacer(minLength: 0)
       Label(day.wrote ? "Written today" : "Nothing yet", systemImage: day.wrote ? "checkmark.circle.fill" : "square.and.pencil")
-        .font(.caption)
-        .foregroundStyle(day.wrote ? .primary : .secondary)
+        .face(.meta)
+        .foregroundStyle(day.wrote ? Color.ink : Color.ink2)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
   }
@@ -149,18 +157,18 @@ private struct SoonColumn: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text("Coming up").font(.caption).foregroundStyle(.secondary)
+      Text("Coming up").textCase(.uppercase).face(.dateline).foregroundStyle(Color.ink2)
       if let soon = day.upcoming, !soon.isEmpty {
         ForEach(Array(soon.enumerated()), id: \.offset) { _, entry in
-          VStack(alignment: .leading, spacing: 0) {
-            Text(entry.title).font(.subheadline).lineLimit(1)
-            Text(when(entry)).font(.caption).foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(when(entry)).textCase(.uppercase).face(.time).foregroundStyle(Color.cobalt)
+            Text(entry.title).face(.hint).foregroundStyle(Color.ink).lineLimit(1)
           }
         }
       } else {
         Text(day.upcoming == nil ? "Tap to write a note." : "Nothing coming up.")
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
+          .face(.hint)
+          .foregroundStyle(Color.ink2)
       }
       Spacer(minLength: 0)
     }
@@ -190,8 +198,11 @@ private struct Notice: View {
       Label(short, systemImage: "square.and.pencil")
     default:
       VStack(alignment: .leading, spacing: 4) {
-        Text("Changelog").font(.caption).foregroundStyle(.secondary)
-        Text(text).font(.subheadline)
+        HStack(spacing: 6) {
+          BrandMark(size: 16)
+          Text("Changelog").face(.head).foregroundStyle(Color.ink)
+        }
+        Text(text).face(.hint).foregroundStyle(Color.ink2)
         Spacer(minLength: 0)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

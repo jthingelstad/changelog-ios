@@ -40,6 +40,8 @@ struct RootView: View {
     switch model.phase {
     case .starting:
       ProgressView()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.paper)
     case .signedOut:
       SignInView()
     case .signedIn:

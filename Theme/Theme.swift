@@ -20,16 +20,20 @@ extension Color {
   static let tangerineInk = Color(light: 0xC43C00, dark: 0xFF8A5C)
   /// Words on tangerine, navy in both appearances.
   static let onTangerine = Color(light: 0x14163A, dark: 0x14163A)
+  /// The hairline between a form's rows: ink, faint.
+  static let rule = Color(light: 0x14163A, dark: 0xFFFBF2, alpha: 0.12)
 
-  init(light: UInt32, dark: UInt32) {
-    self.init(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgb: dark) : UIColor(rgb: light) })
+  init(light: UInt32, dark: UInt32, alpha: CGFloat = 1) {
+    self.init(uiColor: UIColor {
+      UIColor(rgb: $0.userInterfaceStyle == .dark ? dark : light, alpha: alpha)
+    })
   }
 }
 
 private extension UIColor {
-  convenience init(rgb: UInt32) {
+  convenience init(rgb: UInt32, alpha: CGFloat) {
     self.init(red: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,
-              blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
+              blue: CGFloat(rgb & 0xFF) / 255, alpha: alpha)
   }
 }
 
@@ -70,6 +74,11 @@ struct Face {
   /// A version or a time inside a line.
   static let stamp = Face(family: .martian, size: 13, weight: 700, style: .footnote)
   static let time = Face(family: .martian, size: 12, weight: 400, style: .caption)
+  /// The version on a Home Screen widget, and on the Lock Screen's.
+  static let widgetVersion = Face(family: .bricolage, size: 34, weight: 800, style: .title, tracking: -0.02)
+  static let widgetVersionSmall = Face(family: .bricolage, size: 20, weight: 800, style: .headline, tracking: -0.01)
+  /// A voice memo's running time.
+  static let clock = Face(family: .martian, size: 44, weight: 400, style: .largeTitle, tracking: -0.02, largest: 64)
 
   func font(size: CGFloat) -> Font {
     var axes: [NSNumber: NSNumber] = [NSNumber(value: Self.wght): NSNumber(value: Double(weight)),
@@ -121,6 +130,44 @@ extension View {
       .background(Color.paper)
       .foregroundStyle(Color.ink)
   }
+
+  /// A form (Settings, a sheet) on the paper, in the web's type. Its
+  /// sections' rows take `paperRows()`, so nothing sits in a box.
+  func paperForm() -> some View {
+    scrollContentBackground(.hidden)
+      .background(Color.paper)
+      .face(.note)
+  }
+
+  /// A form's rows flat on the paper, with a faint rule between them.
+  func paperRows() -> some View {
+    listRowBackground(Color.paper)
+      .listRowSeparatorTint(Color.rule)
+  }
+}
+
+/// A form section's heading, as the web's small h2.
+struct SectionHead: View {
+  let text: String
+  init(_ text: String) { self.text = text }
+
+  var body: some View {
+    Text(text).textCase(nil).face(.head).foregroundStyle(Color.ink2)
+  }
+}
+
+/// What a form section says under it.
+struct SectionNote: View {
+  let text: String
+  var problem = false
+  init(_ text: String, problem: Bool = false) {
+    self.text = text
+    self.problem = problem
+  }
+
+  var body: some View {
+    Text(text).face(.meta).foregroundStyle(problem ? Color.tangerineInk : Color.ink2)
+  }
 }
 
 /// A version as the web sets one in a line: cobalt digits, tangerine dots.
@@ -133,6 +180,8 @@ func versionText(_ version: String) -> Text {
 
 /// Release Notes' mark: a version, its dot, and two written lines.
 struct BrandMark: View {
+  var size: CGFloat = 24
+
   var body: some View {
     Canvas { context, size in
       let s = min(size.width, size.height) / 100
@@ -147,7 +196,7 @@ struct BrandMark: View {
       context.fill(lines, with: .color(.cobalt))
       context.fill(Path(ellipseIn: CGRect(x: 67 * s, y: 43 * s, width: 22 * s, height: 22 * s)), with: .color(.tangerine))
     }
-    .frame(width: 24, height: 24)
+    .frame(width: size, height: size)
     .accessibilityHidden(true)
   }
 }

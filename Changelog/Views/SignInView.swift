@@ -18,61 +18,79 @@ struct SignInView: View {
     @Bindable var model = model
     NavigationStack {
       Form {
-        Section {
-          Text("Changelog sends notes, photos, voice memos and where you are into your Release Notes, and keeps your Upcoming dates. It can read back only the notes it sent, never the rest.")
-        } footer: {
-          // Why the app signed out (a token revoked or expired, or one it
-          // couldn't end), until a sign-in here has its own answer.
-          if problem == nil, pasteProblem == nil, let reason = model.problem {
-            Text(reason).foregroundStyle(.orange).accessibilityIdentifier("signed-out-reason")
+        Group {
+          Section {
+            // The mark and the name, large, over what Changelog does.
+            VStack(alignment: .leading, spacing: 14) {
+              BrandMark(size: 56)
+              Text("Changelog").face(.title).foregroundStyle(Color.ink).accessibilityAddTraits(.isHeader)
+              Text("Changelog sends notes, photos, voice memos and where you are into your Release Notes, and keeps your Upcoming dates. It can read back only the notes it sent, never the rest.")
+                .face(.lede)
+                .foregroundStyle(Color.ink2)
+            }
+            .padding(.top, 40)
+            .listRowSeparator(.hidden)
+          } footer: {
+            // Why the app signed out (a token revoked or expired, or one it
+            // couldn't end), until a sign-in here has its own answer.
+            if problem == nil, pasteProblem == nil, let reason = model.problem {
+              SectionNote(reason, problem: true).accessibilityIdentifier("signed-out-reason")
+            }
           }
-        }
-        Section {
-          Button("Sign in with Release Notes") { signInWithReleaseNotes() }
-            .bold()
+          Section {
+            Button { signInWithReleaseNotes() } label: {
+              Text("Sign in with Release Notes").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(CommitButtonStyle())
             .disabled(checking)
-        } footer: {
-          VStack(alignment: .leading, spacing: 6) {
-            Text("Release Notes asks you to name the token Changelog keeps, what it may do and when it ends. You can end it there any time, under Settings, API tokens.")
-            if let problem { Text(problem).foregroundStyle(.orange) }
+            .listRowSeparator(.hidden)
+          } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+              SectionNote("Release Notes asks you to name the token Changelog keeps, what it may do and when it ends. You can end it there any time, under Settings, API tokens.")
+              if let problem { SectionNote(problem, problem: true) }
+            }
           }
-        }
-        Section {
-          Text("Make a token in Release Notes under Settings, API tokens, with all four ticked: “Add notes”, “Add files”, “Read and change your Upcoming dates” and “Read the activity log”. Then paste it here.")
-            .foregroundStyle(.secondary)
-          SecureField("rn_…", text: $pasted)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .textContentType(.password)
-            .onSubmit { check(pasted) }
-          Button("Paste token") {
-            if let text = UIPasteboard.general.string { check(text) }
+          Section {
+            Text("Make a token in Release Notes under Settings, API tokens, with all four ticked: “Add notes”, “Add files”, “Read and change your Upcoming dates” and “Read the activity log”. Then paste it here.")
+              .face(.hint)
+              .foregroundStyle(Color.ink2)
+            SecureField("rn_…", text: $pasted)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+              .textContentType(.password)
+              .onSubmit { check(pasted) }
+            Button("Paste token") {
+              if let text = UIPasteboard.general.string { check(text) }
+            }
+            Button("Sign in with this token") { check(pasted) }
+              .disabled(checking || pasted.isEmpty)
+            Button("Open Release Notes Settings") { openURL(Links.settings) }
+          } header: {
+            SectionHead("Or use a token")
+          } footer: {
+            if let pasteProblem { SectionNote(pasteProblem, problem: true) }
           }
-          Button("Sign in with this token") { check(pasted) }
-            .disabled(checking || pasted.isEmpty)
-          Button("Open Release Notes Settings") { openURL(Links.settings) }
-        } header: {
-          Text("Or use a token")
-        } footer: {
-          if let pasteProblem { Text(pasteProblem).foregroundStyle(.orange) }
-        }
-        Section {
-          Button("Privacy") { openURL(Links.privacy) }
-        }
-        #if DEBUG
-        Section {
-          Picker("Server", selection: $model.server) {
-            Text("Release Notes").tag(APIClient.production)
-            Text("Dev server").tag(APIClient.devServer)
+          Section {
+            Button("Privacy") { openURL(Links.privacy) }
           }
-        } header: {
-          Text("Development")
-        } footer: {
-          Text("The dev server prints a token for its fictional account when it starts.")
+          #if DEBUG
+          Section {
+            Picker("Server", selection: $model.server) {
+              Text("Release Notes").tag(APIClient.production)
+              Text("Dev server").tag(APIClient.devServer)
+            }
+          } header: {
+            SectionHead("Development")
+          } footer: {
+            SectionNote("The dev server prints a token for its fictional account when it starts.")
+          }
+          #endif
         }
-        #endif
+        .paperRows()
       }
+      .paperForm()
       .navigationTitle("Changelog")
+      .toolbar(.hidden, for: .navigationBar)
       .overlay { if checking { ProgressView() } }
     }
   }

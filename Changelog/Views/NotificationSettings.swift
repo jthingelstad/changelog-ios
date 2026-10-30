@@ -12,9 +12,9 @@ struct NotificationSettings: View {
         get: { model.promptOn },
         set: { on in Task { await model.setPrompt(on) } }))
     } header: {
-      Text("Daily prompt")
+      SectionHead("Daily prompt")
     } footer: {
-      Text(model.promptProblem ?? promptFooter)
+      SectionNote(model.promptProblem ?? promptFooter, problem: model.promptProblem != nil)
     }
 
     Section {
@@ -26,12 +26,13 @@ struct NotificationSettings: View {
         }
       } else {
         Text("To get them here, make a token with “Read the activity log” ticked.")
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Color.ink2)
       }
     } header: {
-      Text("Activity notifications")
+      SectionHead("Activity notifications")
     } footer: {
-      Text(model.activityProblem ?? "Notes from elsewhere: added by an agent, another token, an import or an email reply. Problems: an email that wasn't filed, your email stopping, a connection ending. Never this phone's own notes, and never the daily email. Changelog looks when iOS lets it refresh in the background, so they can come minutes or hours later.")
+      SectionNote(model.activityProblem ?? "Notes from elsewhere: added by an agent, another token, an import or an email reply. Problems: an email that wasn't filed, your email stopping, a connection ending. Never this phone's own notes, and never the daily email. Changelog looks when iOS lets it refresh in the background, so they can come minutes or hours later.",
+                  problem: model.activityProblem != nil)
     }
   }
 

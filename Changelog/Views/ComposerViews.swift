@@ -43,10 +43,11 @@ struct ComposerTools: View {
         .accessibilityLabel(model.placeLabel == nil ? "Add where I am" : "Find where I am again")
       }
     }
-    .buttonStyle(.borderless)
+    // Ink-3, as the web's icon buttons are. Plain, not a tint, so the
+    // photo picker and the recorder keep cobalt.
+    .buttonStyle(.plain)
+    .foregroundStyle(Color.ink3)
     .font(.title3)
-    // Ink-3 until pressed, as the web's icon buttons are.
-    .tint(Color.ink3)
     .onChange(of: picks) { _, items in
       guard !items.isEmpty else { return }
       picks = []
@@ -62,7 +63,7 @@ struct ComposerTools: View {
       .ignoresSafeArea()
     }
     .sheet(isPresented: $recording) {
-      RecorderView().presentationDetents([.medium])
+      RecorderView().presentationDetents([.medium]).presentationBackground(Color.paper)
     }
   }
 }
@@ -208,28 +209,34 @@ struct RecorderView: View {
         switch recorder.state {
         case .denied:
           Text("The microphone is off for Changelog. Allow it in the Settings app to record a voice memo.")
+            .face(.lede)
+            .foregroundStyle(Color.ink2)
             .multilineTextAlignment(.center)
         case .failed:
           Text("This phone couldn't record just now.")
+            .face(.lede)
+            .foregroundStyle(Color.tangerineInk)
         case .idle, .recording:
           TimelineView(.periodic(from: .now, by: 0.5)) { _ in
             Text(Duration.seconds(recorder.elapsed).formatted(.time(pattern: .minuteSecond)))
-              .font(.system(.largeTitle, design: .monospaced))
+              .face(.clock)
+              .monospacedDigit()
+              .foregroundStyle(Color.ink)
               .accessibilityLabel("Recording")
           }
           Button {
             if let data = recorder.finish() { Task { await model.addRecording(data) } }
             dismiss()
           } label: {
-            Label("Add to the note", systemImage: "stop.circle.fill").font(.title3)
+            Label("Add to the note", systemImage: "stop.fill")
           }
-          .buttonStyle(.borderedProminent)
-          .tint(.red)
+          .buttonStyle(CommitButtonStyle())
           .disabled(recorder.state != .recording)
         }
       }
       .padding()
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color.paper)
       .navigationTitle("Voice memo")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
