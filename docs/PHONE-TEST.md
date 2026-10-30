@@ -56,8 +56,10 @@ Upcoming and the activity log.
    and its photos, its place shows by Commit, named once, and under the
    box "Files on" that day (or "Files in" its version, if Today has shown
    it), with "File to today" in its menu. Nothing goes until Commit; then
-   the web has the note on that day. One with a video says the video
-   isn't on the note. If the button does nothing, the App ID is missing
+   the web has the note on that day, and once Release Notes keeps moments
+   (API 1.5.0) a quiet line for each piece under its words. Delete one
+   line before Commit and its piece isn't under the note. One with a
+   video says the video isn't on the note. If the button does nothing, the App ID is missing
    the Journaling Suggestions capability.
 8. **The share sheet.** From Photos, three or four big photos at once;
    from Safari, a link; from Files, a PDF; from Voice Memos, a recording.

@@ -115,4 +115,117 @@ import Testing
     // No date at all: today.
     #expect(Moment(date: nil, pieces: [walk]).draft(today: today, timeZone: chicago, room: 20, canAddFiles: true).day == nil)
   }
+
+  // MARK: Values beside the words
+
+  /// Each piece goes as Release Notes keeps it, with the line it wrote;
+  /// photos, videos and places aren't pieces, and people are one.
+  @Test func eachPieceIsAValueWithItsLine() throws {
+    let start = now.addingTimeInterval(-2 * 3600)
+    let made = draft([
+      .workout(Moment.Workout(activity: .walking, meters: 5150.04, seconds: 2890)),
+      .person("Ana"),
+      .song(title: "A Song", artist: "A Band"),
+      .photo(URL(filePath: "/tmp/moment.heic")), .video,
+      .place(Spot(lat: 44.9221, lon: -93.3110), name: "Lake Harriet"),
+      .person("Ben"),
+      .podcast(episode: nil, show: "A Show"),
+      .played(title: "A Tune", artist: nil),
+      .steps(8214, .both),
+      .feeling(Moment.Feeling(labels: ["calm", "calm", "grateful"], valence: "slightly pleasant")),
+      .event(title: "Picnic", place: "The Park", start: start, hosted: true),
+      .reflection("What made today good?")
+    ], at: start)
+    let values = try #require(made.values)
+    #expect(values.at == "2026-10-29T10:00:00-05:00")
+    #expect(values.pieces.map(\.line) == made.lines)
+    #expect(values.pieces.map(\.item) == [
+      NoteMoment.Item(kind: "workout", activity: "walking", distanceM: 5150, durationS: 2890),
+      NoteMoment.Item(kind: "people", names: ["Ana", "Ben"]),
+      NoteMoment.Item(kind: "song", title: "A Song", artist: "A Band"),
+      NoteMoment.Item(kind: "podcast", show: "A Show"),
+      NoteMoment.Item(kind: "played", title: "A Tune"),
+      NoteMoment.Item(kind: "steps", count: 8214, movement: "both"),
+      NoteMoment.Item(kind: "feeling", labels: ["calm", "grateful"], valence: "slightly_pleasant"),
+      NoteMoment.Item(kind: "event", title: "Picnic", place: "The Park", start: "2026-10-29T10:00:00-05:00", hosted: true),
+      NoteMoment.Item(kind: "reflection", prompt: "What made today good?")
+    ])
+  }
+
+  /// What Release Notes would refuse is left off the value, never sent to
+  /// be refused; the line still goes in the words.
+  @Test func aValueIsTidiedAndKeptInRange() throws {
+    let long = String(repeating: "x", count: 201)
+    let made = draft([
+      .song(title: "  A   Song ", artist: long),
+      .workout(Moment.Workout(activity: .other, name: long, meters: 2_000_000, seconds: 0.04)),
+      .podcast(episode: long, show: nil),
+      .feeling(Moment.Feeling(labels: (1...12).map { "word\($0)" } + [String(repeating: "y", count: 41)], valence: "glad")),
+      .feeling(Moment.Feeling(labels: [], valence: "glad")),
+      .reflection(String(repeating: "z", count: 401))
+    ] + (1...25).map { .person("Person \($0)") })
+    let items = try #require(made.values).pieces.map(\.item)
+    #expect(items[0] == NoteMoment.Item(kind: "song", title: "A Song"))
+    #expect(items[1] == NoteMoment.Item(kind: "workout", activity: "other"))
+    #expect(items[2].labels == (1...10).map { "word\($0)" } && items[2].valence == nil)
+    #expect(items[3].kind == "people" && items[3].names?.count == 20)
+    #expect(items.count == 4)
+    // The lines are as before, each piece's own.
+    #expect(made.lines.count == 7)
+    // A moment with no piece to send has no values.
+    #expect(draft([.photo(URL(filePath: "/tmp/moment.heic")), .place(nil, name: "Lake Harriet")]).values == nil)
+  }
+
+  /// At Commit only the pieces whose line is still in the words go: words
+  /// added around a line keep it, a line deleted or changed takes its piece.
+  @Test func onlyWhatTheWordsStillSayGoes() throws {
+    let values = try #require(draft([
+      .workout(Moment.Workout(activity: .walking, meters: 5150, seconds: 2890)),
+      .song(title: "A Song", artist: "A Band"),
+      .person("Ana")
+    ]).values)
+    let all = "Walked 3.2 mi in 48 min, with a blister\nListened to A Song by A Band\nWith Ana #walks"
+    #expect(values.kept(in: all)?.items.map(\.kind) == ["workout", "song", "people"])
+    #expect(values.kept(in: all)?.at == values.at)
+    #expect(values.kept(in: "Walked 3.2 miles\nWith Ana")?.items.map(\.kind) == ["people"])
+    #expect(values.kept(in: "Just words") == nil)
+    // Up to the twelve Release Notes takes.
+    let many = MomentValues(pieces: (1...14).map { (n: Int) in
+      MomentValues.Piece(line: "Line \(n)", item: NoteMoment.Item(kind: "steps", count: n))
+    })
+    let lines = (1...14).map { "Line \($0)" }.joined(separator: "\n")
+    let twelve = try #require(many.kept(in: lines))
+    #expect(twelve.items.compactMap(\.count) == Array(1...12))
+  }
+
+  /// A second moment in the same draft adds its pieces, none twice, and
+  /// the moment began at the earlier start.
+  @Test func aSecondMomentAddsItsPieces() throws {
+    let song = try #require(draft([.song(title: "A Song", artist: nil)], at: now).values)
+    let walk = try #require(draft([.workout(Moment.Workout(activity: .walking, seconds: 1800)), .song(title: "A Song", artist: nil)],
+                                  at: now.addingTimeInterval(-3600)).values)
+    let both = song.adding(walk)
+    #expect(both.pieces.map(\.item.kind) == ["song", "workout"])
+    #expect(both.at == walk.at)
+    #expect(walk.adding(song).at == walk.at)
+    #expect(MomentValues(pieces: []).adding(song).at == song.at)
+  }
+
+  /// On the wire the fields are snake_case, and what is nil isn't sent.
+  @Test func aMomentGoesAsTheAPINamesIt() throws {
+    let moment = NoteMoment(at: "2026-10-29T07:40:00-05:00",
+                            items: [NoteMoment.Item(kind: "workout", activity: "walking", distanceM: 5150, durationS: 2890)])
+    let body = try JSONSerialization.jsonObject(with: APIClient.encoder.encode(NoteRequest(text: "Walked", moment: moment))) as? NSDictionary
+    #expect(body == [
+      "text": "Walked",
+      "moment": ["at": "2026-10-29T07:40:00-05:00",
+                 "items": [["kind": "workout", "activity": "walking", "distance_m": 5150, "duration_s": 2890]]]
+    ] as NSDictionary)
+    // Read back as Release Notes returns it.
+    let read = try APIClient.decoder.decode(NoteDetail.self, from: Data(#"""
+      {"id":"t-1","date":"2026-10-29","text":"Walked","revision":"r","moment":{"at":"2026-10-29T07:40:00-05:00",
+       "items":[{"kind":"workout","activity":"walking","distance_m":5150,"duration_s":2890}]}}
+      """#.utf8))
+    #expect(read.moment == moment)
+  }
 }

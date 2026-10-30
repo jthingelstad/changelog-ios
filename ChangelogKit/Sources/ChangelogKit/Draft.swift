@@ -20,6 +20,9 @@ public struct Draft: Codable, Sendable, Equatable {
   public var placeFromMoment: Bool
   /// The day a moment files the note to; nil for today.
   public var day: String?
+  /// The moment's values, each with the line it wrote: those whose line is
+  /// still in the words go with the note.
+  public var moment: MomentValues?
   /// Set as the draft is committed, until the note is in the queue.
   public var handover: Handover?
 
@@ -50,7 +53,7 @@ public struct Draft: Codable, Sendable, Equatable {
 
   public init(text: String = "", files: [QueuedFile] = [], spot: Spot? = nil, here: Here? = nil, venue: String? = nil,
               spotAt: Date? = nil, placeOff: Bool = false, placeFromMoment: Bool = false, day: String? = nil,
-              handover: Handover? = nil) {
+              moment: MomentValues? = nil, handover: Handover? = nil) {
     self.text = text
     self.files = files
     self.spot = spot
@@ -60,6 +63,7 @@ public struct Draft: Codable, Sendable, Equatable {
     self.placeOff = placeOff
     self.placeFromMoment = placeFromMoment
     self.day = day
+    self.moment = moment
     self.handover = handover
   }
 
@@ -75,6 +79,7 @@ public struct Draft: Codable, Sendable, Equatable {
     placeOff = try c.decodeIfPresent(Bool.self, forKey: .placeOff) ?? false
     placeFromMoment = try c.decodeIfPresent(Bool.self, forKey: .placeFromMoment) ?? false
     day = try c.decodeIfPresent(String.self, forKey: .day)
+    moment = try c.decodeIfPresent(MomentValues.self, forKey: .moment)
     handover = try c.decodeIfPresent(Handover.self, forKey: .handover)
   }
 

@@ -28,11 +28,20 @@ extension OutboxOperation {
       return nil
     }
   }
+
+  /// A new note without its moment, the words alone; nil for anything
+  /// else, or a note with no moment.
+  var withoutMoment: OutboxOperation? {
+    guard case .post(var post) = self, post.moment != nil else { return nil }
+    post.moment = nil
+    return .post(post)
+  }
 }
 
-/// A note with files or a place, as queued. The files' bytes wait in the
-/// Outbox's folder; each `upload` and the `place` are filled in, and saved,
-/// before the note is sent, so every resend is the same request.
+/// A note with files, a place or a moment's values, as queued. The files'
+/// bytes wait in the Outbox's folder; each `upload` and the `place` are
+/// filled in, and saved, before the note is sent, so every resend is the
+/// same request.
 public struct NotePost: Codable, Sendable, Equatable {
   public var text: String
   public var date: String?
@@ -44,8 +53,12 @@ public struct NotePost: Codable, Sendable, Equatable {
   public var place: DevicePlace?
   /// Times the uploads were made again after the note found them gone.
   public var reuploads: Int
+  /// The moment's pieces whose lines were still in the words at Commit,
+  /// sent beside them; nil in a queue saved before moments, which still reads.
+  public var moment: NoteMoment?
 
-  public init(text: String, date: String? = nil, writtenAt: String, files: [QueuedFile] = [], spot: Spot? = nil, place: DevicePlace? = nil) {
+  public init(text: String, date: String? = nil, writtenAt: String, files: [QueuedFile] = [], spot: Spot? = nil, place: DevicePlace? = nil,
+              moment: NoteMoment? = nil) {
     self.text = text
     self.date = date
     self.writtenAt = writtenAt
@@ -53,6 +66,7 @@ public struct NotePost: Codable, Sendable, Equatable {
     self.spot = spot
     self.place = place
     self.reuploads = 0
+    self.moment = moment
   }
 
   /// Every file posted and the place named: ready to send.
@@ -62,7 +76,7 @@ public struct NotePost: Codable, Sendable, Equatable {
     let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
     return NoteRequest(text: words.isEmpty ? nil : text, date: date, writtenAt: writtenAt,
                        uploads: files.isEmpty ? nil : files.map { UploadRef(upload: $0.upload ?? "", type: $0.type, name: $0.name) },
-                       place: place)
+                       place: place, moment: moment)
   }
 }
 
@@ -415,6 +429,18 @@ public actor Outbox {
         if error.code == "date_out_of_range", let i = items.firstIndex(where: { $0.id == item.id }),
            let undated = items[i].operation.undated {
           guard remake(i, as: undated) else {
+            report.stopped = APIError(status: 507, code: "not_kept", message: Self.notKept)
+            break sending
+          }
+          continue
+        }
+        // A moment Release Notes won't take (one from before moments, API
+        // 1.5.0, refuses the field; a later one, a piece it can't read)
+        // goes without it, once, under a new key for the same reason. The
+        // words are the note and already say what the moment did.
+        if error.code == "invalid_request", let field = error.field, field == "moment" || field.hasPrefix("moment."),
+           let i = items.firstIndex(where: { $0.id == item.id }), let words = items[i].operation.withoutMoment {
+          guard remake(i, as: words) else {
             report.stopped = APIError(status: 507, code: "not_kept", message: Self.notKept)
             break sending
           }

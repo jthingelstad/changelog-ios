@@ -73,7 +73,8 @@ public struct Moment: Sendable, Equatable {
 }
 
 /// What a moment puts in the draft. The person edits it and commits as
-/// usual, through the Outbox.
+/// usual, through the Outbox, and the pieces whose lines are still in the
+/// words go beside them as values.
 public struct MomentDraft: Sendable, Equatable {
   /// One plain line each, for the box.
   public var lines: [String] = []
@@ -85,6 +86,9 @@ public struct MomentDraft: Sendable, Equatable {
   public var day: String?
   /// What the person is told and the note doesn't say (a video left out).
   public var notice: String?
+  /// The pieces as values, each with its line, to go beside the words
+  /// (`NoteMoment`); nil when no piece has a value to send.
+  public var values: MomentValues?
 
   public var isEmpty: Bool { lines.isEmpty && photos.isEmpty && spot == nil }
 }
@@ -102,6 +106,8 @@ public extension Moment {
     var videos = 0
     var people: [String] = []
     var peopleAt: Int?
+    var kept: [MomentValues.Piece] = []
+    var keptPeopleAt: Int?
     for piece in pieces {
       switch piece {
       case .photo(let url): photos.append(url)
@@ -115,12 +121,23 @@ public extension Moment {
       case .person(let name):
         guard let name = Self.words(name) else { continue }
         if peopleAt == nil { peopleAt = out.lines.count }
+        if keptPeopleAt == nil { keptPeopleAt = kept.count }
         if !people.contains(name) { people.append(name) }
       default:
-        if let line = Self.line(piece, now: now, locale: locale) { out.add(line) }
+        guard let line = Self.line(piece, now: now, locale: locale) else { continue }
+        out.add(line)
+        if let item = Self.item(piece, timeZone: timeZone), !kept.contains(MomentValues.Piece(line: line, item: item)) {
+          kept.append(MomentValues.Piece(line: line, item: item))
+        }
       }
     }
-    if let peopleAt { out.lines.insert("With " + people.formatted(.list(type: .and).locale(locale)), at: peopleAt) }
+    if let peopleAt {
+      let line = "With " + people.formatted(.list(type: .and).locale(locale))
+      out.lines.insert(line, at: peopleAt)
+      if let keptPeopleAt, let item = Self.people(people) {
+        kept.insert(MomentValues.Piece(line: line, item: item), at: keptPeopleAt)
+      }
+    }
 
     var notices: [String] = []
     if !photos.isEmpty && !canAddFiles {
@@ -144,6 +161,7 @@ public extension Moment {
     if out.isEmpty && notices.isEmpty { notices.append("That moment has nothing Changelog can put on a note.") }
     out.notice = notices.isEmpty ? nil : notices.joined(separator: " ")
     if !out.isEmpty, let date, let day = Self.day(of: date, in: timeZone), day < today { out.day = day }
+    if !kept.isEmpty { out.values = MomentValues(at: date.map { Timestamp.string($0, timeZone: timeZone) }, pieces: kept) }
     return out
   }
 

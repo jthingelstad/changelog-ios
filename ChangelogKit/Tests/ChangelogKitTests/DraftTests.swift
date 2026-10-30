@@ -33,13 +33,18 @@ import Testing
     #expect(await DraftStore(file: store.file).load(filesIn: Outbox(file: root.appending(path: "Application Support/outbox.json"))) == draft)
   }
 
-  /// A moment's day and place come back with the draft, and a draft kept
-  /// by the build before moments still reads.
-  @Test func aMomentsDayAndPlaceOutliveTheApp() async throws {
+  /// A moment's day, place and values come back with the draft, and a
+  /// draft kept by the build before moments still reads.
+  @Test func aMomentsDayPlaceAndValuesOutliveTheApp() async throws {
     let (store, outbox, root) = place()
     defer { try? FileManager.default.removeItem(at: root) }
+    let values = MomentValues(at: "2026-10-24T07:40:00-05:00", pieces: [
+      MomentValues.Piece(line: "Walked 3.2 mi in 48 min",
+                         item: NoteMoment.Item(kind: "workout", activity: "walking", distanceM: 5150, durationS: 2890))
+    ])
     let draft = Draft(text: "Walked 3.2 mi in 48 min", spot: Spot(lat: 44.9221, lon: -93.3110, accuracyM: 35),
-                      spotAt: Date(timeIntervalSince1970: 1_793_257_120), placeFromMoment: true, day: "2026-10-24")
+                      spotAt: Date(timeIntervalSince1970: 1_793_257_120), placeFromMoment: true, day: "2026-10-24",
+                      moment: values)
     #expect(store.save(draft))
     #expect(await store.load(filesIn: outbox) == draft)
     let older = Data(#"{"text":"From before","files":[],"placeOff":false}"#.utf8)

@@ -93,6 +93,11 @@ final class AppModel {
   private(set) var day: String? {
     didSet { keepDraftSoon() }
   }
+  /// The moments picked into the draft, as values, each piece with its
+  /// line: at Commit those whose line is still in the words go with them.
+  private var momentValues: MomentValues? {
+    didSet { keepDraftSoon() }
+  }
   /// What the last moment picked left out (a video), for the person, never
   /// the note.
   private(set) var momentNotice: String?
@@ -639,8 +644,12 @@ final class AppModel {
     // The draft as it is, kept with the note it is becoming, so a launch
     // after the app ended mid-commit can tell whether that note reached
     // the queue.
+    let values = momentValues
     let handing = Draft(text: typed, files: files, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff,
-                        placeFromMoment: placeFromMoment, day: day, handover: Draft.Handover(text: text, writtenAt: stamp))
+                        placeFromMoment: placeFromMoment, day: day, moment: values,
+                        handover: Draft.Handover(text: text, writtenAt: stamp))
+    // Only what the words still say: a line deleted took its piece with it.
+    let moment = values?.kept(in: text)
     let placed = (spot: placeOff ? nil : spot, here: here, venue: venue, spotAt: spotAt, fromMoment: placeFromMoment)
     var place = placed.here?.place
     place?.venue = placed.venue
@@ -651,6 +660,7 @@ final class AppModel {
     draft = ""
     draftFiles = []
     day = nil
+    momentValues = nil
     momentNotice = nil
     // With "Add where I am" on, the next note within ten minutes takes the
     // same place; a Here asked for once, or a moment's place, goes with
@@ -659,11 +669,11 @@ final class AppModel {
     if draftRestored { drafts.save(handing) }
     let item: OutboxItem
     do {
-      if files.isEmpty && placed.spot == nil {
+      if files.isEmpty && placed.spot == nil && moment == nil {
         item = try await outbox.enqueue(.note(text: text, date: date, writtenAt: stamp))
       } else {
         item = try await outbox.enqueue(.post(NotePost(text: text, date: date, writtenAt: stamp, files: files,
-                                                       spot: placed.spot, place: placed.spot == nil ? nil : place)))
+                                                       spot: placed.spot, place: placed.spot == nil ? nil : place, moment: moment)))
       }
     } catch {
       draft = draft.isEmpty ? typed : typed + "\n" + draft
@@ -676,6 +686,7 @@ final class AppModel {
         placeFromMoment = placed.fromMoment
       }
       if day == nil { day = filedDay }
+      if let values { momentValues = momentValues.map { values.adding($0) } ?? values }
       committing -= 1
       keepDraft()
       problem = Self.notKept
@@ -840,7 +851,7 @@ final class AppModel {
     keeping?.cancel()
     guard draftRestored, committing == 0 else { return }
     drafts.save(Draft(text: draft, files: draftFiles, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff,
-                      placeFromMoment: placeFromMoment, day: day))
+                      placeFromMoment: placeFromMoment, day: day, moment: momentValues))
   }
 
   /// Puts back the draft a run that ended left, and its photos' pictures.
@@ -857,6 +868,7 @@ final class AppModel {
     placeOff = kept.placeOff
     placeFromMoment = kept.placeFromMoment
     day = kept.day
+    momentValues = kept.moment
     let outbox = self.outbox
     for file in kept.files where file.isPhoto {
       Task {
@@ -1030,6 +1042,7 @@ final class AppModel {
     momentNotice = made.notice
     guard !made.isEmpty else { return nil }
     day = made.day
+    if let values = made.values { momentValues = momentValues.map { $0.adding(values) } ?? values }
     // The place before the words and photos, so "Add where I am" doesn't
     // find the phone as they start the draft.
     if let found = made.spot {

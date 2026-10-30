@@ -67,6 +67,67 @@ struct DevServerTests {
     #expect(report.filed.first?.note.version != me.version)
   }
 
+  /// A picked moment goes beside its words through the Outbox, the pieces
+  /// whose lines are still there, and reads back as it was sent (API
+  /// 1.5.0); a line deleted before Commit isn't sent. The same key again is
+  /// the same note. A piece Release Notes refuses, or a Release Notes from
+  /// before moments, gets the words alone under a new key.
+  @Test func aMomentGoesBesideItsWords() async throws {
+    let client = DevServer.client(), outbox = Outbox(file: nil)
+    let me = try await client.me()
+    let zone = try #require(TimeZone(identifier: me.tz))
+    let began = Date.now.addingTimeInterval(-2 * 3600)
+    let moment = Moment(date: began, pieces: [
+      .workout(Moment.Workout(activity: .walking, meters: 5150, seconds: 2890)),
+      .song(title: "A Song", artist: "A Band"),
+      .podcast(episode: "Episode 4", show: "A Show"),
+      .played(title: "A Tune", artist: nil),
+      .steps(8214, .walking),
+      .feeling(Moment.Feeling(labels: ["calm", "grateful"], valence: "slightly pleasant")),
+      .event(title: "Picnic", place: "The Park", start: began, hosted: true),
+      .person("Ana"), .person("Ben"),
+      .reflection("What made today good?")
+    ])
+    let made = moment.draft(today: me.today, timeZone: zone, room: 20, canAddFiles: true)
+    let values = try #require(made.values)
+    // The person deleted the reflection's line before Commit.
+    let text = made.lines.filter { $0 != "What made today good?" }.joined(separator: "\n") + "\n#devtest"
+    let sent = try #require(values.kept(in: text))
+    #expect(sent.items.map(\.kind) == ["workout", "song", "podcast", "played", "steps", "feeling", "event", "people"])
+    let item = try await outbox.enqueue(.post(NotePost(text: text, date: made.day, writtenAt: Timestamp.string(.now), moment: sent)))
+    let report = await outbox.flush { (item) async throws(APIError) -> OutboxResult in try await client.perform(item) }
+    #expect(report.stopped == nil && report.refused.isEmpty)
+    let receipt = try #require(report.filed.first)
+    let read = try await client.note(date: receipt.note.date, id: receipt.note.id)
+    #expect(read.text == text)
+    if Self.keepsMoments(me) {
+      #expect(read.moment == sent)
+      #expect(report.sent.first?.item.idempotencyKey == item.idempotencyKey)
+      let again = try await client.perform(item)
+      guard case .filed(let replay) = again else { Issue.record("not filed"); return }
+      #expect(replay.note.id == receipt.note.id)
+    } else {
+      #expect(read.moment == nil)
+    }
+
+    // A piece Release Notes can't read: the words go alone, under a new key.
+    let odd = NoteMoment(items: [NoteMoment.Item(kind: "juggling")])
+    let refused = try await outbox.enqueue(.post(NotePost(text: "Dev test, an odd moment #devtest", writtenAt: Timestamp.string(.now),
+                                                          moment: odd)))
+    let alone = await outbox.flush { (item) async throws(APIError) -> OutboxResult in try await client.perform(item) }
+    #expect(alone.stopped == nil && alone.refused.isEmpty)
+    let words = try #require(alone.sent.first?.item)
+    #expect(words.idempotencyKey != refused.idempotencyKey)
+    let filed = try #require(alone.filed.first)
+    #expect(try await client.note(date: filed.note.date, id: filed.note.id).moment == nil)
+  }
+
+  /// Release Notes keeps moments from API 1.5.0.
+  static func keepsMoments(_ me: Me) -> Bool {
+    let parts = me.apiVersion.split(separator: ".").compactMap { Int($0) }
+    return parts.count >= 2 && (parts[0], parts[1]) >= (1, 5)
+  }
+
   @Test func appendEditConflictAndDelete() async throws {
     let client = DevServer.client()
     let made = try await client.createNote(NoteRequest(text: "To change #devtest"), idempotencyKey: UUID().uuidString.lowercased())

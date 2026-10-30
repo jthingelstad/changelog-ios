@@ -25,7 +25,8 @@ there first, never work around it here.
   read back for Log), `QuickNote` (a note sent from outside the app's screens,
   within a deadline, else left for the app), `Moment` (a moment picked in
   Apple's Journaling Suggestions, as plain values, and what it puts in the
-  draft) and `WidgetSnapshot` (what the widgets show, one day per local
+  draft), `NoteMoment` (those values as `/v1` keeps them beside the words)
+  and `WidgetSnapshot` (what the widgets show, one day per local
   midnight). It has its own tests:
   `swift test --package-path ChangelogKit`.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
@@ -132,6 +133,16 @@ there first, never work around it here.
   to today, and a day Release Notes refuses (`date_out_of_range`, before
   the birthday, which the app never learns) is filed to the day it was
   written by the Outbox, once, under a new key.
+- A moment's pieces also go as values beside the words (`moment` on
+  `POST /v1/notes`, API 1.5.0; `docs/MOMENTS.md` in the Release Notes
+  repo), tidied as Release Notes keeps them: each piece with the line it
+  wrote, and at Commit only those whose line is still in the words, so a
+  line deleted takes its piece with it. The words stay the note. They are
+  queued in the note's `NotePost` and resent with it under its key. A
+  Release Notes that won't take them (`invalid_request` at `moment`, as
+  one before 1.5.0 answers, or at one of its pieces) gets the words
+  alone, once, under a new key. A new kind goes to Release Notes first, in
+  a new API version, before the app sends it.
 - The app reads back only notes this token wrote, and the activity log
   (which has no words in it). It never asks for `notes:read`. Log's Today
   shows the words of today's notes this token wrote (Jamie, 2026-10-29:
