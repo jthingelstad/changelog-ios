@@ -97,9 +97,9 @@ import Testing
   }
 
   @Test func aSpentCodeIsRefused() async throws {
-    StubProtocol.set("spent.test", .init(status: 400, body: #"{"error":"invalid_grant"}"#))
+    StubProtocol.set("spent-code.test", .init(status: 400, body: #"{"error":"invalid_grant"}"#))
     await #expect(throws: SignInError.refused("invalid_grant")) {
-      try await signIn("spent.test").exchange(code: "k", clientID: "c")
+      try await signIn("spent-code.test").exchange(code: "k", clientID: "c")
     }
     #expect(SignInError.refused("invalid_grant").message == "The sign-in ran out of time. Try again.")
   }

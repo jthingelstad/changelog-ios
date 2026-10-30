@@ -93,7 +93,13 @@ final class AppModel {
     self.promptOn = defaults.bool(forKey: "prompt")
     self.activityNotices = Set((defaults.stringArray(forKey: "activity.notices") ?? []).compactMap(ActivityNoticeKind.init(rawValue:)))
     self.hereByDefault = defaults.bool(forKey: "here")
+    #if DEBUG
     self.server = defaults.string(forKey: "server").flatMap(URL.init(string:)) ?? APIClient.production
+    #else
+    // A release build talks to Release Notes alone, whatever a debug build
+    // on this phone left saved.
+    self.server = APIClient.production
+    #endif
     AppGroup.defaults?.set(server.absoluteString, forKey: "server")
     AppGroup.defaults?.set(sticky, forKey: "sticky")
   }
@@ -202,11 +208,18 @@ final class AppModel {
   }
 
   /// Revokes the token on the server, then forgets it. Notes still waiting
-  /// stay on the phone for the next sign-in.
+  /// stay on the phone for the next sign-in. When Release Notes can't be
+  /// reached to end the token, the sign-in screen says to end it on the web.
   func signOut() async {
-    if let client { try? await client.revokeToken() }
+    var ended = true
+    if let client {
+      do throws(APIError) { try await client.revokeToken() } catch { ended = error.signedOut }
+    }
     forget()
+    if !ended { problem = Self.notEnded }
   }
+
+  static let notEnded = "Changelog signed out, but Release Notes couldn't be reached to end its token. End it on the web, under Settings, API tokens."
 
   private func forget() {
     tokens.clear()
@@ -227,6 +240,7 @@ final class AppModel {
     soon = nil
     WidgetSnapshot.clear()
     WidgetCenter.shared.reloadAllTimelines()
+    PhoneReminders.clearShown()
     Task { await stopReminders() }
   }
 
@@ -531,6 +545,15 @@ final class AppModel {
     await send()
   }
 
+  /// Why Changelog signed itself out, for the sign-in screen.
+  static func signedOutReason(_ error: APIError) -> String {
+    switch error.code {
+    case "token_revoked": "This phone's token was revoked, so Changelog signed out. Sign in again."
+    case "token_expired": "This phone's token expired, so Changelog signed out. Sign in again."
+    default: error.message
+    }
+  }
+
   static let notKept = "This phone couldn't save that to send, so nothing was sent. Free up some space and try again."
 
   /// Queues any other write, so it goes under one key however many times it
@@ -780,7 +803,7 @@ final class AppModel {
   private func handle(_ error: APIError) {
     if error.signedOut {
       forget()
-      problem = error.message
+      problem = Self.signedOutReason(error)
     } else if error.status == 0 {
       problem = nil // Offline: notes wait in the queue, quietly.
     } else {

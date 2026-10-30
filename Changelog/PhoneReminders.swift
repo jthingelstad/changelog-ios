@@ -71,6 +71,12 @@ enum PhoneReminders {
     center.removePendingNotificationRequests(withIdentifiers: ids)
   }
 
+  /// Takes away every notification of this app's still in Notification
+  /// Center, at sign-out, so none of an account's dates stay behind.
+  static func clearShown() {
+    UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+  }
+
   /// Takes back waiting notifications by id.
   static func takeBack(_ ids: [String]) {
     UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)

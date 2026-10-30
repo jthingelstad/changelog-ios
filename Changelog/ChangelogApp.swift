@@ -77,4 +77,5 @@ enum Links {
   static let guide = URL(string: "https://notes.yourversionnumber.com/guide/")!
   static let delete = URL(string: "https://notes.yourversionnumber.com/delete/")!
   static let settings = URL(string: "https://notes.yourversionnumber.com/settings/")!
+  static let privacy = URL(string: "https://notes.yourversionnumber.com/privacy/")!
 }
