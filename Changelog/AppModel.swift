@@ -619,13 +619,16 @@ final class AppModel {
 
   // MARK: Writing
 
+  /// Not while a moment goes in: a commit then would send part of it, and
+  /// the rest would land in the next draft, on today.
   var canCommit: Bool {
-    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftFiles.isEmpty
+    !addingMoment && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftFiles.isEmpty)
   }
 
   /// Queues the draft with the moment it was typed, then tries to send. If
   /// the phone can't keep the queue, the words, files and place go back.
   func commit() async {
+    guard !addingMoment else { return }
     let typed = draft
     var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
     let files = draftFiles
@@ -1002,21 +1005,33 @@ final class AppModel {
   // MARK: Moments
 
   /// Puts a moment picked in Moments in the draft, and sends nothing: its
-  /// photos as the photo picker's are, its lines in the box, its place
-  /// named by Here as the location button's is (once a pick), and its day.
+  /// lines in the box, its photos as the photo picker's are, its day, and
+  /// its place named by Here as the location button's is (once a pick).
   /// What it left out (a video) is said beside the draft, never in it.
   func addMoment(_ moment: Moment) async {
     guard !addingMoment else { return }
     addingMoment = true
-    defer { addingMoment = false }
+    let found = await put(moment)
+    addingMoment = false
+    // Named once the moment is in, so Commit can go meanwhile, as with the
+    // location button: a note committed first names its spot with this.
+    guard let found, spot == found, placeFromMoment else { return }
+    finding += 1
+    defer { finding -= 1 }
+    await name(found)
+  }
+
+  /// The moment's day, place, lines and photos, into the draft, all before
+  /// Commit can go again; its place's spot, for Here to name.
+  private func put(_ moment: Moment) async -> Spot? {
     let zone = me.flatMap { TimeZone(identifier: $0.tz) } ?? .current
-    guard let today = me?.today ?? Moment.day(of: .now, in: zone) else { return }
+    guard let today = me?.today ?? Moment.day(of: .now, in: zone) else { return nil }
     let made = moment.draft(today: today, timeZone: zone, room: roomForFiles, canAddFiles: canAddFiles)
     momentNotice = made.notice
-    guard !made.isEmpty else { return }
+    guard !made.isEmpty else { return nil }
     day = made.day
-    // The place before the photos, so "Add where I am" doesn't find the
-    // phone as the first photo starts the draft.
+    // The place before the words and photos, so "Add where I am" doesn't
+    // find the phone as they start the draft.
     if let found = made.spot {
       placeAsk += 1
       placeOff = false
@@ -1026,9 +1041,6 @@ final class AppModel {
       here = nil
       venue = nil
     }
-    for url in made.photos {
-      await addPhoto(await Task.detached { try? Data(contentsOf: url) }.value)
-    }
     if !made.lines.isEmpty {
       let lines = made.lines.joined(separator: "\n")
       if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1037,11 +1049,11 @@ final class AppModel {
         draft += (draft.hasSuffix("\n") ? "" : "\n") + lines
       }
     }
-    if let found = made.spot, spot == found, placeFromMoment {
-      finding += 1
-      defer { finding -= 1 }
-      await name(found)
+    // One photo after another, each read off the main actor.
+    for url in made.photos {
+      await addPhoto(await Task.detached { try? Data(contentsOf: url) }.value)
     }
+    return made.spot
   }
 
   /// The version of the day the draft files to, when the app has seen it.
