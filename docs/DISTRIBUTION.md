@@ -28,7 +28,10 @@ Apple calls them external testers. What it takes:
   TestFlight Internal Only … can only be added to internal tester
   groups." `scripts/testflight.sh --external` leaves
   `testFlightInternalTestingOnly` out of the export options. It still
-  uploads only a clean commit on main.
+  uploads only a clean commit on main, and that commit needs its own
+  upload: Apple's build number is the commit count, so a commit already
+  uploaded internal only has used it. A commit after it (docs will do)
+  makes the next number.
 - **Test information**, under TestFlight in App Store Connect: a Beta App
   Description (required), a feedback email (also the reply-to of the
   invitations), a contact, and Release Notes' privacy page
@@ -102,7 +105,8 @@ the last, which Changelog's daily version is.
 
 - Whether the App Store takes 0.0.0 as well as TestFlight did. The first
   submission says.
-- Jamie's calls: who the outside testers are, the review contact's phone,
-  the listing's words and the privacy answers, and when the App Store
-  comes. Outside testers and the review account are approved (Jamie,
-  29 October 2026).
+- Jamie's calls: who the outside testers are, the listing's words and the
+  privacy answers, and when the App Store comes. Outside testers, the
+  review account and the review contact are approved (Jamie, 29 October
+  2026); the test information and review details are in App Store
+  Connect.
