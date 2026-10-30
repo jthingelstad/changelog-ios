@@ -45,6 +45,16 @@ there first, never work around it here.
   `com.apple.developer.journal.allow` entitlement, the array
   `suggestions` as the App ID's profile grants it (`true` doesn't sign),
   and the capability on the App ID, and asks no permission.
+- `Theme/` is built into the app, the share extension and the widgets:
+  Release Notes' look, from its web app (`web/src/styles/site.css`). Type
+  on paper: its colours light and dark, Bricolage Grotesque and Martian
+  Mono (`Theme/Fonts/`, OFL, named in each target's Info.plist under
+  `UIAppFonts`) at the size Dynamic Type asks for (`.face(_:)`), the
+  tangerine Commit, forms flat on the paper (`paperForm()`,
+  `paperRows()`) and the rest. Every screen, sheet and widget is on the
+  paper (Jamie, 2026-10-30: align the app with the website); the tab bar,
+  menus, swipe actions and the Lock Screen stay as iOS draws them. A
+  colour or a size changes on the web first, then here.
 - `Shared/` is built into both the app and the widget extension:
   `AppRoute` (the tab or the new note the app opens to) and `NewNoteIntent`
   ("New Note", which opens Log ready to write; a control can only name an
@@ -71,8 +81,8 @@ there first, never work around it here.
   defaults each time it reads `/v1/me`, and has one entry a day from the
   server's `days`. A tap opens `com.yourversionnumber.changelog:new-note`.
 - `Changelog.xcodeproj` uses synchronized folders, so new files in
-  `Changelog/`, `Shared/`, `ShareExtension/` and `Widgets/` need no
-  project edit.
+  `Changelog/`, `Shared/`, `Theme/`, `ShareExtension/` and `Widgets/` need
+  no project edit.
 - Versions count from Changelog's start on 2026-10-29 by Your Version
   Number's arithmetic (decades.years.days, the day in Chicago), like
   Release Notes' own. `scripts/version.sh` stamps each target's built

@@ -29,28 +29,43 @@ struct UpcomingView: View {
   var body: some View {
     NavigationStack {
       List {
-        if model.me == nil {
-          ProgressView()
-        } else if !model.canKeepUpcoming {
-          Section {
-            Text("This token can't keep your Upcoming dates. On the web, under Settings, API tokens, make one with “Read and change your Upcoming dates and their reminders” ticked, then sign in with it here.")
-            Button("Settings on the web") { openURL(Links.settings) }
-          }
-        } else {
-          if let banner {
-            Section {
-              Label(banner.text, systemImage: banner.problem ? "exclamationmark.triangle" : "checkmark.circle")
-                .foregroundStyle(banner.problem ? .orange : .secondary)
+        Group {
+          BrandBar {
+            if model.canKeepUpcoming {
+              Button("Add a date", systemImage: "plus") { open(.new) }
+                .buttonStyle(QuietButtonStyle())
             }
           }
-          if let loadProblem {
-            Section { Label(loadProblem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-          }
-          if let list {
-            Section {
+          PageTitle(title: "Upcoming", lede: "Soonest first. The morning email reminds you, and so can this phone.")
+            .padding(.top, 22).padding(.bottom, 10)
+        }
+        .paperRow()
+
+        Group {
+          if model.me == nil {
+            ProgressView()
+          } else if !model.canKeepUpcoming {
+            Text("This token can't keep your Upcoming dates. On the web, under Settings, API tokens, make one with “Read and change your Upcoming dates and their reminders” ticked, then sign in with it here.")
+              .face(.hint)
+              .foregroundStyle(Color.ink2)
+            Button("Settings on the web") { openURL(Links.settings) }
+              .buttonStyle(QuietButtonStyle())
+          } else {
+            if let banner {
+              Label(banner.text, systemImage: banner.problem ? "exclamationmark.triangle" : "checkmark.circle")
+                .face(.hint)
+                .foregroundStyle(banner.problem ? Color.tangerineInk : Color.ink2)
+            }
+            if let loadProblem {
+              Label(loadProblem, systemImage: "exclamationmark.triangle")
+                .face(.hint)
+                .foregroundStyle(Color.tangerineInk)
+            }
+            if let list {
               if list.entries.isEmpty {
                 Text("Nothing upcoming. Add a birthday, an anniversary, a trip or an event, and the morning email reminds you.")
-                  .foregroundStyle(.secondary)
+                  .face(.hint)
+                  .foregroundStyle(Color.ink2)
               }
               ForEach(list.entries) { entry in
                 Button { open(.entry(entry)) } label: { UpcomingRow(entry: entry, today: list.today) }
@@ -59,20 +74,21 @@ struct UpcomingView: View {
                     Button("Delete", role: .destructive) { deleting = entry }
                   }
               }
-            } footer: {
-              if let footer = footer(list) { Text(footer) }
+              if let footer = footer(list) {
+                Text(footer).face(.meta).foregroundStyle(Color.ink3)
+              }
+            } else if loadProblem == nil {
+              ProgressView()
             }
-          } else if loadProblem == nil {
-            ProgressView()
           }
         }
+        .paperRow(top: 8, bottom: 8)
+        // Room to scroll the last row clear of the tab bar.
+        Color.clear.frame(height: 24).paperRow()
       }
+      .paperList()
       .navigationTitle("Upcoming")
-      .toolbar {
-        if model.canKeepUpcoming {
-          Button("Add a date", systemImage: "plus") { open(.new) }
-        }
-      }
+      .toolbar(.hidden, for: .navigationBar)
       .refreshable {
         // Not read yet who this is (offline at launch): read that first.
         if model.me == nil { await model.refresh() } else { await load() }
@@ -198,23 +214,31 @@ struct UpcomingRow: View {
   let today: String
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 3) {
-      Text(entry.line)
-        .foregroundStyle(.primary)
-      HStack(spacing: 6) {
+    // When, in cobalt mono capitals, over the date's own words, as the
+    // web's day lists set a day.
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Text(when)
+          .textCase(.uppercase)
+          .face(.stamp)
+          .foregroundStyle(Color.cobalt)
         Image(systemName: UpcomingKind.icon(entry.fields.kind))
           .imageScale(.small)
+          .foregroundStyle(Color.ink3)
           .accessibilityLabel(UpcomingKind.name(entry.fields.kind))
-        Text(when)
-        if let tag = entry.fields.tag { Text("#\(tag)") }
         if !entry.fields.email {
           Image(systemName: "bell.slash")
             .imageScale(.small)
+            .foregroundStyle(Color.ink3)
             .accessibilityLabel("No reminders")
         }
       }
-      .font(.caption)
-      .foregroundStyle(.secondary)
+      Text(entry.line)
+        .face(.note)
+        .foregroundStyle(Color.ink)
+      if let tag = entry.fields.tag {
+        Text("#\(tag)").face(.meta).foregroundStyle(Color.ink3)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .contentShape(.rect)
@@ -261,103 +285,107 @@ struct UpcomingEditor: View {
   var body: some View {
     NavigationStack {
       Form {
-        Section {
-          Picker("Kind", selection: $draft.kind) {
-            ForEach(UpcomingKind.allCases) { Text(UpcomingKind.name($0)).tag($0) }
-          }
-          .pickerStyle(.segmented)
-          TextField("Title", text: $draft.title, prompt: Text(titlePrompt))
-            .textInputAutocapitalization(.words)
-            .accessibilityIdentifier("title")
-            .submitLabel(.done)
-        }
-
-        Section {
-          if draft.kind.annual {
-            Picker("Month", selection: $draft.month) {
-              ForEach(1...12, id: \.self) { Text(Calendar.current.monthSymbols[$0 - 1]).tag($0) }
-            }
-            Picker("Day", selection: $draft.day) {
-              ForEach(1...UpcomingDraft.days(in: draft.month), id: \.self) { Text("\($0)").tag($0) }
-            }
-            TextField("Year", text: yearText, prompt: Text(draft.kind == .birthday ? "Year born, if you know it" : "First year, if you know it"))
-              .keyboardType(.numberPad)
-          } else {
-            DatePicker(draft.kind == .trip ? "First day" : "Day", selection: day(\.start), displayedComponents: .date)
-            if draft.kind == .trip {
-              DatePicker("Last day", selection: day(\.end), in: (Day.date(draft.start) ?? .distantPast)..., displayedComponents: .date)
-            }
-          }
-        } header: {
-          Text("When")
-        } footer: {
-          if draft.kind.annual {
-            Text(draft.kind == .birthday ? "With the year, the line says which version it turns." : "With the year, the line says how many years.")
-          }
-        }
-
-        if !draft.kind.annual {
+        Group {
           Section {
-            HStack {
-              TextField(draft.kind == .trip ? "Destination" : "Where", text: $draft.place,
-                        prompt: Text(draft.kind == .trip ? "Like Zürich, or Paris, Texas" : "Where, if you like"))
-                .focused($placeFocused)
-                .submitLabel(.search)
-                .onSubmit { Task { await checkPlace() } }
-              if checking {
-                ProgressView()
-              } else {
-                Button("Find") { Task { await checkPlace() } }
-                  .disabled(draft.place.trimmingCharacters(in: .whitespaces).isEmpty)
+            Picker("Kind", selection: $draft.kind) {
+              ForEach(UpcomingKind.allCases) { Text(UpcomingKind.name($0)).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            TextField("Title", text: $draft.title, prompt: Text(titlePrompt))
+              .textInputAutocapitalization(.words)
+              .accessibilityIdentifier("title")
+              .submitLabel(.done)
+          }
+
+          Section {
+            if draft.kind.annual {
+              Picker("Month", selection: $draft.month) {
+                ForEach(1...12, id: \.self) { Text(Calendar.current.monthSymbols[$0 - 1]).tag($0) }
+              }
+              Picker("Day", selection: $draft.day) {
+                ForEach(1...UpcomingDraft.days(in: draft.month), id: \.self) { Text("\($0)").tag($0) }
+              }
+              TextField("Year", text: yearText, prompt: Text(draft.kind == .birthday ? "Year born, if you know it" : "First year, if you know it"))
+                .keyboardType(.numberPad)
+            } else {
+              DatePicker(draft.kind == .trip ? "First day" : "Day", selection: day(\.start), displayedComponents: .date)
+              if draft.kind == .trip {
+                DatePicker("Last day", selection: day(\.end), in: (Day.date(draft.start) ?? .distantPast)..., displayedComponents: .date)
               }
             }
           } header: {
-            Text(draft.kind == .trip ? "Destination" : "Place")
+            SectionHead("When")
           } footer: {
-            if let placeProblem {
-              Text(placeProblem).foregroundStyle(.orange)
-            } else if let found {
-              Text(found)
-            } else {
-              Text("A city the city search knows. Find shows which one, and saves nothing.")
+            if draft.kind.annual {
+              SectionNote(draft.kind == .birthday ? "With the year, the line says which version it turns." : "With the year, the line says how many years.")
             }
           }
-        }
 
-        Section {
-          TextField("Tag", text: $draft.tag, prompt: Text("Like family"))
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-        } footer: {
-          Text("One tag, to group it with other dates.")
-        }
-
-        Section {
-          Toggle("In the morning email", isOn: $draft.email)
-          if draft.email {
-            NavigationLink {
-              ReminderDaysView(days: $draft.reminders)
-            } label: {
-              LabeledContent("Remind me", value: ReminderDaysView.summary(draft.reminders))
+          if !draft.kind.annual {
+            Section {
+              HStack {
+                TextField(draft.kind == .trip ? "Destination" : "Where", text: $draft.place,
+                          prompt: Text(draft.kind == .trip ? "Like Zürich, or Paris, Texas" : "Where, if you like"))
+                  .focused($placeFocused)
+                  .submitLabel(.search)
+                  .onSubmit { Task { await checkPlace() } }
+                if checking {
+                  ProgressView()
+                } else {
+                  Button("Find") { Task { await checkPlace() } }
+                    .disabled(draft.place.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+              }
+            } header: {
+              SectionHead(draft.kind == .trip ? "Destination" : "Place")
+            } footer: {
+              if let placeProblem {
+                SectionNote(placeProblem, problem: true)
+              } else if let found {
+                SectionNote(found)
+              } else {
+                SectionNote("A city the city search knows. Find shows which one, and saves nothing.")
+              }
             }
           }
-        } footer: {
-          Text(draft.email
-            ? "Reminders come in the morning email, and on this phone when Upcoming reminders are on in Settings."
-            : "It stays here, with no reminders in the email or on this phone.")
-        }
 
-        if let problem {
-          Section { Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-        }
-
-        if target.entry != nil {
           Section {
-            Button("Delete this date", role: .destructive) { confirmDelete = true }
-              .disabled(saving)
+            TextField("Tag", text: $draft.tag, prompt: Text("Like family"))
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+          } footer: {
+            SectionNote("One tag, to group it with other dates.")
+          }
+
+          Section {
+            Toggle("In the morning email", isOn: $draft.email)
+            if draft.email {
+              NavigationLink {
+                ReminderDaysView(days: $draft.reminders)
+              } label: {
+                LabeledContent("Remind me", value: ReminderDaysView.summary(draft.reminders))
+              }
+            }
+          } footer: {
+            SectionNote(draft.email
+              ? "Reminders come in the morning email, and on this phone when Upcoming reminders are on in Settings."
+              : "It stays here, with no reminders in the email or on this phone.")
+          }
+
+          if let problem {
+            Section { Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(Color.tangerineInk) }
+          }
+
+          if target.entry != nil {
+            Section {
+              Button("Delete this date", role: .destructive) { confirmDelete = true }
+                .disabled(saving)
+            }
           }
         }
+        .paperRows()
       }
+      .paperForm()
       .navigationTitle(target.entry == nil ? "Add a date" : "Edit")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -503,20 +531,24 @@ struct ReminderDaysView: View {
 
   var body: some View {
     Form {
-      Section {
-        ForEach(Array(Set(Self.choices + days)).sorted(), id: \.self) { n in
-          let on = days.contains(n)
-          Toggle(Self.name(n).capitalizedFirst, isOn: Binding(
-            get: { days.contains(n) },
-            set: { wanted in
-              if wanted { days = Array(Set(days + [n])).sorted(by: >) } else { days.removeAll { $0 == n } }
-            }))
-            .disabled(on ? days.count == 1 : days.count >= 6)
+      Group {
+        Section {
+          ForEach(Array(Set(Self.choices + days)).sorted(), id: \.self) { n in
+            let on = days.contains(n)
+            Toggle(Self.name(n).capitalizedFirst, isOn: Binding(
+              get: { days.contains(n) },
+              set: { wanted in
+                if wanted { days = Array(Set(days + [n])).sorted(by: >) } else { days.removeAll { $0 == n } }
+              }))
+              .disabled(on ? days.count == 1 : days.count >= 6)
+          }
+        } footer: {
+          SectionNote("Up to six. For none, turn the morning email off for this date.")
         }
-      } footer: {
-        Text("Up to six. For none, turn the morning email off for this date.")
       }
+      .paperRows()
     }
+    .paperForm()
     .navigationTitle("Remind me")
   }
 

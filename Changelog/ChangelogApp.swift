@@ -40,6 +40,8 @@ struct RootView: View {
     switch model.phase {
     case .starting:
       ProgressView()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.paper)
     case .signedOut:
       SignInView()
     case .signedIn:
@@ -69,12 +71,6 @@ struct RootView: View {
     "log"
     #endif
   }
-}
-
-/// Monospace for versions, as the web and the email show them.
-extension Font {
-  static let version = Font.system(.title2, design: .monospaced).weight(.semibold)
-  static let versionSmall = Font.system(.footnote, design: .monospaced)
 }
 
 enum Links {

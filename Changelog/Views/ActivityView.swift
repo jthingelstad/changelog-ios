@@ -34,26 +34,68 @@ struct ActivityView: View {
   var body: some View {
     NavigationStack {
       List {
-        Picker("Show", selection: $filter) {
-          ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
+        Group {
+          BrandBar()
+          PageTitle(title: "Activity", lede: "What came in, changed and went out, from every channel.")
+            .padding(.top, 22)
+          // The filters as words, the one picked underlined in tangerine,
+          // as the web marks the page you're on.
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+              ForEach(Filter.allCases) { choice in
+                let on = choice == filter
+                Button { filter = choice } label: {
+                  Text(choice.rawValue)
+                    .underline(on, color: .tangerine)
+                    .face(on ? .tagOn : .tag)
+                    .foregroundStyle(on ? Color.ink : Color.cobalt)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+              }
+            }
+          }
+          .accessibilityElement(children: .contain)
+          .accessibilityLabel("Show")
+          .padding(.top, 8)
         }
-        .pickerStyle(.menu)
+        .paperRow()
 
         if !model.hasActivity {
           Text("This token can't read the activity log. Make one with “Read the activity log” ticked to see it here.")
-            .foregroundStyle(.secondary)
+            .face(.hint)
+            .foregroundStyle(Color.ink2)
+            .paperRow(top: 12)
         }
         ForEach(shown) { item in
           if item.id == seenAtOpen, item.id != items.first?.id {
-            Text("Since you last looked").font(.caption).foregroundStyle(.secondary).listRowSeparator(.hidden)
+            HStack(spacing: 10) {
+              Text("Since you last looked")
+                .textCase(.uppercase)
+                .face(.dateline)
+                .foregroundStyle(Color.tangerineInk)
+                .fixedSize()
+              Rectangle().fill(Color.tangerine).frame(height: 2)
+            }
+            .paperRow(top: 10, bottom: 4)
           }
           ActivityRow(item: item)
+            .paperRow(top: 8, bottom: 8)
         }
         if next != nil {
-          Button("Older") { Task { await load(more: true) } }.disabled(loading)
+          Button("Older") { Task { await load(more: true) } }
+            .buttonStyle(QuietButtonStyle())
+            .disabled(loading)
+            .paperRow(top: 8)
         }
+        // Room to scroll the last row clear of the tab bar.
+        Color.clear.frame(height: 24).paperRow()
       }
+      .paperList()
       .navigationTitle("Activity")
+      .toolbar(.hidden, for: .navigationBar)
       .refreshable { await load() }
       .task(id: filter) { await load() }
       .onAppear { seenAtOpen = seen }
@@ -93,16 +135,19 @@ struct ActivityRow: View {
       line {
         // The headline has the room the time doesn't need, so it wraps
         // between words and is never hyphenated.
-        Text(item.headline).layoutPriority(1)
+        Text(item.headline)
+          .face(.line)
+          .foregroundStyle(item.isProblem ? Color.tangerineInk : Color.ink)
+          .layoutPriority(1)
         if !size.isAccessibilitySize { Spacer(minLength: 8) }
         // Always on one line.
-        Text(item.time).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize()
+        Text(item.time).face(.time).foregroundStyle(Color.ink3).monospacedDigit().lineLimit(1).fixedSize()
       }
       if let words {
-        Text(verbatim: words).lineLimit(6)
+        Text(verbatim: words).face(.note).foregroundStyle(Color.ink).lineLimit(6).padding(.top, 2)
       }
       if let detail = item.detail {
-        Text(detail).font(.caption).foregroundStyle(.secondary)
+        Text(detail).face(.meta).foregroundStyle(Color.ink3)
       }
     }
     .accessibilityElement(children: .combine)

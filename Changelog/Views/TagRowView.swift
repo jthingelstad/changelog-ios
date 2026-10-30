@@ -8,8 +8,10 @@ struct TagRowView: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
+    // Hashtags as words, as the web's tag row has them: cobalt and
+    // underlined to add, ink and bold once in the note (or on every note).
     ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 8) {
+      HStack(spacing: 18) {
         ForEach(model.tagRow, id: \.self) { tag in
           let on = Hashtags.contains(tag, in: model.draft)
           let sticky = model.sticky == tag
@@ -18,11 +20,12 @@ struct TagRowView: View {
           } label: {
             HStack(spacing: 4) {
               if sticky { Image(systemName: "pin.fill").imageScale(.small) }
-              Text("#\(tag)")
+              Text("#\(tag)").underline(!(on || sticky), color: .cobalt)
             }
-            .font(.callout)
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(on || sticky ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12), in: .capsule)
+            .face(on || sticky ? .tagOn : .tag)
+            .foregroundStyle(on || sticky ? Color.ink : Color.cobalt)
+            .frame(minHeight: 40)
+            .contentShape(.rect)
           }
           .buttonStyle(.plain)
           .accessibilityLabel("#\(tag)")

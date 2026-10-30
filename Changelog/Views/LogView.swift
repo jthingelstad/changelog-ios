@@ -15,18 +15,35 @@ struct LogView: View {
   var body: some View {
     @Bindable var model = model
     NavigationStack {
-      List {
-        Section {
+      // The web's Today page on the phone: the date, the version, the box
+      // and Commit, then what happened today, all on the paper.
+      ScrollViewReader { list in List {
+        Group {
+          BrandBar { Streak() }
           VersionHeader()
-          TextField("What changed?", text: $model.draft, axis: .vertical)
+            .padding(.top, 18)
+          Text("What changed today?")
+            .face(.section)
+            .accessibilityAddTraits(.isHeader)
+            .padding(.top, 26)
+          TextField("Note", text: $model.draft, prompt: Text("A few words, a photo, a voice memo…").foregroundStyle(Color.ink3),
+                    axis: .vertical)
+            .face(.writing)
             .lineLimit(3...10)
             .focused($typing)
             .submitLabel(.return)
+            .padding(.top, 6).padding(.bottom, 12)
+            // A rule under the box, thicker and tangerine while typing.
+            .overlay(alignment: .bottom) {
+              Rectangle()
+                .fill(typing ? Color.tangerine : Color.ink3)
+                .frame(height: typing ? 3 : 1)
+            }
             .accessibilityLabel("Note")
-          if !model.draftFiles.isEmpty { AttachmentStrip() }
+          if !model.draftFiles.isEmpty { AttachmentStrip().padding(.top, 10) }
           // What a moment left out: for the person, never the note.
           if let notice = model.momentNotice {
-            Label(notice, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
+            Label(notice, systemImage: "info.circle").face(.meta).foregroundStyle(Color.ink3)
           }
           TagRowView()
           if model.day != nil { DayMenu() }
@@ -36,8 +53,8 @@ struct LogView: View {
               Spacer()
               if let sticky = model.sticky {
                 Label("#\(sticky) on every note", systemImage: "pin.fill")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
+                  .face(.meta)
+                  .foregroundStyle(Color.ink3)
               }
             }
           }
@@ -49,49 +66,80 @@ struct LogView: View {
             ComposerTools()
             if !typeSize.isAccessibilitySize { Spacer() }
             Button("Commit") {
-              Task { await model.commit() }
+              Task {
+                await model.commit()
+                // A tall draft (a moment's, with its day and place) shrinks
+                // to an empty box, and the list would keep its place, down in
+                // Today with the box gone above. Back to the box, with Commit
+                // just above the keyboard, or the top when it all fits.
+                withAnimation { list.scrollTo(Self.composer, anchor: .bottom) }
+              }
             }
             .lineLimit(1)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(CommitButtonStyle())
             .disabled(!model.canCommit)
             .keyboardShortcut(.return, modifiers: .command)
           }
+          .id(Self.composer)
         }
+        .paperRow()
 
         if let problem = model.problem {
-          Section { Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+          Label(problem, systemImage: "exclamationmark.triangle")
+            .face(.hint)
+            .foregroundStyle(Color.tangerineInk)
+            .paperRow(top: 16)
         }
 
         if !model.waiting.isEmpty {
-          Section("Waiting to send") {
-            ForEach(model.waiting) { item in
-              WaitingRow(item: item)
-                .swipeActions {
-                  Button("Discard", role: .destructive) { Task { await model.discard(item) } }
-                  if item.refusal != nil && (item.isNote || item.isEdit) { Button("Fix") { fixing = item } }
-                }
-            }
-          }
-        }
-
-        Section("Today") {
-          if model.today.isEmpty {
-            Text(model.version.map { "No changes yet in \($0)." } ?? "Nothing yet today.")
-              .foregroundStyle(.secondary)
-          }
-          ForEach(model.today) { item in
-            ActivityRow(item: item, words: model.words(of: item))
+          Text("Waiting to send")
+            .face(.head)
+            .foregroundStyle(Color.ink2)
+            .accessibilityAddTraits(.isHeader)
+            .paperRow(top: 28, bottom: 4)
+          ForEach(model.waiting) { item in
+            WaitingRow(item: item)
+              .paperRow(top: 8, bottom: 8)
               .swipeActions {
-                if model.isMine(item) {
-                  Button("Delete", role: .destructive) { deleting = item }
-                  Button("Edit") { editing = item }
-                }
+                Button("Discard", role: .destructive) { Task { await model.discard(item) } }
+                if item.refusal != nil && (item.isNote || item.isEdit) { Button("Fix") { fixing = item } }
               }
           }
         }
-      }
+
+        Group {
+          if let version = model.version {
+            Text("Today in \(versionText(version))")
+          } else {
+            Text("Today")
+          }
+        }
+        .face(.head)
+        .foregroundStyle(Color.ink2)
+        .accessibilityAddTraits(.isHeader)
+        .paperRow(top: 28, bottom: 4)
+        if model.today.isEmpty {
+          Text(model.version.map { "No changes yet in \($0)." } ?? "Nothing yet today.")
+            .face(.hint)
+            .foregroundStyle(Color.ink2)
+            .paperRow(top: 8, bottom: 8)
+        }
+        ForEach(model.today) { item in
+          ActivityRow(item: item, words: model.words(of: item))
+            .paperRow(top: 8, bottom: 8)
+            .swipeActions {
+              if model.isMine(item) {
+                Button("Delete", role: .destructive) { deleting = item }
+                Button("Edit") { editing = item }
+              }
+            }
+        }
+        // Room to scroll the last row clear of the tab bar.
+        Color.clear.frame(height: 24).paperRow()
+      } }
+      .paperList()
       .navigationTitle("Changelog")
-      .toolbarTitleDisplayMode(.inline)
+      .toolbar(.hidden, for: .navigationBar)
       .refreshable { await model.refresh() }
       // The box takes the keyboard as Log opens, and the keyboard covers the
       // tabs: scrolling puts it away.
@@ -123,43 +171,63 @@ struct LogView: View {
       }
     }
   }
+
+  /// The row with Commit, which a commit scrolls back to.
+  private static let composer = "composer"
 }
 
+/// The day as the web's Today page sets it: the date in small mono
+/// capitals, the version large, and the version that ships next.
 struct VersionHeader: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    // The streak beside the version while both fit on one line, else
-    // under it (at the larger text sizes).
-    ViewThatFits(in: .horizontal) {
-      HStack(alignment: .firstTextBaseline) {
-        version
-        Spacer()
-        streak
+    VStack(alignment: .leading, spacing: 0) {
+      if let today = model.me.flatMap({ Day.date($0.today) }) {
+        Text(today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+          .textCase(.uppercase)
+          .face(.dateline)
+          .foregroundStyle(Color.ink2)
       }
-      VStack(alignment: .leading, spacing: 2) {
-        version
-        streak
+      // A version is never broken or cut off: on one line, and smaller
+      // before it would be too wide for the row.
+      Text(model.version ?? "…")
+        .face(.display)
+        .monospacedDigit()
+        .foregroundStyle(Color.ink)
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
+        .padding(.top, 8)
+        .accessibilityLabel(model.version.map { "Version \($0)" } ?? "Version loading")
+      if let next {
+        Text("\(versionText(next.version)) ships \(next.on).")
+          .face(.hint)
+          .foregroundStyle(Color.ink2)
+          .padding(.top, 12)
       }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  /// A version is never broken or cut off: on one line, and smaller
-  /// before it would be too wide for the row.
-  private var version: some View {
-    Text(model.version ?? "…")
-      .font(.version)
-      .lineLimit(1)
-      .minimumScaleFactor(0.5)
-      .accessibilityLabel(model.version.map { "Version \($0)" } ?? "Version loading")
+  /// Tomorrow's version, from the server's `days`, never worked out here.
+  private var next: (version: String, on: String)? {
+    guard let me = model.me, let today = Day.date(me.today),
+          let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today),
+          let version = me.version(on: Day.string(tomorrow)) else { return nil }
+    return (version, tomorrow.formatted(.dateTime.month(.wide).day()))
   }
+}
 
-  @ViewBuilder private var streak: some View {
+/// The streak, or that the email stopped, at the end of Log's bar.
+struct Streak: View {
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
     if let me = model.me {
       if me.status == "stopped" {
-        Text("Email stopped").font(.caption).foregroundStyle(.secondary)
+        Text("Email stopped").face(.head).foregroundStyle(Color.tangerineInk)
       } else if me.streak > 1 {
-        Text("\(me.streak)-day streak").font(.caption).foregroundStyle(.secondary)
+        Text("\(me.streak)-day streak").face(.head).foregroundStyle(Color.ink2)
       }
     }
   }
@@ -200,15 +268,15 @@ struct WaitingRow: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(summary).lineLimit(2)
-      if let extras {
-        Label(extras, systemImage: "paperclip").font(.caption).foregroundStyle(.secondary)
-      }
       if let refusal = item.refusal {
-        Text(refusal).font(.caption).foregroundStyle(.orange)
+        Text(refusal).face(.meta).foregroundStyle(Color.tangerineInk)
       } else {
-        Text(item.status)
-          .font(.caption).foregroundStyle(.secondary)
+        Text(item.status).face(.meta).foregroundStyle(Color.ink3)
+      }
+      // Faded while it waits, as the web shows a note still saving.
+      Text(summary).face(.note).lineLimit(2).opacity(item.refusal == nil ? 0.6 : 1)
+      if let extras {
+        Label(extras, systemImage: "paperclip").face(.meta).foregroundStyle(Color.ink3)
       }
     }
   }
@@ -219,10 +287,12 @@ struct Toast: View {
 
   var body: some View {
     if let toast = model.toast {
+      // Ink on paper turned over: the one dark mark on a light screen.
       Text(toast)
-        .font(.callout.monospaced())
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(.thinMaterial, in: .capsule)
+        .face(.stamp)
+        .foregroundStyle(Color.paper)
+        .padding(.horizontal, 18).padding(.vertical, 11)
+        .background(Color.ink, in: .capsule)
         .padding(.bottom, 12)
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .task {
@@ -265,31 +335,39 @@ struct EditNoteView: View {
   var body: some View {
     NavigationStack {
       Form {
-        if let refusal = refused?.refusal {
-          Section {
-            Text(refusal).foregroundStyle(.orange)
-          } footer: {
-            Text("Your words are below. Saving puts them in place of what the note says now.")
+        Group {
+          if let refusal = refused?.refusal {
+            Section {
+              Text(refusal).foregroundStyle(Color.tangerineInk)
+            } footer: {
+              SectionNote("Your words are below. Saving puts them in place of what the note says now.")
+            }
+          }
+          if let failure {
+            Section {
+              Label(Self.sentence(failure), systemImage: "exclamationmark.triangle").foregroundStyle(Color.tangerineInk)
+              if failure.retryable { Button("Try again") { Task { await read() } } }
+            }
+          }
+          if note != nil || refused != nil {
+            TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
+          } else if failure == nil {
+            ProgressView()
+          }
+          if refused != nil {
+            Section { CopyWordsButton(text: text) }
+            if let note {
+              Section {
+                Text(verbatim: note.text).foregroundStyle(Color.ink2).textSelection(.enabled)
+              } header: {
+                SectionHead("What it says now")
+              }
+            }
           }
         }
-        if let failure {
-          Section {
-            Label(Self.sentence(failure), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
-            if failure.retryable { Button("Try again") { Task { await read() } } }
-          }
-        }
-        if note != nil || refused != nil {
-          TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
-        } else if failure == nil {
-          ProgressView()
-        }
-        if refused != nil {
-          Section { CopyWordsButton(text: text) }
-          if let note {
-            Section("What it says now") { Text(verbatim: note.text).foregroundStyle(.secondary).textSelection(.enabled) }
-          }
-        }
+        .paperRows()
       }
+      .paperForm()
       .navigationTitle(title)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -352,24 +430,28 @@ struct FixWaitingView: View {
   var body: some View {
     NavigationStack {
       Form {
-        if let refusal = item.refusal { Section { Text(refusal).foregroundStyle(.orange) } }
-        TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
-        if !item.files.isEmpty {
-          Section {
-            ForEach(item.files) { file in
-              Toggle(isOn: Binding(get: { keeping.contains(file.id) },
-                                   set: { if $0 { keeping.insert(file.id) } else { keeping.remove(file.id) } })) {
-                Label(file.name, systemImage: file.isPhoto ? "photo" : file.isRecording ? "waveform" : "doc")
+        Group {
+          if let refusal = item.refusal { Section { Text(refusal).foregroundStyle(Color.tangerineInk) } }
+          TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
+          if !item.files.isEmpty {
+            Section {
+              ForEach(item.files) { file in
+                Toggle(isOn: Binding(get: { keeping.contains(file.id) },
+                                     set: { if $0 { keeping.insert(file.id) } else { keeping.remove(file.id) } })) {
+                  Label(file.name, systemImage: file.isPhoto ? "photo" : file.isRecording ? "waveform" : "doc")
+                }
               }
+            } header: {
+              SectionHead("Files")
+            } footer: {
+              SectionNote("A file turned off is left off the note and taken off this phone. With every file off, the words go alone.")
             }
-          } header: {
-            Text("Files")
-          } footer: {
-            Text("A file turned off is left off the note and taken off this phone. With every file off, the words go alone.")
           }
+          Section { CopyWordsButton(text: text) }
         }
-        Section { CopyWordsButton(text: text) }
+        .paperRows()
       }
+      .paperForm()
       .navigationTitle("Fix and send")
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

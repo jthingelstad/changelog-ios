@@ -87,6 +87,11 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
+		C0DE00000000000000000070 /* Theme */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Theme;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -129,6 +134,7 @@
 			children = (
 				C0DE00000000000000000002 /* Changelog */,
 				C0DE00000000000000000052 /* Shared */,
+				C0DE00000000000000000070 /* Theme */,
 				C0DE0000000000000000002E /* ShareExtension */,
 				C0DE00000000000000000051 /* Widgets */,
 				C0DE00000000000000000032 /* ChangelogUITests */,
@@ -170,6 +176,7 @@
 			fileSystemSynchronizedGroups = (
 				C0DE00000000000000000002 /* Changelog */,
 				C0DE00000000000000000052 /* Shared */,
+				C0DE00000000000000000070 /* Theme */,
 			);
 			name = Changelog;
 			packageProductDependencies = (
@@ -194,6 +201,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				C0DE0000000000000000002E /* ShareExtension */,
+				C0DE00000000000000000070 /* Theme */,
 			);
 			name = ShareExtension;
 			packageProductDependencies = (
@@ -219,6 +227,7 @@
 			fileSystemSynchronizedGroups = (
 				C0DE00000000000000000051 /* Widgets */,
 				C0DE00000000000000000052 /* Shared */,
+				C0DE00000000000000000070 /* Theme */,
 			);
 			name = Widgets;
 			packageProductDependencies = (
