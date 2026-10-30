@@ -5,6 +5,7 @@ import SwiftUI
 /// happened today from every channel.
 struct LogView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dynamicTypeSize) private var typeSize
   @FocusState private var typing: Bool
   @State private var editing: ActivityItem?
   @State private var fixing: OutboxItem?
@@ -33,12 +34,17 @@ struct LogView: View {
               }
             }
           }
-          HStack {
+          // At accessibility sizes Commit goes under the buttons, whole,
+          // rather than squeezed beside them into "Com-mit".
+          let row = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout())
+          row {
             ComposerTools()
-            Spacer()
+            if !typeSize.isAccessibilitySize { Spacer() }
             Button("Commit") {
               Task { await model.commit() }
             }
+            .lineLimit(1)
             .buttonStyle(.borderedProminent)
             .disabled(!model.canCommit)
             .keyboardShortcut(.return, modifiers: .command)
