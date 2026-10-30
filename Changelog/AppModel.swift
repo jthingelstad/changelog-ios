@@ -319,7 +319,7 @@ final class AppModel {
     let mine = today.filter(isMine).compactMap { item in
       item.day.flatMap { day in item.note.map { TodayWords.Note(date: day, id: $0) } }
     }
-    let words = await TodayWords.read(mine, keeping: todayWords) { note throws(APIError) in
+    let words = await TodayWords.read(mine, keeping: todayWords) { note in
       try await client.note(date: note.date, id: note.id).text
     }
     if generation == todayGeneration { todayWords = words }

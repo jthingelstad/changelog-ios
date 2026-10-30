@@ -110,6 +110,12 @@ there first, never work around it here.
   each refresh (`TodayWords`) and held in memory only: never on disk, in
   the App Group, a widget, a notification or what Siri says.
 - iOS 26 and later, iPhone only, Swift 6 strict concurrency.
+- No task groups (`withTaskGroup` and its kin). Built with Swift 6.4
+  (Xcode 27.1) and optimized, as TestFlight builds are, the one in
+  `TodayWords` ended before its children finished, and build 53 crashed
+  on launch (2026-10-30); Debug, and so every test then, never did. Run
+  work side by side as one `Task` each, awaited in turn, as `TodayWords`
+  does, and keep ChangelogKit's tests passing optimized too.
 - What each version brought is "Release Notes for Changelog" on Release
   Notes' public site (`/guide/changelog/`, `site/guide/changelog.md` in
   the Release Notes repo; Jamie, 2026-10-29: "Please make sure that there
@@ -125,11 +131,13 @@ there first, never work around it here.
 
 ```sh
 swift test --package-path ChangelogKit
+swift test -c release -Xswiftc -enable-testing --package-path ChangelogKit
 xcodebuild -project Changelog.xcodeproj -scheme Changelog \
   -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
-CI (`.github/workflows/test.yml`) runs both on every PR. Actions are pinned
+CI (`.github/workflows/test.yml`) runs them on every PR: the tests in
+Debug and optimized, since a TestFlight build is optimized. Actions are pinned
 by commit SHA.
 
 `DevServerTests` runs the client against the real `/v1` and skips unless a
