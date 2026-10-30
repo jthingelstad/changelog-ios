@@ -42,8 +42,9 @@ there first, never work around it here.
   button are inside `#if canImport(JournalingSuggestions)`; a simulator's
   debug build has a fictional stand-in moment instead, behind
   `CHANGELOG_MOMENT`, for the test cycle. The picker needs the
-  `com.apple.developer.journal.allow` entitlement (and the capability on
-  the App ID) and asks no permission.
+  `com.apple.developer.journal.allow` entitlement, the array
+  `suggestions` as the App ID's profile grants it (`true` doesn't sign),
+  and the capability on the App ID, and asks no permission.
 - `Shared/` is built into both the app and the widget extension:
   `AppRoute` (the tab or the new note the app opens to) and `NewNoteIntent`
   ("New Note", which opens Log ready to write; a control can only name an
