@@ -50,6 +50,23 @@ struct DevServerTests {
     #expect(read.revision == receipt.note.revision)
   }
 
+  /// A moment files to its own day: `date` an earlier day, `written_at`
+  /// now. A day before the birthday is refused, and the Outbox files that
+  /// note to the day it was written instead.
+  @Test func aMomentFilesToItsOwnDay() async throws {
+    let client = DevServer.client(), outbox = Outbox(file: nil)
+    let me = try await client.me()
+    let zone = try #require(TimeZone(identifier: me.tz))
+    let earlier = try #require(Moment.day(of: Date.now.addingTimeInterval(-3 * 86400), in: zone))
+    try await outbox.enqueue(text: "Dev test, a moment three days back #devtest", date: earlier)
+    try await outbox.enqueue(text: "Dev test, before the birthday #devtest", date: "1900-01-01")
+    let report = await outbox.flush { (item) async throws(APIError) -> OutboxResult in try await client.perform(item) }
+    #expect(report.stopped == nil)
+    #expect(report.refused.isEmpty)
+    #expect(report.filed.map(\.note.date) == [earlier, me.today])
+    #expect(report.filed.first?.note.version != me.version)
+  }
+
   @Test func appendEditConflictAndDelete() async throws {
     let client = DevServer.client()
     let made = try await client.createNote(NoteRequest(text: "To change #devtest"), idempotencyKey: UUID().uuidString.lowercased())

@@ -20,7 +20,7 @@ The words in quotes are the iPhone app's.
 
 ## Before you start
 
-Nothing: signing in makes the token. For step 17, have a token made on
+Nothing: signing in makes the token. For step 18, have a token made on
 the web, Settings, API tokens, with all four ticked: Add notes, Add files,
 Upcoming and the activity log.
 
@@ -49,50 +49,60 @@ Upcoming and the activity log.
    Commit: tap it to pick a business nearby or "Leave the place off". Then
    Settings, Place, "Add where I am" on: the next note finds it by itself.
    Each Here is a lookup Release Notes pays for, so a few is plenty.
-7. **The share sheet.** From Photos, three or four big photos at once;
+7. **Moments.** The Moments button, beside the location button, opens
+   Apple's suggestions (no permission to ask for). Pick one from a day or
+   two back with a workout, a song or a place in it: the box fills with a
+   plain line for each ("Walked 3.2 mi in 48 min", "Listened to … by …")
+   and its photos, its place shows by Commit, named once, and under the
+   box "Files on" that day (or "Files in" its version, if Today has shown
+   it), with "File to today" in its menu. Nothing goes until Commit; then
+   the web has the note on that day. One with a video says the video
+   isn't on the note. If the button does nothing, the App ID is missing
+   the Journaling Suggestions capability.
+8. **The share sheet.** From Photos, three or four big photos at once;
    from Safari, a link; from Files, a PDF; from Voice Memos, a recording.
    Each makes exactly one note. A video too, to see what it says: Release
    Notes doesn't keep video.
-8. **Siri and Shortcuts.** "Add a note in Changelog", then say a line:
+9. **Siri and Shortcuts.** "Add a note in Changelog", then say a line:
    Siri answers "Filed in" today's version, never the words, and the note
    is on the web once, with the sticky tag if one is set. In the
    Shortcuts app, "Add a Note" with some text does the same, and "New
    Note" opens Log with the keyboard up, from any tab. With the phone
    locked, "Add a note in Changelog" works too, without unlocking.
-9. **The Action Button**, on a phone that has one: Settings, Action
-   Button, Controls, "New Note". A press opens Log ready to write. Then
-   Shortcut, "Add a Note": a press asks what changed.
-10. **Widgets.** On the Home Screen, Today small and medium; on the Lock
+10. **The Action Button**, on a phone that has one: Settings, Action
+    Button, Controls, "New Note". A press opens Log ready to write. Then
+    Shortcut, "Add a Note": a press asks what changed.
+11. **Widgets.** On the Home Screen, Today small and medium; on the Lock
     Screen, the round, the rectangular and the one above the time. Each
     shows today's version and "Nothing yet" or "Written today", and a
     note from Siri turns it to "Written today". The medium one lists
     what's coming up; the Lock Screen ones never do. A tap opens Log
     ready to write. The next morning the version has turned without
     opening the app. In Control Center, add "New Note".
-11. **Offline.** Airplane mode, a note with a photo, Commit: it waits
+12. **Offline.** Airplane mode, a note with a photo, Commit: it waits
     under "Waiting to send", "Waiting for a connection". Airplane mode
     off, the app still open: it sends, once, without leaving Log. A note
     committed just before going to the Home Screen still sends. A share,
     or "Add a Note" in Shortcuts, made offline says "Saved. Changelog
     sends it when it can." and sends the next time the app opens, once.
-12. **Upcoming.** "Add a date" (a birthday), Save, then edit it and delete
+13. **Upcoming.** "Add a date" (a birthday), Save, then edit it and delete
     it. The web's Upcoming agrees at each step, and so does the medium
     widget.
-13. **Notifications**, in Settings: "Remind me on this phone" (Upcoming
+14. **Notifications**, in Settings: "Remind me on this phone" (Upcoming
     reminders), "Ask me each morning" (Daily prompt) and the Activity
     notifications switches. A note added on the web or by an agent brings
     a notice minutes or hours later: iOS decides when the app looks.
-14. **Activity.** Rows from every channel; "Older" loads more.
-15. **The build.** The foot of Settings names the version, the commit and
+15. **Activity.** Rows from every channel; "Older" loads more.
+16. **The build.** The foot of Settings names the version, the commit and
     when it was made (`Changelog 0.0.0, build 571b43d, made Oct 29 at
     1:25 PM CDT.`). "Privacy", under Release Notes, opens the privacy page.
-16. **Sign out.** Settings, "Sign out", then "Sign out and revoke
+17. **Sign out.** Settings, "Sign out", then "Sign out and revoke
     this token". The token shows as revoked on the web, anything still
     waiting stays on the phone, Notification Center holds nothing of
     Changelog's, and the widgets say to sign in. In Airplane Mode the same
     steps sign out too, and the sign-in screen says to end the token on
     the web, since Release Notes couldn't be reached to end it.
-17. **Last, a pasted token.** "Sign in with Release Notes", then Cancel on
+18. **Last, a pasted token.** "Sign in with Release Notes", then Cancel on
     the page: back on the sign-in screen, with nothing to read. Then, under
     "Or use a token", "Paste token" with the token from the web: Log opens.
     Sign out again.

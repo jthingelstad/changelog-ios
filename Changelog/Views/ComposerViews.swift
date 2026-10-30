@@ -1,11 +1,14 @@
 import ChangelogKit
 import ImageIO
+#if canImport(JournalingSuggestions)
+@preconcurrency import JournalingSuggestions
+#endif
 import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Photos, the camera, a voice memo and Here, beside Commit. The file
-/// buttons show only for a token that can add files.
+/// Photos, the camera, a voice memo, Moments and Here, beside Commit. The
+/// file buttons show only for a token that can add files.
 struct ComposerTools: View {
   @Environment(AppModel.self) private var model
   @State private var picks: [PhotosPickerItem] = []
@@ -34,6 +37,7 @@ struct ComposerTools: View {
         }
         .disabled(model.roomForFiles == 0)
       }
+      MomentsButton()
       if model.locating {
         ProgressView().tappable().accessibilityLabel("Finding where you are")
       } else {
@@ -103,6 +107,67 @@ struct AttachmentStrip: View {
           .accessibilityLabel(file.name)
         }
       }
+    }
+  }
+}
+
+/// Moments: Apple's Journaling Suggestions, a sheet of recent moments the
+/// system shows outside the app. It asks for no permission; only the moment
+/// picked comes back, and it fills the draft (`AppModel.addMoment`), never
+/// sends. The framework is on a phone only, so a simulator has no button,
+/// except a debug build's stand-in for the UI test cycle.
+struct MomentsButton: View {
+  @Environment(AppModel.self) private var model
+  @State private var picking = false
+
+  var body: some View {
+    #if canImport(JournalingSuggestions)
+    button
+      .journalingSuggestionsPicker(isPresented: $picking) { suggestion in
+        await model.addMoment(await Moment.read(suggestion))
+      }
+    #elseif DEBUG
+    if ProcessInfo.processInfo.environment["CHANGELOG_MOMENT"] != nil {
+      button.onChange(of: picking) { _, asked in
+        guard asked else { return }
+        picking = false
+        Task { await model.addMoment(.standIn) }
+      }
+    }
+    #else
+    EmptyView()
+    #endif
+  }
+
+  @ViewBuilder private var button: some View {
+    if model.addingMoment {
+      ProgressView().tappable().accessibilityLabel("Adding the moment")
+    } else {
+      Button { picking = true } label: { Image(systemName: "sparkles.rectangle.stack").tappable() }
+        .accessibilityLabel("Add a moment")
+        // One Here at a time: a place being found, or a moment's being named.
+        .disabled(model.locating)
+    }
+  }
+}
+
+/// The day a moment files the draft to, with a way back to today: its
+/// version when the app has seen it, else its date.
+struct DayMenu: View {
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
+    if let day = model.day {
+      let shown = Day.label(day, today: model.me?.today ?? Day.string(.now))
+      let spoken = Day.date(day)?.formatted(.dateTime.weekday(.wide).month(.wide).day()) ?? shown
+      Menu {
+        Button("File to today", systemImage: "arrow.uturn.backward") { model.fileToToday() }
+      } label: {
+        Label(model.dayVersion.map { "Files in \($0)" } ?? "Files on \(shown)", systemImage: "calendar").lineLimit(1)
+      }
+      .face(.hint)
+      .buttonStyle(.borderless)
+      .accessibilityLabel(model.dayVersion.map { "Files to \(spoken), in \($0)" } ?? "Files to \(spoken)")
     }
   }
 }

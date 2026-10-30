@@ -86,6 +86,56 @@ final class ChangelogUITests: XCTestCase {
     _ = try await newNotes(since: before)
   }
 
+  /// A picked moment fills the draft and sends nothing until Commit. A
+  /// simulator has no Journaling Suggestions, so a debug build launched
+  /// with `CHANGELOG_MOMENT` picks a fictional one: a walk two days ago by
+  /// a lake, a song, and a video it leaves out.
+  @MainActor func testAMoment() async throws {
+    let app = launch(moment: true)
+    let me = try await account()
+    var before = try await filed()
+    app.buttons["Add a moment"].tap()
+    let day = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Files to '")).firstMatch
+    expect(day, "the draft files to the moment's day", in: app)
+    // Its version shows only when the app knows that day's, never today's.
+    XCTAssertFalse(day.label.hasSuffix(", in \(me.version)"), day.label)
+    let words = app.textViews["Note"].exists ? app.textViews["Note"] : app.textFields["Note"]
+    XCTAssertTrue((words.value as? String ?? "").contains("Walked 3.2 mi in 48 min"), "the walk is one line")
+    XCTAssertTrue((words.value as? String ?? "").contains("Listened to A Song by A Band"), "the song is one line")
+    let video = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "doesn't keep video")).firstMatch
+    expect(video, "the draft says the video is left out", in: app)
+    let place = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Place: ' AND label != %@", "Place: The moment's place")).firstMatch
+    expect(place, "Here names the moment's place", in: app, timeout: 30)
+    // Nothing goes until Commit.
+    try await Task.sleep(for: .seconds(2))
+    let waiting = try await filed()
+    XCTAssertEqual(waiting.count, before.count, "a moment sends nothing by itself")
+    type(" \(note("A moment"))", into: app)
+    let moment = Self.day(of: .now.addingTimeInterval(-2 * 86400), in: me.tz)
+    app.buttons["Commit"].tap()
+    expectFiled(app)
+    let earlier = try await newNotes(since: before)
+    XCTAssertEqual(earlier.first?.day, moment, "the note files to the moment's day")
+    XCTAssertFalse(day.exists, "the next draft is today's")
+
+    // "File to today" takes the day off and leaves the rest.
+    before = try await filed()
+    app.buttons["Add a moment"].tap()
+    expect(day, "the draft files to the moment's day", in: app)
+    expect(place, "Here names the moment's place", in: app, timeout: 30)
+    // The button spans the row; its menu opens from the words at its start.
+    day.buttons.firstMatch.tap()
+    let today = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'File to today'")).firstMatch
+    expect(today, "the day's menu has File to today", in: app)
+    today.tap()
+    XCTAssertTrue(day.waitForNonExistence(timeout: 5), "the draft is today's again")
+    type(" \(note("A moment, today"))", into: app)
+    app.buttons["Commit"].tap()
+    expectFiled(app)
+    let now = try await newNotes(since: before)
+    XCTAssertEqual(now.first?.day, me.today, "the note files to today")
+  }
+
   @MainActor func testAVoiceMemo() async throws {
     let app = launch()
     let before = try await filed()
@@ -220,10 +270,11 @@ final class ChangelogUITests: XCTestCase {
 
   // MARK: Helpers
 
-  private func launch() -> XCUIApplication {
+  private func launch(moment: Bool = false) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchEnvironment["CHANGELOG_DEV_TOKEN"] = token
     app.launchEnvironment["CHANGELOG_DEV_URL"] = server
+    if moment { app.launchEnvironment["CHANGELOG_MOMENT"] = "1" }
     app.launch()
     expect(app.buttons["Commit"], "signed in to the dev server", in: app, timeout: 30)
     return app
@@ -266,7 +317,7 @@ final class ChangelogUITests: XCTestCase {
 
   // MARK: The dev server's activity log
 
-  struct Filed: Decodable, Sendable { let id: String; let kind: String; let files: Int? }
+  struct Filed: Decodable, Sendable { let id: String; let kind: String; let files: Int?; let day: String? }
   private struct Page: Decodable { let items: [Filed] }
 
   /// The notes the activity log has filed, newest first.
@@ -279,6 +330,28 @@ final class ChangelogUITests: XCTestCase {
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     let (data, _) = try await URLSession.shared.data(for: request)
     return try JSONDecoder().decode(Page.self, from: data).items.filter { $0.kind == "note.added" }
+  }
+
+  struct Account: Decodable, Sendable { let today: String; let tz: String; let version: String }
+
+  /// The dev server account's day and time zone.
+  @MainActor private func account() async throws -> Account {
+    try await Self.account(server: server, token: token)
+  }
+
+  private static func account(server: String, token: String) async throws -> Account {
+    var request = URLRequest(url: URL(string: "\(server)/v1/me")!)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, _) = try await URLSession.shared.data(for: request)
+    return try JSONDecoder().decode(Account.self, from: data)
+  }
+
+  /// `date`'s day in the account's time zone, as `/v1` writes days.
+  private static func day(of date: Date, in zone: String) -> String {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: zone) ?? .current
+    let c = calendar.dateComponents([.year, .month, .day], from: date)
+    return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
   }
 
   private struct Dates: Decodable {

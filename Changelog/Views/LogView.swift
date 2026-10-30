@@ -41,7 +41,12 @@ struct LogView: View {
             }
             .accessibilityLabel("Note")
           if !model.draftFiles.isEmpty { AttachmentStrip().padding(.top, 10) }
+          // What a moment left out: for the person, never the note.
+          if let notice = model.momentNotice {
+            Label(notice, systemImage: "info.circle").face(.meta).foregroundStyle(Color.ink3)
+          }
           TagRowView()
+          if model.day != nil { DayMenu() }
           if model.placeLabel != nil || model.sticky != nil {
             HStack {
               PlaceMenu()
