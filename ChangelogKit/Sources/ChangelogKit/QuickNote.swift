@@ -8,6 +8,8 @@ import Foundation
 public enum QuickNote {
   public enum Outcome: Sendable, Equatable {
     case filed(NoteReceipt)
+    /// Filed, in an answer this build couldn't read.
+    case sent
     /// The server's reason. The note waits in the app to fix.
     case refused(String)
     case signedOut
@@ -39,6 +41,7 @@ public enum QuickNote {
     timer.cancel()
     inbox.close(share.file, sent: await outbox.waiting.isEmpty)
     if let receipt = report.filed.first { return .filed(receipt) }
+    if report.sent.contains(where: { $0.result == .done }) { return .sent }
     if let refused = report.refused.first?.refusal { return .refused(refused) }
     if report.stopped?.signedOut == true { return .signedOut }
     return .waiting
@@ -51,6 +54,7 @@ public enum QuickNote {
     case .filed(let receipt):
       let badges = receipt.unlocked ?? []
       return badges.isEmpty ? "Filed in \(receipt.note.version)." : "Unlocked: \(badges.map(\.name).joined(separator: ", "))"
+    case .sent: return "Filed."
     case .refused(let why): return why + " It waits in Changelog to fix."
     case .signedOut: return "Saved. Sign in to Changelog again and it goes from there."
     case .waiting: return "Saved. Changelog sends it when it can."

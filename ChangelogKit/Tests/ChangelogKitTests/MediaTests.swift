@@ -282,4 +282,82 @@ private func folder() -> URL {
     // Ready as it is: preparing it asks Here nothing.
     #expect(named.place == place && named.ready)
   }
+
+  private func form(_ storage: String) -> String {
+    """
+    {"upload":"\(String(repeating: "f", count: 32))","type":"image/jpeg","url":"https://\(storage)/up",
+     "fields":{"key":"k","policy":"p"},"expires_in":300}
+    """
+  }
+
+  private func preparing(_ host: String) async throws -> (OutboxItem, URL) {
+    let dir = folder()
+    let outbox = Outbox(file: nil, files: dir)
+    let file = QueuedFile(type: "image/jpeg", name: "lake.jpg", size: 5)
+    try outbox.keep(Data("BYTES".utf8), as: file)
+    let item = OutboxItem(id: UUID(), operation: .post(NotePost(text: "x", writtenAt: "2026-10-29T07:45:00-05:00", files: [file])),
+                          queuedAt: .now, attempts: 0, refusal: nil)
+    return (item, dir)
+  }
+
+  /// File storage turning a file away (the form expired, say) gets one more
+  /// try with a new form; refused again, it is the note's refusal, so it
+  /// never holds back the notes after it. Storage's status is never taken
+  /// for Release Notes': a 401 there doesn't sign out.
+  @Test func aStorageRefusalIsTheNotesOnceANewFormIsRefusedToo() async throws {
+    StubProtocol.set("queue-forms.test", .init(status: 201, body: form("queue-refusing-storage.test")))
+    StubProtocol.set("queue-refusing-storage.test", .init(status: 401, body: "<Error><Code>AccessDenied</Code></Error>"))
+    let (item, dir) = try await preparing("queue-forms.test")
+    do {
+      _ = try await stubbedClient("queue-forms.test").prepare(item, files: dir)
+      Issue.record("expected a refusal")
+    } catch {
+      #expect(error.code == "upload_refused" && !error.retryable && !error.signedOut)
+      #expect(!error.message.contains("AccessDenied"))
+    }
+    #expect(StubProtocol.requests("queue-forms.test").count == 2)
+    #expect(StubProtocol.requests("queue-refusing-storage.test").count == 2)
+  }
+
+  /// Storage busy or failing is tried again later, under the same key.
+  @Test func aBusyStorageIsTriedAgainLater() async throws {
+    StubProtocol.set("queue-busy-forms.test", .init(status: 201, body: form("queue-busy-storage.test")))
+    StubProtocol.set("queue-busy-storage.test", .init(status: 503, body: "<Error><Code>SlowDown</Code></Error>"))
+    let (item, dir) = try await preparing("queue-busy-forms.test")
+    do {
+      _ = try await stubbedClient("queue-busy-forms.test").prepare(item, files: dir)
+      Issue.record("expected an error")
+    } catch {
+      #expect(error.code == "upload_failed" && error.retryable)
+    }
+    #expect(StubProtocol.requests("queue-busy-forms.test").count == 1)
+  }
+
+  /// A file gone from the phone is gone for good. One still there that
+  /// can't be got ready (the phone full, or locked) waits, and says why.
+  @Test func aFileGoneIsMissingButOneThatCantBeReadWaits() async throws {
+    let dir = folder()
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let form = UploadForm(upload: String(repeating: "f", count: 32), type: "image/jpeg",
+                          url: URL(string: "https://queue-unused-storage.test/up")!, fields: [:], expiresIn: 300)
+    let client = stubbedClient("queue-unused.test")
+    do {
+      try await client.post(fileAt: dir.appending(path: "gone.jpg"), name: "gone.jpg", to: form)
+      Issue.record("expected an error")
+    } catch {
+      #expect(error.code == "file_missing" && !error.retryable)
+    }
+    let locked = dir.appending(path: "locked.jpg")
+    try Data("BYTES".utf8).write(to: locked)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path(percentEncoded: false))
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: locked.path(percentEncoded: false)) }
+    do {
+      try await client.post(fileAt: locked, name: "locked.jpg", to: form)
+      Issue.record("expected an error")
+    } catch {
+      #expect(error.code == "no_room" && error.retryable)
+      #expect(Outbox.held(error) == "Waiting for room on this phone")
+    }
+    #expect(StubProtocol.requests("queue-unused-storage.test").isEmpty)
+  }
 }

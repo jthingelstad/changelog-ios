@@ -61,8 +61,17 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   /// range, changed since it was read). It stays for the owner to fix or
   /// discard; nothing is lost.
   public var refusal: String?
+  /// Why it waits, as the last run left it: no connection, a day's limit
+  /// reached, Release Notes busy, no room on the phone.
+  public var held: String? = nil
 
   public var idempotencyKey: String { id.uuidString.lowercased() }
+
+  /// What Log says of it while it waits to go.
+  public var status: String { held ?? (attempts == 0 ? "Sending…" : "Waiting for a connection") }
+
+  /// Files still to post before it can go.
+  public var needsUploads: Bool { files.contains { $0.upload == nil } }
 
   /// The words it carries, for a note or an edit.
   public var text: String? {
@@ -93,6 +102,8 @@ public enum OutboxResult: Sendable, Equatable {
   case edited(NoteRef)
   case deleted
   case pinned(Tags)
+  /// Done (a 2xx), in an answer this build couldn't read.
+  case done
 }
 
 public struct SentItem: Sendable, Equatable {
@@ -131,18 +142,55 @@ public actor Outbox {
   public nonisolated let filesFolder: URL?
   private var items: [OutboxItem]
   private var flushing = false
+  /// A share's queue, which the app takes over should its extension be
+  /// suspended mid-send for long (`ShareInbox.abandoned`). Once its file is
+  /// gone it is the app's, and this queue writes, and so sends, no more.
+  private let claimable: Bool
+  private var wrote: Bool
+  /// The file couldn't be read and couldn't be moved aside either: it is
+  /// never written over, so nothing is queued here.
+  private let stuck: Bool
+  /// Shares taken in, by id, with when, so one its extension closed again
+  /// after the app took it (suspended mid-send, then woken) is never taken
+  /// in twice, whether its note still waits or went long ago. Kept a month.
+  private var adopted: [String: Date]
 
   /// `file` nil keeps everything in memory (tests, previews). Files wait in
   /// `files`, or else in `outbox-files` beside the queue.
-  public init(file: URL?, files: URL? = nil) {
+  public init(file: URL?, files: URL? = nil, claimable: Bool = false) {
     self.file = file
     self.filesFolder = files ?? file?.deletingLastPathComponent().appending(path: "outbox-files", directoryHint: .isDirectory)
-    if let file, let data = try? Data(contentsOf: file),
-       let saved = try? JSONDecoder().decode([OutboxItem].self, from: data) {
-      items = saved
-    } else {
-      items = []
+    self.claimable = claimable
+    var items: [OutboxItem] = []
+    var stuck = false
+    if let file, FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) {
+      if let saved = Self.read(file) { items = saved } else { stuck = !SetAside.move(file) }
     }
+    // A queue set aside before comes back once it reads (a newer build's,
+    // read by a newer build again), ahead of anything queued since.
+    if let file, !stuck {
+      for aside in SetAside.files(of: file) {
+        guard let saved = Self.read(aside) else { continue }
+        let known = Set(items.map(\.id))
+        let merged = saved.filter { !known.contains($0.id) } + items
+        guard (try? Self.write(merged, to: file)) != nil else { continue }
+        items = merged
+        try? FileManager.default.removeItem(at: aside)
+      }
+    }
+    self.items = items
+    self.stuck = stuck
+    self.wrote = file.map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } ?? false
+    self.adopted = Self.adoptedFile(file).flatMap { try? Data(contentsOf: $0) }
+      .flatMap { try? JSONDecoder().decode([String: Date].self, from: $0) } ?? [:]
+  }
+
+  private static func read(_ file: URL) -> [OutboxItem]? {
+    (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([OutboxItem].self, from: $0) }
+  }
+
+  private static func adoptedFile(_ file: URL?) -> URL? {
+    file.map { $0.deletingLastPathComponent().appending(path: $0.deletingPathExtension().lastPathComponent + "-adopted.json") }
   }
 
   public var waiting: [OutboxItem] { items }
@@ -169,14 +217,26 @@ public actor Outbox {
 
   /// Takes in a write queued elsewhere (a share from the share extension)
   /// under its own key, so should both send it, it is still one note. One
-  /// already here is left as it is.
+  /// already here, or taken in before, is left as it is.
   public func adopt(_ item: OutboxItem) throws(OutboxNotKept) {
-    guard !items.contains(where: { $0.id == item.id }) else { return }
+    guard !knows(item.id) else { return }
     items.append(item)
     do { try save() } catch {
       items.removeAll { $0.id == item.id }
       throw error
     }
+    adopted = adopted.filter { $0.value > .now.addingTimeInterval(-30 * 86400) }
+    adopted[item.id.uuidString] = .now
+    // Unsaved, it is still queued; only a share closed again after it went
+    // could come back.
+    if let to = Self.adoptedFile(file), let data = try? JSONEncoder().encode(adopted) {
+      try? data.write(to: to, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+  }
+
+  /// Whether `id` waits here or was taken in before.
+  public func knows(_ id: UUID) -> Bool {
+    items.contains { $0.id == id } || adopted[id.uuidString] != nil
   }
 
   /// Discarding a write the owner gave up on. Should the file not take the
@@ -204,13 +264,15 @@ public actor Outbox {
     }
   }
 
-  /// Removes files no queued note holds, except `keeping` (the draft's).
+  /// Removes files no queued note holds, except `keeping` (the draft's), and
+  /// any a queue set aside may hold (all of them, should it not read).
   public func sweep(keeping: Set<UUID> = []) {
     guard let folder = filesFolder,
-          let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)) else { return }
+          let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)),
+          let aside = SetAside.contents(of: file.map(SetAside.files(of:)) ?? []) else { return }
     let held = Set(items.flatMap(\.files).map(\.id)).union(keeping)
     for name in names {
-      if let id = UUID(uuidString: String(name.prefix(36))), held.contains(id) { continue }
+      if let id = UUID(uuidString: String(name.prefix(36))), held.contains(id) || SetAside.names(id, in: aside) { continue }
       try? FileManager.default.removeItem(at: folder.appending(path: name))
     }
   }
@@ -275,11 +337,26 @@ public actor Outbox {
     defer { flushing = false }
     var report = FlushReport()
     var tried = Set<UUID>()
-    sending: while var item = items.first(where: { $0.refusal == nil && !tried.contains($0.id) }) {
+    // The day's uploads used: notes with files still to post wait, and the
+    // rest go on in order. An edit or a delete is always of a note already
+    // filed (read back from Release Notes), and pins stand alone, so nothing
+    // that goes on can depend on a note held here.
+    var filesHeld: APIError?
+    sending: while var item = items.first(where: {
+      $0.refusal == nil && !tried.contains($0.id) && !(filesHeld != nil && $0.needsUploads)
+    }) {
       tried.insert(item.id)
-      do {
+      // Set once the write itself is asked for: a 2xx then means it was done.
+      var asked = false
+      do throws(APIError) {
         if let prepare, case .post(let post) = item.operation, !post.ready {
-          let ready = try await prepare(item, filesFolder)
+          let ready: OutboxItem
+          do throws(APIError) { ready = try await prepare(item, filesFolder) } catch {
+            guard error.status == 429, item.needsUploads, let i = items.firstIndex(where: { $0.id == item.id }) else { throw error }
+            items[i].attempts += 1
+            filesHeld = error
+            continue
+          }
           // Discarded while its files went up.
           guard let i = items.firstIndex(where: { $0.id == item.id }) else { continue }
           // Saved before sending: from here on, every resend is this request.
@@ -288,20 +365,22 @@ public actor Outbox {
           let before = items[i].operation
           items[i].operation = ready.operation
           do { try save() } catch {
+            let stopped = APIError(status: 507, code: "not_kept", message: Self.notKept)
             items[i].operation = before
-            report.stopped = APIError(status: 507, code: "not_kept", message: Self.notKept)
+            report.stopped = stopped
             break sending
           }
           item.operation = ready.operation
         }
-        let result = try await send(item)
-        items.removeAll { $0.id == item.id }
-        report.sent.append(SentItem(item: item, result: result))
-        // Should the file keep a sent item, it is sent again after a relaunch
-        // under its own key, and the receipt answers it: still no second note.
-        try? save()
-        removeFiles(item.files)
+        asked = true
+        sent(item, try await send(item), in: &report)
       } catch {
+        // Done, in an answer this build can't read: sent, never refused, or
+        // a Fix would file it twice.
+        if asked, error.done {
+          sent(item, .done, in: &report)
+          continue
+        }
         // Uploads a note found gone (unused for a day, say) are made again
         // once, under a new key: the old key's request was refused.
         if error.field == "uploads", case .post(var post) = item.operation, post.reuploads == 0,
@@ -315,20 +394,55 @@ public actor Outbox {
         }
         if error.retryable || error.signedOut {
           if let i = items.firstIndex(where: { $0.id == item.id }) { items[i].attempts += 1 }
-          try? save()
           report.stopped = error
           break sending
         }
         if let i = items.firstIndex(where: { $0.id == item.id }) {
           items[i].attempts += 1
           items[i].refusal = error.message
+          items[i].held = nil
           report.refused.append(items[i])
         }
         try? save()
       }
     }
+    // Each note still waiting says why: the one the run stopped at and those
+    // behind it for the same reason, a note with files on a day the uploads
+    // are used for that.
+    for i in items.indices where items[i].refusal == nil {
+      if filesHeld != nil, items[i].needsUploads {
+        items[i].held = Self.filesHeld
+      } else if let stopped = report.stopped {
+        items[i].held = Self.held(stopped)
+      }
+    }
+    if !tried.isEmpty { try? save() }
+    if report.stopped == nil { report.stopped = filesHeld }
     return report
   }
+
+  private func sent(_ item: OutboxItem, _ result: OutboxResult, in report: inout FlushReport) {
+    items.removeAll { $0.id == item.id }
+    report.sent.append(SentItem(item: item, result: result))
+    // Should the file keep a sent item, it is sent again after a relaunch
+    // under its own key, and the receipt answers it: still no second note.
+    try? save()
+    removeFiles(item.files)
+  }
+
+  /// Why an item waits after `error` stopped the run; nil for the token,
+  /// which Log tells of itself.
+  static func held(_ error: APIError) -> String? {
+    switch error.status {
+    case 0: "Waiting for a connection"
+    case 401: nil
+    case 429: "Waiting for today’s limit to reset"
+    case 507: "Waiting for room on this phone"
+    default: "Waiting for Release Notes"
+    }
+  }
+
+  static let filesHeld = "Waiting for today’s file limit to reset"
 
   static let notKept = "This phone couldn't save a note to send. Free up some space and it will try again."
 
@@ -346,6 +460,14 @@ public actor Outbox {
 
   private func save() throws(OutboxNotKept) {
     guard let file else { return }
+    guard !stuck, !(claimable && wrote && !FileManager.default.fileExists(atPath: file.path(percentEncoded: false))) else {
+      throw OutboxNotKept()
+    }
+    try Self.write(items, to: file)
+    wrote = true
+  }
+
+  private static func write(_ items: [OutboxItem], to file: URL) throws(OutboxNotKept) {
     do {
       try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
       try JSONEncoder().encode(items).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -386,8 +508,15 @@ public extension APIClient {
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.size]) as? Int else {
         throw APIError(status: 400, code: "file_missing", message: Self.fileMissing)
       }
-      let form = try await startUpload(UploadStart(name: file.name, type: file.type, size: size))
-      try await self.post(fileAt: url, name: file.name, to: form)
+      let start = UploadStart(name: file.name, type: file.type, size: size)
+      var form = try await startUpload(start)
+      do { try await self.post(fileAt: url, name: file.name, to: form) } catch {
+        // A form can expire before its file goes (the app suspended between,
+        // say): one more with a new form, then the refusal is the note's.
+        guard error.code == "upload_refused" else { throw error }
+        form = try await startUpload(start)
+        try await self.post(fileAt: url, name: file.name, to: form)
+      }
       post.files[i].upload = form.upload
       post.files[i].type = form.type
     }

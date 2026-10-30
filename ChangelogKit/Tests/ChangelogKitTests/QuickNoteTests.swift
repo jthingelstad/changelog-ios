@@ -68,6 +68,19 @@ import Testing
     #expect(await inbox.adopt(into: app) == 1)
   }
 
+  /// Filed, in an answer this build can't read: it says so, and leaves
+  /// nothing for the app to send again.
+  @Test func filedInAnAnswerItCantReadSaysFiled() async throws {
+    StubProtocol.set("queue-quick-unread.test", .init(status: 201, body: #"{"receipt":{"shape":"from a newer server"}}"#))
+    let (inbox, app) = place()
+    let (share, _) = try await queued(inbox)
+    let outcome = await QuickNote.send(share, from: inbox, with: stubbedClient("queue-quick-unread.test"), within: .seconds(10))
+    #expect(outcome == .sent)
+    #expect(QuickNote.said(outcome) == "Filed.")
+    #expect(names(inbox).isEmpty)
+    #expect(await inbox.adopt(into: app) == 0)
+  }
+
   @Test func whatItSaysNeverHasTheWords() {
     let receipt = NoteReceipt(note: NoteRef(id: "t-1", date: "2026-10-28", version: "4.5.136", revision: "r"),
                               unlocked: [Unlocked(key: "api", name: "API release")])
