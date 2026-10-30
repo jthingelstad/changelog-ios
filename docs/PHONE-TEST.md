@@ -49,7 +49,7 @@ notes, Add files, Upcoming and the activity log.
    is on the web once, with the sticky tag if one is set. In the
    Shortcuts app, "Add a Note" with some text does the same, and "New
    Note" opens Log with the keyboard up, from any tab. With the phone
-   locked, Siri asks for it to be unlocked first.
+   locked, "Add a note in Changelog" works too, without unlocking.
 9. **The Action Button**, on a phone that has one: Settings, Action
    Button, Controls, "New Note". A press opens Log ready to write. Then
    Shortcut, "Add a Note": a press asks what changed.

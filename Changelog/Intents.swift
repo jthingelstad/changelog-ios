@@ -13,8 +13,10 @@ struct AddNoteIntent: AppIntent {
     IntentDescription("Adds a note to today in Release Notes, with your sticky tag, without opening Changelog.")
   }
   static var supportedModes: IntentModes { .background }
-  /// Anyone holding the phone can talk to Siri: the phone is unlocked first.
-  static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
+  /// Works with the phone locked (Jamie, 2026-10-29): the token and the share
+  /// queue can be read once the phone has been unlocked since it started.
+  /// Whoever holds the phone can add a note, never read one.
+  static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
 
   @Parameter(title: "Note", inputOptions: String.IntentInputOptions(multiline: true), requestValueDialog: "What changed?")
   var text: String
