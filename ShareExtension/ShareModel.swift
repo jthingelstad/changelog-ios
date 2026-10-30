@@ -4,6 +4,7 @@ import Foundation
 import Observation
 import UIKit
 import UniformTypeIdentifiers
+import UserNotifications
 import WidgetKit
 
 /// A share, from the items another app handed over to a note in Release
@@ -37,28 +38,41 @@ final class ShareModel {
 
   // MARK: What was shared
 
-  func load(_ items: [NSExtensionItem]) async {
+  /// Reads what was shared, until Cancel stops it.
+  func start(_ items: [NSExtensionItem]) {
+    loading = Task { await load(items) }
+  }
+
+  private var loading: Task<Void, Never>?
+  /// Cancel was tapped: nothing more is kept, and nothing kept stays.
+  private var cancelled = false
+
+  private func load(_ items: [NSExtensionItem]) async {
     var words: [String] = []
     for item in items {
-      if let said = item.attributedContentText?.string.trimmingCharacters(in: .whitespacesAndNewlines), !said.isEmpty {
-        words.append(said)
-      }
+      if let said = item.attributedContentText?.string { words.append(said) }
       for provider in item.attachments ?? [] {
+        guard !cancelled else { return }
         if let line = await take(provider) { words.append(line) }
       }
     }
-    text = words.joined(separator: "\n")
+    guard !cancelled else { return }
+    // An app may give a passage both as the item's text and as plain text.
+    text = SharedWords.joined(words)
     phase = share == nil ? .done(Self.noGroup) : .ready
   }
+
+  /// No room for another file. Words still come in.
+  private var full: Bool { files.count >= MediaType.maxFiles }
 
   /// One shared item: a file kept for the note, or words (a link, text) to
   /// go in it. Answers the words.
   private func take(_ provider: NSItemProvider) async -> String? {
-    guard files.count < MediaType.maxFiles else {
-      skipped += 1
-      return nil
-    }
     if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+      guard !full else {
+        skipped += 1
+        return nil
+      }
       // Photos are small enough to read whole. A JPEG or PNG the sharing
       // app has is taken as it is; anything else (a HEIC) is made a JPEG.
       let kind = Self.webImages.first { provider.registeredContentTypes.contains($0) } ?? .image
@@ -75,7 +89,7 @@ final class ShareModel {
     for (kind, type) in [(UTType.pdf, "application/pdf"), (UTType.mpeg4Audio, "audio/mp4")]
     where provider.hasItemConformingToTypeIdentifier(kind.identifier) {
       // Copied straight to the App Group, never read whole into memory.
-      await copy(provider, kind, type: type)
+      if full { skipped += 1 } else { await copy(provider, kind, type: type) }
       return nil
     }
     if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
@@ -90,6 +104,7 @@ final class ShareModel {
   }
 
   private func keep(_ data: Data, type: String, name: String, thumbnail: CGImage?) {
+    guard !cancelled else { return }
     guard let share, data.count <= MediaType.maxBytes else {
       skipped += 1
       return
@@ -111,7 +126,13 @@ final class ShareModel {
     }
     let file = QueuedFile(type: type, name: Self.name(provider, kind), size: 0)
     guard let to = share.outbox.url(for: file) else { return }
-    if let size = await Self.copy(provider, kind, into: folder, as: to), size > 0, size <= MediaType.maxBytes {
+    let size = await Self.copy(provider, kind, into: folder, as: to)
+    // Cancelled while it copied: the copy goes too.
+    if cancelled {
+      try? FileManager.default.removeItem(at: to)
+      return
+    }
+    if let size, size > 0, size <= MediaType.maxBytes {
       var copied = file
       copied.size = size
       files.append(copied)
@@ -137,7 +158,15 @@ final class ShareModel {
     }
     // The share sheet shouldn't hang: what isn't sent in time, the app sends.
     let outcome = await QuickNote.send(share, from: inbox, with: QuickNote.client(userAgent: Self.userAgent), within: .seconds(25))
-    if case .filed(let receipt) = outcome, WidgetSnapshot.filed(on: receipt.note.date) { WidgetCenter.shared.reloadAllTimelines() }
+    if case .filed(let receipt) = outcome {
+      if WidgetSnapshot.filed(on: receipt.note.date) { WidgetCenter.shared.reloadAllTimelines() }
+      // Written today: today's prompt has nothing left to ask, as after Siri.
+      // Apple's documentation has the notification center serve "your app
+      // or app extension" without saying an extension's sees the app's
+      // waiting requests. If it doesn't, this takes back nothing, and the
+      // app's next read of /v1/me (`wrote_today`) does.
+      UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [DailyPrompt.id(receipt.note.date)])
+    }
     done(QuickNote.said(outcome))
   }
 
@@ -148,6 +177,9 @@ final class ShareModel {
     case .sending:
       return
     case .loading, .ready:
+      // Stops the reading, so nothing it finishes later is held again.
+      cancelled = true
+      loading?.cancel()
       if let share {
         share.outbox.removeFiles(files)
         try? FileManager.default.removeItem(at: share.file)
