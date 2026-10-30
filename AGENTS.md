@@ -199,11 +199,13 @@ microphone, which can fail to answer; the voice memo test skips then.
 `scripts/testflight.sh` uploads a clean commit on main to TestFlight, for
 internal testers only (`Config/ExportOptions-TestFlight.plist`; Xcode
 leaves the build number alone). An upload goes to Apple and to Jamie's
-phone. Jamie, 2026-10-29: "Claude may upload Changelog to TestFlight for
-internal testing after work merges to main, without asking each time." So
-after a merge that changes the app, upload main; a merge of docs or CI
-alone needs no build. Every other upload (for outside testers, for the App
-Store, from anything but main) is still Jamie's call each time.
+phone, and to every tester's. Every upload, internal ones included, is
+Jamie's call each time (Jamie, 2026-10-30: "We are pushing to TestFlight
+too much. We are still in active dev and folks are getting pushed releases
+a lot right now. For now let's only push to test flight when I say go.
+Feel free to ask."; it ended the standing go for internal builds of
+2026-10-29). So merge as usual, then ask before uploading: one ask can
+cover several merges. A merge of docs or CI alone needs no build.
 `--external` makes the build outside testers can get, and
 `scripts/asc.swift` makes the App Store Connect calls Xcode doesn't (test
 information, the review sign-in, groups), with the same key; both are in
