@@ -28,11 +28,15 @@ final class ChangelogUITests: XCTestCase {
   @MainActor func testANote() async throws {
     let app = launch()
     let before = try await filed()
-    type(note("A line"), into: app)
+    let words = note("A line")
+    type(words, into: app)
     app.buttons["Commit"].tap()
     expectFiled(app)
     let new = try await newNotes(since: before)
     XCTAssertEqual(new.first?.files ?? 0, 0)
+    // Today reads back what this token sent and shows its words.
+    let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+    expect(row, "Today shows the note's words", in: app)
   }
 
   @MainActor func testAPhoto() async throws {

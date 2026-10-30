@@ -16,6 +16,9 @@ final class AppModel {
   private(set) var me: Me?
   private(set) var tags: Tags?
   private(set) var today: [ActivityItem] = []
+  /// The words of today's notes this token wrote, by note id, read back on
+  /// each refresh (`TodayWords`). In memory only.
+  private var todayWords: [String: String] = [:]
   private(set) var waiting: [OutboxItem] = []
   private(set) var lastFiled: NoteReceipt?
   private(set) var toast: String?
@@ -214,6 +217,7 @@ final class AppModel {
     me = nil
     tags = nil
     today = []
+    todayWords = [:]
     phase = .signedOut
     // The next sign-in asks again before any reminder comes.
     remindersOn = false
@@ -252,8 +256,13 @@ final class AppModel {
 
   private func loadToday() async {
     guard let client, let me, me.token.scopes.contains("activity") else { return }
-    if let page = try? await client.activity(limit: 100) {
-      today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
+    guard let page = try? await client.activity(limit: 100) else { return }
+    today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
+    let mine = today.filter(isMine).compactMap { item in
+      item.day.flatMap { day in item.note.map { TodayWords.Note(date: day, id: $0) } }
+    }
+    todayWords = await TodayWords.read(mine, keeping: todayWords) { note throws(APIError) in
+      try await client.note(date: note.date, id: note.id).text
     }
   }
 
@@ -735,6 +744,12 @@ final class AppModel {
   /// change.
   func isMine(_ item: ActivityItem) -> Bool {
     item.kind == "note.added" && item.via == "token" && item.token == me?.token.name && item.note != nil
+  }
+
+  /// What a row of Today said, when it is a note this token wrote and its
+  /// words have been read back. Only Log shows them.
+  func words(of item: ActivityItem) -> String? {
+    isMine(item) ? item.note.flatMap { todayWords[$0] } : nil
   }
 
   func load(_ item: ActivityItem) async -> NoteDetail? {

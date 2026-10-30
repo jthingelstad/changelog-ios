@@ -5,7 +5,8 @@ A fast iPhone app for sending notes into
 Your Version Number. It is not a second Release Notes: you read, search and
 look back on the web. Changelog is for getting things in, in two taps.
 
-- **Log** a line, with one-tap tags. The button says Commit.
+- **Log** a line, with one-tap tags. The button says Commit. Today shows
+  what this phone sent today, words and all, read back from Release Notes.
 - **Never lose a note.** Everything goes through an offline queue, and a
   resend never makes a duplicate.
 - **Check** what happened: the activity log, from every channel, without
