@@ -17,7 +17,7 @@ struct LogView: View {
     NavigationStack {
       // The web's Today page on the phone: the date, the version, the box
       // and Commit, then what happened today, all on the paper.
-      List {
+      ScrollViewReader { list in List {
         Group {
           BrandBar { Streak() }
           VersionHeader()
@@ -66,13 +66,21 @@ struct LogView: View {
             ComposerTools()
             if !typeSize.isAccessibilitySize { Spacer() }
             Button("Commit") {
-              Task { await model.commit() }
+              Task {
+                await model.commit()
+                // A tall draft (a moment's, with its day and place) shrinks
+                // to an empty box, and the list would keep its place, down in
+                // Today with the box gone above. Back to the box, with Commit
+                // just above the keyboard, or the top when it all fits.
+                withAnimation { list.scrollTo(Self.composer, anchor: .bottom) }
+              }
             }
             .lineLimit(1)
             .buttonStyle(CommitButtonStyle())
             .disabled(!model.canCommit)
             .keyboardShortcut(.return, modifiers: .command)
           }
+          .id(Self.composer)
         }
         .paperRow()
 
@@ -128,7 +136,7 @@ struct LogView: View {
         }
         // Room to scroll the last row clear of the tab bar.
         Color.clear.frame(height: 24).paperRow()
-      }
+      } }
       .paperList()
       .navigationTitle("Changelog")
       .toolbar(.hidden, for: .navigationBar)
@@ -163,6 +171,9 @@ struct LogView: View {
       }
     }
   }
+
+  /// The row with Commit, which a commit scrolls back to.
+  private static let composer = "composer"
 }
 
 /// The day as the web's Today page sets it: the date in small mono
