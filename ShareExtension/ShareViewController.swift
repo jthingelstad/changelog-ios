@@ -14,6 +14,6 @@ final class ShareViewController: UIViewController {
     view.addSubview(host.view)
     host.didMove(toParent: self)
     let items = extensionContext?.inputItems as? [NSExtensionItem] ?? []
-    Task { await model.load(items) }
+    model.start(items)
   }
 }
