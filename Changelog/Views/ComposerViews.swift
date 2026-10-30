@@ -13,27 +13,29 @@ struct ComposerTools: View {
   @State private var recording = false
 
   var body: some View {
-    HStack(spacing: 18) {
+    // Each button a 44-point square to tap, which keeps the symbols about
+    // as far apart as the 18 points between them did.
+    HStack(spacing: 0) {
       if model.canAddFiles {
         Group {
           PhotosPicker(selection: $picks, maxSelectionCount: max(1, model.roomForFiles), matching: .images,
                        preferredItemEncoding: .compatible) {
-            Image(systemName: "photo.on.rectangle")
+            Image(systemName: "photo.on.rectangle").tappable()
           }
           .accessibilityLabel("Add photos")
-          Button { camera = true } label: { Image(systemName: "camera") }
+          Button { camera = true } label: { Image(systemName: "camera").tappable() }
             .accessibilityLabel("Take a photo")
             .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-          Button { recording = true } label: { Image(systemName: "mic") }
+          Button { recording = true } label: { Image(systemName: "mic").tappable() }
             .accessibilityLabel("Record a voice memo")
         }
         .disabled(model.roomForFiles == 0)
       }
       if model.locating {
-        ProgressView().accessibilityLabel("Finding where you are")
+        ProgressView().tappable().accessibilityLabel("Finding where you are")
       } else {
         Button { Task { await model.locate() } } label: {
-          Image(systemName: model.placeLabel == nil ? "location" : "location.fill")
+          Image(systemName: model.placeLabel == nil ? "location" : "location.fill").tappable()
         }
         .accessibilityLabel(model.placeLabel == nil ? "Add where I am" : "Find where I am again")
       }
@@ -237,5 +239,13 @@ struct RecorderView: View {
       .onDisappear { recorder.cancel() }
       .interactiveDismissDisabled(recorder.state == .recording)
     }
+  }
+}
+
+private extension View {
+  /// At least the 44 points square Apple asks a tap target to be, all of it
+  /// tappable, the symbol in the middle.
+  nonisolated func tappable() -> some View {
+    frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
   }
 }

@@ -79,13 +79,24 @@ struct ActivityRow: View {
   let item: ActivityItem
   /// What the note said, on Log's Today alone, for a note this token wrote.
   var words: String?
+  @Environment(\.dynamicTypeSize) private var size
+
+  /// The time beside the headline, or under it at the accessibility sizes,
+  /// where beside it would squeeze both.
+  private var line: AnyLayout {
+    size.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
-      HStack {
-        Text(item.headline)
-        Spacer()
-        Text(item.time).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+      line {
+        // The headline has the room the time doesn't need, so it wraps
+        // between words and is never hyphenated.
+        Text(item.headline).layoutPriority(1)
+        if !size.isAccessibilitySize { Spacer(minLength: 8) }
+        // Always on one line.
+        Text(item.time).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize()
       }
       if let words {
         Text(verbatim: words).lineLimit(6)

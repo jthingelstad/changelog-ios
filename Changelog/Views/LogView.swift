@@ -109,17 +109,37 @@ struct VersionHeader: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline) {
-      Text(model.version ?? "…")
-        .font(.version)
-        .accessibilityLabel(model.version.map { "Version \($0)" } ?? "Version loading")
-      Spacer()
-      if let me = model.me {
-        if me.status == "stopped" {
-          Text("Email stopped").font(.caption).foregroundStyle(.secondary)
-        } else if me.streak > 1 {
-          Text("\(me.streak)-day streak").font(.caption).foregroundStyle(.secondary)
-        }
+    // The streak beside the version while both fit on one line, else
+    // under it (at the larger text sizes).
+    ViewThatFits(in: .horizontal) {
+      HStack(alignment: .firstTextBaseline) {
+        version
+        Spacer()
+        streak
+      }
+      VStack(alignment: .leading, spacing: 2) {
+        version
+        streak
+      }
+    }
+  }
+
+  /// A version is never broken or cut off: on one line, and smaller
+  /// before it would be too wide for the row.
+  private var version: some View {
+    Text(model.version ?? "…")
+      .font(.version)
+      .lineLimit(1)
+      .minimumScaleFactor(0.5)
+      .accessibilityLabel(model.version.map { "Version \($0)" } ?? "Version loading")
+  }
+
+  @ViewBuilder private var streak: some View {
+    if let me = model.me {
+      if me.status == "stopped" {
+        Text("Email stopped").font(.caption).foregroundStyle(.secondary)
+      } else if me.streak > 1 {
+        Text("\(me.streak)-day streak").font(.caption).foregroundStyle(.secondary)
       }
     }
   }
