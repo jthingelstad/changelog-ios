@@ -150,6 +150,8 @@ struct PinnedTagsView: View {
     }
     .paperForm()
     .navigationTitle("Pinned tags")
+    // Settings hides its bar; this screen needs Back and Edit.
+    .toolbar(.visible, for: .navigationBar)
     .toolbar { EditButton() }
     .onAppear { pinned = model.tags?.pinned ?? [] }
     .onDisappear {

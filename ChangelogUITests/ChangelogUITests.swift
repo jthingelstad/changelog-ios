@@ -172,6 +172,13 @@ final class ChangelogUITests: XCTestCase {
     app.tabBars.buttons["Activity"].tap()
     expect(app.staticTexts["Activity"], "Activity opens", in: app)
     app.tabBars.buttons["Settings"].tap()
+    // Settings hides its bar; Pinned tags, pushed from it, keeps Back and
+    // Edit.
+    let pinned = app.buttons["Pinned tags"]
+    for _ in 0..<6 where !pinned.exists || !pinned.isHittable { app.swipeUp() }
+    pinned.tap()
+    expect(app.navigationBars.buttons["Edit"], "Pinned tags can be reordered", in: app)
+    app.navigationBars.buttons.element(boundBy: 0).tap()
     let build = app.staticTexts["build"]
     for _ in 0..<6 where !build.exists || !build.isHittable { app.swipeUp() }
     expect(build, "Settings names the build", in: app)
