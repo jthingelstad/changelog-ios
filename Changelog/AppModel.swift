@@ -649,7 +649,7 @@ final class AppModel {
                         placeFromMoment: placeFromMoment, day: day, moment: values,
                         handover: Draft.Handover(text: text, writtenAt: stamp))
     // Only what the words still say: a line deleted took its piece with it.
-    let moment = values?.kept(in: text)
+    let moment = values?.said(in: text)
     let placed = (spot: placeOff ? nil : spot, here: here, venue: venue, spotAt: spotAt, fromMoment: placeFromMoment)
     var place = placed.here?.place
     place?.venue = placed.venue

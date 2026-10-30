@@ -189,6 +189,13 @@ import Testing
     #expect(values.kept(in: all)?.at == values.at)
     #expect(values.kept(in: "Walked 3.2 miles\nWith Ana")?.items.map(\.kind) == ["people"])
     #expect(values.kept(in: "Just words") == nil)
+    // A word of a line made longer is a changed line; a line said twice,
+    // once whole, is still said.
+    #expect(values.kept(in: "With Anabel") == nil)
+    #expect(values.kept(in: "Walked 3.2 mi in 48 minutes") == nil)
+    #expect(values.kept(in: "(With Ana.) With Anabel")?.items.map(\.kind) == ["people"])
+    #expect(values.kept(in: "With Anabel, With Ana")?.items.map(\.kind) == ["people"])
+    #expect(values.said(in: all) == values)
     // Up to the twelve Release Notes takes.
     let many = MomentValues(pieces: (1...14).map { (n: Int) in
       MomentValues.Piece(line: "Line \(n)", item: NoteMoment.Item(kind: "steps", count: n))

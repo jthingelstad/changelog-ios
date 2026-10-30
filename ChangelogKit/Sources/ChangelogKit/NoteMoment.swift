@@ -89,10 +89,11 @@ public struct NoteMoment: Codable, Sendable, Equatable {
   }
 }
 
-/// A moment's values waiting in the draft, each piece with the line it
-/// wrote there. The draft is still the person's to shape: at Commit only
-/// the pieces whose line is still in the words go, so a line deleted takes
-/// its piece with it.
+/// A moment's values waiting in the draft, and then in the queue, each
+/// piece with the line it wrote there. The words are still the person's to
+/// shape: only the pieces whose line is still in them go, so a line
+/// deleted or changed takes its piece with it, at Commit and again when a
+/// refused note is fixed.
 public struct MomentValues: Codable, Sendable, Equatable {
   public var at: String?
   public var pieces: [Piece]
@@ -113,11 +114,31 @@ public struct MomentValues: Codable, Sendable, Equatable {
     self.pieces = pieces
   }
 
-  /// What goes with a note whose words are `text`: the pieces whose line
-  /// is still in them, up to the twelve Release Notes takes; nil when none is.
+  /// The pieces whose line is still in `text`, up to the twelve Release
+  /// Notes takes; nil when none is.
+  public func said(in text: String) -> MomentValues? {
+    let left = pieces.filter { Self.says(text, $0.line) }.prefix(NoteMoment.maxItems)
+    return left.isEmpty ? nil : MomentValues(at: at, pieces: Array(left))
+  }
+
+  /// What goes with a note whose words are `text`, as `/v1` takes it.
   public func kept(in text: String) -> NoteMoment? {
-    let items = pieces.filter { text.contains($0.line) }.map(\.item)
-    return items.isEmpty ? nil : NoteMoment(at: at, items: Array(items.prefix(NoteMoment.maxItems)))
+    said(in: text).map { NoteMoment(at: $0.at, items: $0.pieces.map(\.item)) }
+  }
+
+  /// Whether `text` still says `line` whole: words around it are the
+  /// person's to add ("…, with a blister"), but a word of it made longer
+  /// ("With Ana" to "With Anabel") is a changed line.
+  static func says(_ text: String, _ line: String) -> Bool {
+    let wordy = { (c: Character) in c.isLetter || c.isNumber }
+    var from = text.startIndex
+    while from < text.endIndex, let found = text.range(of: line, range: from..<text.endIndex) {
+      let before = found.lowerBound > text.startIndex && wordy(text[text.index(before: found.lowerBound)])
+      let after = found.upperBound < text.endIndex && wordy(text[found.upperBound])
+      if !before && !after { return true }
+      from = text.index(after: found.lowerBound)
+    }
+    return false
   }
 
   /// A second moment picked into the same draft: its pieces after these,

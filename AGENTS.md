@@ -136,9 +136,11 @@ there first, never work around it here.
 - A moment's pieces also go as values beside the words (`moment` on
   `POST /v1/notes`, API 1.5.0; `docs/MOMENTS.md` in the Release Notes
   repo), tidied as Release Notes keeps them: each piece with the line it
-  wrote, and at Commit only those whose line is still in the words, so a
-  line deleted takes its piece with it. The words stay the note. They are
-  queued in the note's `NotePost` and resent with it under its key. A
+  wrote, and at Commit only those whose line is still in the words whole,
+  so a line deleted or changed (a word of it made longer, too) takes its
+  piece with it. The words stay the note. They are queued in the note's
+  `NotePost` with their lines and resent with it under its key; a refused
+  note fixed by its owner sends only what its fixed words still say. A
   Release Notes that won't take them (`invalid_request` at `moment`, as
   one before 1.5.0 answers, or at one of its pieces) gets the words
   alone, once, under a new key. A new kind goes to Release Notes first, in

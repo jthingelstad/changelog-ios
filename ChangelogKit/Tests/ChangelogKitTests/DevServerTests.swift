@@ -94,7 +94,8 @@ struct DevServerTests {
     let text = made.lines.filter { $0 != "What made today good?" }.joined(separator: "\n") + "\n#devtest"
     let sent = try #require(values.kept(in: text))
     #expect(sent.items.map(\.kind) == ["workout", "song", "podcast", "played", "steps", "feeling", "event", "people"])
-    let item = try await outbox.enqueue(.post(NotePost(text: text, date: made.day, writtenAt: Timestamp.string(.now), moment: sent)))
+    let item = try await outbox.enqueue(.post(NotePost(text: text, date: made.day, writtenAt: Timestamp.string(.now),
+                                                       moment: values.said(in: text))))
     let report = await outbox.flush { (item) async throws(APIError) -> OutboxResult in try await client.perform(item) }
     #expect(report.stopped == nil && report.refused.isEmpty)
     let receipt = try #require(report.filed.first)
@@ -111,9 +112,8 @@ struct DevServerTests {
     }
 
     // A piece Release Notes can't read: the words go alone, under a new key.
-    let odd = NoteMoment(items: [NoteMoment.Item(kind: "juggling")])
-    let refused = try await outbox.enqueue(.post(NotePost(text: "Dev test, an odd moment #devtest", writtenAt: Timestamp.string(.now),
-                                                          moment: odd)))
+    let odd = MomentValues(pieces: [MomentValues.Piece(line: "Juggled", item: NoteMoment.Item(kind: "juggling"))])
+    let refused = try await outbox.enqueue(.post(NotePost(text: "Juggled #devtest", writtenAt: Timestamp.string(.now), moment: odd)))
     let alone = await outbox.flush { (item) async throws(APIError) -> OutboxResult in try await client.perform(item) }
     #expect(alone.stopped == nil && alone.refused.isEmpty)
     let words = try #require(alone.sent.first?.item)

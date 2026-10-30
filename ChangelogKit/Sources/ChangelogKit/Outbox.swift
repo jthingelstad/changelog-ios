@@ -54,11 +54,12 @@ public struct NotePost: Codable, Sendable, Equatable {
   /// Times the uploads were made again after the note found them gone.
   public var reuploads: Int
   /// The moment's pieces whose lines were still in the words at Commit,
-  /// sent beside them; nil in a queue saved before moments, which still reads.
-  public var moment: NoteMoment?
+  /// each with its line, so a fix of the words sends only what they still
+  /// say; nil in a queue saved before moments, which still reads.
+  public var moment: MomentValues?
 
   public init(text: String, date: String? = nil, writtenAt: String, files: [QueuedFile] = [], spot: Spot? = nil, place: DevicePlace? = nil,
-              moment: NoteMoment? = nil) {
+              moment: MomentValues? = nil) {
     self.text = text
     self.date = date
     self.writtenAt = writtenAt
@@ -76,7 +77,7 @@ public struct NotePost: Codable, Sendable, Equatable {
     let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
     return NoteRequest(text: words.isEmpty ? nil : text, date: date, writtenAt: writtenAt,
                        uploads: files.isEmpty ? nil : files.map { UploadRef(upload: $0.upload ?? "", type: $0.type, name: $0.name) },
-                       place: place, moment: moment)
+                       place: place, moment: moment?.kept(in: text))
   }
 }
 
@@ -330,6 +331,8 @@ public actor Outbox {
       items[i].operation = .edit(date: date, id: note, text: text, revision: revision ?? read)
     case .post(var post):
       post.text = text
+      // A moment's pieces go only while the fixed words still say them.
+      post.moment = post.moment?.said(in: text)
       if let files {
         dropped = post.files.filter { !files.contains($0.id) }
         post.files.removeAll { !files.contains($0.id) }

@@ -252,12 +252,15 @@ private actor Script {
   /// under a new key; any other refusal is the owner's to fix, as before.
   @Test func aMomentGoesWithItsNoteOrTheWordsGoAlone() async throws {
     let outbox = Outbox(file: nil)
-    let moment = NoteMoment(at: "2026-10-28T07:40:00-05:00",
-                            items: [NoteMoment.Item(kind: "workout", activity: "walking", distanceM: 5150, durationS: 2890)])
-    let walk = try await outbox.enqueue(.post(NotePost(text: "Walked 3.2 mi in 48 min", date: "1900-01-01",
-                                                       writtenAt: "2026-10-29T07:45:00-05:00", moment: moment)))
-    try await outbox.enqueue(.post(NotePost(text: "Walked again", writtenAt: "2026-10-29T07:46:00-05:00", moment: moment)))
-    try await outbox.enqueue(.post(NotePost(text: "Too long", writtenAt: "2026-10-29T07:47:00-05:00", moment: moment)))
+    let line = "Walked 3.2 mi in 48 min"
+    let values = MomentValues(at: "2026-10-28T07:40:00-05:00", pieces: [
+      MomentValues.Piece(line: line, item: NoteMoment.Item(kind: "workout", activity: "walking", distanceM: 5150, durationS: 2890))
+    ])
+    let moment = try #require(values.kept(in: line))
+    let walk = try await outbox.enqueue(.post(NotePost(text: line, date: "1900-01-01", writtenAt: "2026-10-29T07:45:00-05:00",
+                                                       moment: values)))
+    try await outbox.enqueue(.post(NotePost(text: line + ", again", writtenAt: "2026-10-29T07:46:00-05:00", moment: values)))
+    try await outbox.enqueue(.post(NotePost(text: line + ", too long", writtenAt: "2026-10-29T07:47:00-05:00", moment: values)))
     let range = APIError(status: 400, code: "date_out_of_range", message: "Choose a day from your birthday through today.", field: "date")
     let before = APIError(status: 400, code: "invalid_request", message: "moment isn't a field here.", field: "moment")
     let piece = APIError(status: 400, code: "invalid_request", message: "moment.items[0].kind is one of …", field: "moment.items[0].kind")
@@ -272,23 +275,49 @@ private actor Script {
     // A resend is the same request under the same key, moment and all.
     #expect(first[0].idempotencyKey == walk.idempotencyKey && sent[0].idempotencyKey == walk.idempotencyKey)
     #expect(first[0].operation == sent[0].operation)
+    guard case .post(let dated) = sent[0].operation else { Issue.record("not a post"); return }
+    #expect(dated.request.moment == moment)
     // The day refused: the same note, its moment kept, to the day it was written.
     guard case .post(let undated) = sent[1].operation else { Issue.record("not a post"); return }
-    #expect(undated.date == nil && undated.moment == moment && undated.request.moment == moment)
+    #expect(undated.date == nil && undated.moment == values && undated.request.moment == moment)
     #expect(sent[1].idempotencyKey != walk.idempotencyKey)
     // The field refused: the words alone, under a new key.
     guard case .post(let words) = sent[3].operation else { Issue.record("not a post"); return }
-    #expect(sent[2].text == "Walked again" && sent[3].text == "Walked again")
+    #expect(sent[2].text == line + ", again" && sent[3].text == line + ", again")
     #expect(words.moment == nil && words.request.moment == nil)
     #expect(sent[3].idempotencyKey != sent[2].idempotencyKey)
     // A piece refused goes without it too, and a refusal of the words is set aside.
-    #expect(sent[4].text == "Too long")
+    #expect(sent[4].text == line + ", too long")
     guard case .post(let unpieced) = sent[5].operation else { Issue.record("not a post"); return }
     #expect(unpieced.moment == nil)
     #expect(report.filed.map(\.note.id) == ["a", "b"])
-    #expect(report.refused.map(\.text) == ["Too long"])
+    #expect(report.refused.map(\.text) == [line + ", too long"])
     // Once, not again: the remade note has no moment to drop.
     #expect(OutboxOperation.post(unpieced).withoutMoment == nil)
+  }
+
+  /// A refused note fixed by its owner sends only the pieces its fixed
+  /// words still say, under a new key.
+  @Test func aFixedNoteSendsOnlyWhatItsWordsStillSay() async throws {
+    let outbox = Outbox(file: nil)
+    let values = MomentValues(at: "2026-10-28T07:40:00-05:00", pieces: [
+      MomentValues.Piece(line: "Walked 3.2 mi in 48 min",
+                         item: NoteMoment.Item(kind: "workout", activity: "walking", distanceM: 5150, durationS: 2890)),
+      MomentValues.Piece(line: "With Ana", item: NoteMoment.Item(kind: "people", names: ["Ana"]))
+    ])
+    let refused = try await outbox.enqueue(.post(NotePost(text: "Walked 3.2 mi in 48 min\nWith Ana\nand far too much more",
+                                                          writtenAt: "2026-10-29T07:45:00-05:00", moment: values)))
+    let long = APIError(status: 400, code: "too_long", message: "A note is at most 20,000 characters.", field: "text")
+    let script = Script([.failure(long), .success(.filed(receipt("a")))])
+    _ = await outbox.flush { item throws(APIError) in try await script.next(item) }
+    try await outbox.retry(refused.id, text: "Walked 3.2 mi in 48 min\nWith Anabel")
+    let report = await outbox.flush { item throws(APIError) in try await script.next(item) }
+    let sent = try #require(await script.sent.last)
+    #expect(sent.idempotencyKey != refused.idempotencyKey)
+    guard case .post(let fixed) = sent.operation else { Issue.record("not a post"); return }
+    #expect(fixed.request.moment?.items.map(\.kind) == ["workout"])
+    #expect(fixed.moment?.pieces.count == 1)
+    #expect(report.filed.map(\.note.id) == ["a"])
   }
 
   /// A queue saved by a build before moments still reads, and a note with
