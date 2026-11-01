@@ -71,6 +71,9 @@ func stubbedClient(_ host: String) -> APIClient {
     #expect(me.token.scopes.contains("activity"))
     // A server before 1.12.0 doesn't say; the app reads that as no.
     #expect(me.supportingMember == nil)
+    // Nor, before 1.13.0, the weeks and days lived: the widget leaves the line out.
+    #expect(me.lived == nil)
+    #expect(me.days.allSatisfy { $0.lived == nil })
     let request = try #require(StubProtocol.requests("me.test").first)
     #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer rn_" + String(repeating: "A", count: 43))
     #expect(request.value(forHTTPHeaderField: "User-Agent") == "Changelog/0.1 (iOS 26.1)")
@@ -85,6 +88,20 @@ func stubbedClient(_ host: String) -> APIClient {
        "token":{"name":"Changelog","scopes":["notes:write"],"expires_at":null},"api_version":"1.12.0"}
       """))
     #expect(try await stubbedClient("member.test").me().supportingMember == true)
+  }
+
+  @Test func readsLived() async throws {
+    StubProtocol.set("lived.test", .init(status: 200, body: """
+      {"today":"2026-11-01","version":"4.5.140","tz":"America/Chicago","send_time":"06:30",
+       "wrote_today":false,"streak":1,"paused_until":null,"status":"active","show_badges":true,
+       "lived":{"week":2368,"day":16577},
+       "days":[{"date":"2026-11-01","version":"4.5.140","lived":{"week":2368,"day":16577}},
+               {"date":"2026-11-02","version":"4.5.141","lived":{"week":2369,"day":16578}}],
+       "token":{"name":"Changelog","scopes":["notes:write"],"expires_at":null},"api_version":"1.13.0"}
+      """))
+    let me = try await stubbedClient("lived.test").me()
+    #expect(me.lived == Lived(week: 2368, day: 16577))
+    #expect(me.days.map(\.lived) == [Lived(week: 2368, day: 16577), Lived(week: 2369, day: 16578)])
   }
 
   @Test func createsANoteWithItsKey() async throws {

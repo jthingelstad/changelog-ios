@@ -14,6 +14,9 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
   /// can't read Upcoming. Their titles are the owner's own words: a widget
   /// shows them on the Home Screen only, never the Lock Screen.
   public var upcoming: [Soon]?
+  /// Today's weeks and days lived, or nil from a server before API 1.13.0
+  /// (or a snapshot saved before this build).
+  public var lived: Lived?
 
   public struct Soon: Codable, Sendable, Equatable {
     public var date: String
@@ -40,6 +43,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     wroteToday = me.wroteToday
     days = me.days
     upcoming = soon
+    lived = me.lived
   }
 
   public init(me: Me, upcoming: [UpcomingEntry]?) {
@@ -64,14 +68,18 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var wrote: Bool
     /// Upcoming dates still ahead on this day (or a trip still on), soonest first.
     public var upcoming: [Soon]?
+    /// This day's weeks and days lived, when the server said.
+    public var lived: Lived?
 
-    public init(date: String, start: Date, end: Date, version: String, wrote: Bool, upcoming: [Soon]?) {
+    public init(date: String, start: Date, end: Date, version: String, wrote: Bool, upcoming: [Soon]?,
+                lived: Lived? = nil) {
       self.date = date
       self.start = start
       self.end = end
       self.version = version
       self.wrote = wrote
       self.upcoming = upcoming
+      self.lived = lived
     }
   }
 
@@ -82,14 +90,16 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     guard let zone = TimeZone(identifier: tz) else { return [] }
     let parse = Date.ISO8601FormatStyle(timeZone: zone).year().month().day().dateSeparator(.dash)
     var listed = days
-    if !listed.contains(where: { $0.date == today }) { listed.append(DayVersion(date: today, version: version)) }
+    if !listed.contains(where: { $0.date == today }) {
+      listed.append(DayVersion(date: today, version: version, lived: lived))
+    }
     let calendar = Calendar.gregorian(zone)
     let all: [Day] = listed.compactMap { day in
       guard day.date >= today, let start = try? parse.parse(day.date),
             let end = calendar.date(byAdding: .day, value: 1, to: start) else { return nil }
       let ahead = upcoming?.filter { ($0.through ?? $0.date) >= day.date }
       return Day(date: day.date, start: start, end: end, version: day.version, wrote: day.date == today && wroteToday,
-                 upcoming: ahead.map { Array($0.prefix(2)) })
+                 upcoming: ahead.map { Array($0.prefix(2)) }, lived: day.lived ?? (day.date == today ? lived : nil))
     }.sorted { $0.start < $1.start }
     guard let current = all.lastIndex(where: { $0.start <= now }) else {
       // Before the first listed midnight (a clock behind the server's): from today.
@@ -126,6 +136,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
       guard let day = snapshot.days.first(where: { $0.date == date }) else { return false }
       snapshot.today = day.date
       snapshot.version = day.version
+      snapshot.lived = day.lived
       snapshot.wroteToday = false
     }
     guard !snapshot.wroteToday else { return false }
