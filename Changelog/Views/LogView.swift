@@ -195,7 +195,8 @@ struct LogView: View {
 }
 
 /// The day as the web's Today page sets it: the date in small mono
-/// capitals, the version large, and the version that ships next.
+/// capitals, the version large, the version that ships next, and the week
+/// and day lived.
 struct VersionHeader: View {
   @Environment(AppModel.self) private var model
 
@@ -222,6 +223,14 @@ struct VersionHeader: View {
           .face(.hint)
           .foregroundStyle(Color.ink2)
           .padding(.top, 12)
+      }
+      // The line under "ships" on the web's Today. Jamie, 2026-11-01: "it
+      // should also be on the big version just like the website."
+      if let lived = model.me?.lived {
+        Text(lived.text)
+          .face(.hint)
+          .foregroundStyle(Color.ink2)
+          .padding(.top, next == nil ? 12 : 2)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
