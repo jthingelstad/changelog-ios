@@ -107,4 +107,47 @@ import Testing
     #expect(!WidgetSnapshot.filed(on: "2026-11-09", in: defaults))
     #expect(WidgetSnapshot.load(from: defaults)?.today == "2026-10-30")
   }
+
+  private func livedMe() -> Me {
+    var account = me(wrote: false)
+    account.lived = Lived(week: 2368, day: 16574)
+    account.days = [DayVersion(date: "2026-10-29", version: "4.5.137", lived: Lived(week: 2368, day: 16574)),
+                    DayVersion(date: "2026-10-30", version: "4.5.138", lived: Lived(week: 2368, day: 16575)),
+                    DayVersion(date: "2026-10-31", version: "4.6.0", lived: Lived(week: 2368, day: 16576))]
+    return account
+  }
+
+  @Test func eachDayCarriesItsWeeksAndDaysLived() throws {
+    let days = WidgetSnapshot(me: livedMe(), upcoming: nil).timeline(now: try chicago("2026-10-29T15:00:00"))
+    #expect(days.map(\.lived?.day) == [16574, 16575, 16576])
+    #expect(days.first?.lived?.text == "Week 2,368 \u{2014} Day 16,574")
+    // A server before 1.13.0: no line, never a guess.
+    #expect(WidgetSnapshot(me: me(), upcoming: nil).timeline(now: try chicago("2026-10-29T15:00:00")).allSatisfy { $0.lived == nil })
+  }
+
+  @Test func aNoteFiledAfterMidnightMovesTheWeeksAndDaysLivedOn() throws {
+    let defaults = try #require(UserDefaults(suiteName: "changelog-widget-" + UUID().uuidString))
+    WidgetSnapshot(me: livedMe(), upcoming: nil).save(to: defaults)
+    #expect(WidgetSnapshot.filed(on: "2026-10-30", in: defaults))
+    #expect(WidgetSnapshot.load(from: defaults)?.lived == Lived(week: 2368, day: 16575))
+  }
+
+  @Test func aSnapshotSavedBeforeLivedStillLoads() throws {
+    let defaults = try #require(UserDefaults(suiteName: "changelog-widget-" + UUID().uuidString))
+    let old = """
+      {"today":"2026-10-29","version":"4.5.137","tz":"America/Chicago","wroteToday":false,
+       "days":[{"date":"2026-10-29","version":"4.5.137"}]}
+      """
+    defaults.set(Data(old.utf8), forKey: WidgetSnapshot.key)
+    let snapshot = try #require(WidgetSnapshot.load(from: defaults))
+    #expect(snapshot.lived == nil)
+    #expect(snapshot.version == "4.5.137")
+  }
+
+  @Test func livedReadsAsTheWebWritesIt() {
+    #expect(Lived(week: 2826, day: 19779).text == "Week 2,826 \u{2014} Day 19,779")
+    #expect(Lived(week: 1, day: 1).text == "Week 1 \u{2014} Day 1")
+    #expect(Lived(week: 2826, day: 19779).weekText == "Week 2,826")
+    #expect(Lived(week: 2826, day: 19779).dayText == "Day 19,779")
+  }
 }

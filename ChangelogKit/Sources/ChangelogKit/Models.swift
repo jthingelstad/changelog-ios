@@ -29,6 +29,9 @@ public struct Me: Codable, Sendable, Equatable {
   /// get (API 1.12.0): the app's other icons. Nil from a server before
   /// 1.12.0, which reads as no.
   public var supportingMember: Bool? = nil
+  /// The weeks and days lived today (API 1.13.0), as Release Notes' Today
+  /// page and morning email write them. Nil from a server before 1.13.0.
+  public var lived: Lived? = nil
 
   /// The version for a local day the server listed in `days`, so a widget or
   /// an offline header can show tomorrow's number without the arithmetic.
@@ -40,6 +43,31 @@ public struct Me: Codable, Sendable, Equatable {
 public struct DayVersion: Codable, Sendable, Equatable {
   public var date: String
   public var version: String
+  /// That day's weeks and days lived (API 1.13.0).
+  public var lived: Lived? = nil
+}
+
+/// Weeks and days lived, both from 1 (API 1.13.0): a nod to Four Thousand
+/// Weeks, which Release Notes' Today page and morning email set under the
+/// version. The day grows by one a day; the week follows from it.
+public struct Lived: Codable, Sendable, Equatable {
+  public var week: Int
+  public var day: Int
+
+  public init(week: Int, day: Int) {
+    self.week = week
+    self.day = day
+  }
+
+  /// "Week 2,826 — Day 19,779", as the web and the email write it
+  /// (`livedText` in Release Notes): US digit grouping on any phone.
+  public var text: String { "\(weekText) \u{2014} \(dayText)" }
+  /// "Week 2,826", for where the line has to break.
+  public var weekText: String { "Week \(week.formatted(Self.grouped))" }
+  /// "Day 19,779".
+  public var dayText: String { "Day \(day.formatted(Self.grouped))" }
+
+  private static let grouped = IntegerFormatStyle<Int>.number.locale(Locale(identifier: "en_US"))
 }
 
 public struct TokenInfo: Codable, Sendable, Equatable {

@@ -41,7 +41,8 @@ struct TodayEntry: TimelineEntry {
   /// For the widget gallery: a version no one has.
   static let sample = TodayEntry(date: .now, shows: .day(WidgetSnapshot.Day(
     date: "2026-01-01", start: .now, end: .now.addingTimeInterval(86400), version: "1.2.345", wrote: false,
-    upcoming: [WidgetSnapshot.Soon(date: "2026-01-04", title: "Lake weekend", kind: .trip)])))
+    upcoming: [WidgetSnapshot.Soon(date: "2026-01-04", title: "Lake weekend", kind: .trip)],
+    lived: Lived(week: 676, day: 4729))))
 }
 
 struct TodayProvider: TimelineProvider {
@@ -128,7 +129,7 @@ private struct TodayColumn: View {
 
   var body: some View {
     // The web's Today page, small: the day in mono capitals over the
-    // version, and whether anything is written yet.
+    // version, the weeks and days lived, and whether anything is written yet.
     VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 6) {
         BrandMark(size: 16)
@@ -140,6 +141,23 @@ private struct TodayColumn: View {
         .foregroundStyle(Color.ink)
         .minimumScaleFactor(0.5)
         .lineLimit(1)
+      // Jamie's TestFlight note, 2026-11-01: "On the widget we would have
+      // some space to include the week number and day number like we do on
+      // the release notes website and emails."
+      // One line where it fits, the week over the day where it doesn't
+      // (a small widget, or a medium one's half on most phones).
+      if let lived = day.lived {
+        ViewThatFits(in: .horizontal) {
+          Text(lived.text).lineLimit(1)
+          VStack(alignment: .leading, spacing: 0) {
+            Text(lived.weekText)
+            Text(lived.dayText)
+          }
+        }
+        .face(.meta)
+        .monospacedDigit()
+        .foregroundStyle(Color.ink2)
+      }
       Spacer(minLength: 0)
       Label(day.wrote ? "Written today" : "Nothing yet", systemImage: day.wrote ? "checkmark.circle.fill" : "square.and.pencil")
         .face(.meta)
