@@ -186,6 +186,32 @@ final class ChangelogUITests: XCTestCase {
     XCTAssertTrue(build.label.contains(", build "), build.label)
   }
 
+  /// The dev server's account is its administrator, which `/v1/me` counts
+  /// as a Supporting Member (API 1.12.0): Settings offers all five icons,
+  /// and choosing one makes it the app's, after iOS's own alert.
+  @MainActor func testAppIcons() throws {
+    let app = launch()
+    hideKeyboard(app)
+    app.tabBars.buttons["Settings"].tap()
+    let copper = app.buttons["app-icon-Copper"], versions = app.buttons["app-icon-Versions"]
+    for _ in 0..<6 where !copper.exists || !copper.isHittable { app.swipeUp() }
+    expect(copper, "a member is offered the icons", in: app)
+    for name in ["Versions", "Paper", "Copper", "Terminal", "Afterglow"] {
+      XCTAssertTrue(app.buttons["app-icon-\(name)"].exists, name)
+    }
+    XCTAssertTrue(versions.isSelected, "Versions is on to begin with")
+    keep(app, "App icon section")
+    copper.tap()
+    okIconAlert()
+    XCTAssertTrue(copper.wait(for: \.isSelected, toEqual: true, timeout: 10), "Copper is on once chosen")
+    XCUIDevice.shared.press(.home)
+    keep(XCUIApplication(bundleIdentifier: "com.apple.springboard"), "Home Screen with Copper")
+    app.activate()
+    versions.tap()
+    okIconAlert()
+    XCTAssertTrue(versions.wait(for: \.isSelected, toEqual: true, timeout: 10), "Versions is back")
+  }
+
   /// A birthday added in Upcoming saves once, and a swipe deletes it.
   @MainActor func testUpcoming() async throws {
     let app = launch()
@@ -350,6 +376,19 @@ final class ChangelogUITests: XCTestCase {
     app.launch()
     expect(app.buttons["Commit"], "signed in to the dev server", in: app, timeout: 30)
     return app
+  }
+
+  /// iOS says the icon changed, in Springboard's alert.
+  @MainActor private func okIconAlert() {
+    let ok = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["OK"]
+    if ok.waitForExistence(timeout: 10) { ok.tap() }
+  }
+
+  @MainActor private func keep(_ app: XCUIApplication, _ name: String) {
+    let shot = XCTAttachment(screenshot: app.screenshot())
+    shot.name = name
+    shot.lifetime = .keepAlways
+    add(shot)
   }
 
   private func hideKeyboard(_ app: XCUIApplication) {

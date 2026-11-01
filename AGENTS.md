@@ -189,10 +189,20 @@ The app icons come from the 2026-11-01 icon study in
 navy (`AppIcon`), and four Supporting Member editions (`AppIcon-Paper`,
 `-Copper`, `-Terminal`, `-Afterglow`, named in
 `ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES`). `sh scripts/make_icons.sh`
-rebuilds the sets from the study. Release Notes' icon is the single folded v
-with a period on cobalt; the two must stay distinct side by side. The member
-editions have no picker yet: who may choose them waits on Jamie's call about
-App Review guideline 3.1.1 (unlocking a feature for an outside membership).
+rebuilds the sets from the study, with a small `<set>-Preview` image beside
+each for Settings. Release Notes' icon is the single folded v with a period
+on cobalt; the two must stay distinct side by side.
+
+Settings, "App icon" (`Changelog/Views/AppIconSection.swift`, the list in
+ChangelogKit's `AppIcon`) offers the five to Supporting Members of the
+Weekly Thing: `/v1/me`'s `supporting_member` (API 1.12.0), which Release
+Notes gives its administrator too (Jamie, 2026-11-01: "Approved: Changelog
+member icons unlock for Supporting Members", knowing App Review guideline
+3.1.1 limits unlocking a feature for an outside membership). Anyone else
+sees no section and no word of membership, and the app never links to
+joining. A lapsed member keeps the icon they chose, with only it and
+Versions offered: iOS shows an alert whenever the icon changes, so it
+changes only on a tap.
 
 ## Building
 
@@ -228,7 +238,8 @@ Keychain.
 builds ad-hoc signed, grants photos, location and the microphone, sets the
 simulator in Minneapolis, and drives a note, a photo, Here, a moment (the
 stand-in, filed to its day and then to today), a voice memo,
-Upcoming (a date added and deleted), Activity and Settings, and a share
+Upcoming (a date added and deleted), Activity and Settings, the app icons
+(chosen and put back), and a share
 from Photos against the dev server, checking `/v1/activity` that each made
 exactly one note (and `/v1/upcoming` the date); and a note held for
 another account, a new fictional one it makes on the dev server's web API,

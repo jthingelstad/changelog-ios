@@ -69,10 +69,22 @@ func stubbedClient(_ host: String) -> APIClient {
     #expect(me.version(on: "2026-10-30") == "4.5.138")
     #expect(me.version(on: "2026-11-30") == nil)
     #expect(me.token.scopes.contains("activity"))
+    // A server before 1.12.0 doesn't say; the app reads that as no.
+    #expect(me.supportingMember == nil)
     let request = try #require(StubProtocol.requests("me.test").first)
     #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer rn_" + String(repeating: "A", count: 43))
     #expect(request.value(forHTTPHeaderField: "User-Agent") == "Changelog/0.1 (iOS 26.1)")
     #expect(request.url?.path == "/v1/me")
+  }
+
+  @Test func readsSupportingMember() async throws {
+    StubProtocol.set("member.test", .init(status: 200, body: """
+      {"today":"2026-11-01","version":"4.5.140","tz":"America/Chicago","send_time":"06:30",
+       "wrote_today":false,"streak":1,"paused_until":null,"status":"active","show_badges":true,
+       "supporting_member":true,"days":[{"date":"2026-11-01","version":"4.5.140"}],
+       "token":{"name":"Changelog","scopes":["notes:write"],"expires_at":null},"api_version":"1.12.0"}
+      """))
+    #expect(try await stubbedClient("member.test").me().supportingMember == true)
   }
 
   @Test func createsANoteWithItsKey() async throws {

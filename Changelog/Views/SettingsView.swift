@@ -73,6 +73,8 @@ struct SettingsView: View {
             SectionNote("Pinned tags are the same here, on the web and on every phone. Touch and hold a tag on Log to add it to every note from this phone.")
           }
 
+          AppIconSection(member: model.me?.supportingMember == true)
+
           Section {
             Button("Open Release Notes") { openURL(Links.site) }
             Button("Settings on the web") { openURL(Links.settings) }

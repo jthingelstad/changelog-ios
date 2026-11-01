@@ -4,6 +4,8 @@
 # four Supporting Member editions. Each is the study's 1254 pixel master,
 # resized to 1024 by sips, opaque sRGB. sips writes a fresh file, so the
 # masters' content credentials chunk does not travel into the app.
+# Beside each set, a 132 pixel <set>-Preview image for Settings' picker
+# (Changelog/Views/AppIconSection.swift), since an icon set can't be drawn.
 # Rerun after the study's artwork changes: sh scripts/make_icons.sh
 set -eu
 cd "$(dirname "$0")/.."
@@ -18,6 +20,16 @@ make() { # make <study name> <icon set>
   cat > "$set_dir/Contents.json" <<JSON
 {
   "images" : [ { "filename" : "icon-1024.png", "idiom" : "universal", "platform" : "ios", "size" : "1024x1024" } ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
+JSON
+  preview_dir="$assets/$2-Preview.imageset"
+  mkdir -p "$preview_dir"
+  sips -s format png -m '/System/Library/ColorSync/Profiles/sRGB Profile.icc' \
+    -z 132 132 "$study/changelog-$1.png" --out "$preview_dir/preview.png" >/dev/null
+  cat > "$preview_dir/Contents.json" <<JSON
+{
+  "images" : [ { "filename" : "preview.png", "idiom" : "universal" } ],
   "info" : { "author" : "xcode", "version" : 1 }
 }
 JSON
