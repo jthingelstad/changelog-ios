@@ -6,6 +6,9 @@
 # masters' content credentials chunk does not travel into the app.
 # Beside each set, a 132 pixel <set>-Preview image for Settings' picker
 # (Changelog/Views/AppIconSection.swift), since an icon set can't be drawn.
+# And the in-app mark (Theme/Brand.xcassets/BrandMark), Versions at 56
+# points in three scales, which the app, its widgets and its share
+# extension draw beside the name (BrandMark in Theme/Theme.swift).
 # Rerun after the study's artwork changes: sh scripts/make_icons.sh
 set -eu
 cd "$(dirname "$0")/.."
@@ -40,3 +43,20 @@ make paper AppIcon-Paper
 make copper AppIcon-Copper
 make terminal AppIcon-Terminal
 make afterglow AppIcon-Afterglow
+
+brand=Theme/Brand.xcassets/BrandMark.imageset
+mkdir -p "$brand"
+for scale in 1 2 3; do
+  sips -s format png -m '/System/Library/ColorSync/Profiles/sRGB Profile.icc' \
+    -z $((56 * scale)) $((56 * scale)) "$study/changelog-primary.png" --out "$brand/brand-mark@${scale}x.png" >/dev/null
+done
+cat > "$brand/Contents.json" <<JSON
+{
+  "images" : [
+    { "filename" : "brand-mark@1x.png", "idiom" : "universal", "scale" : "1x" },
+    { "filename" : "brand-mark@2x.png", "idiom" : "universal", "scale" : "2x" },
+    { "filename" : "brand-mark@3x.png", "idiom" : "universal", "scale" : "3x" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
+JSON

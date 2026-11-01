@@ -190,8 +190,15 @@ navy (`AppIcon`), and four Supporting Member editions (`AppIcon-Paper`,
 `-Copper`, `-Terminal`, `-Afterglow`, named in
 `ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES`). `sh scripts/make_icons.sh`
 rebuilds the sets from the study, with a small `<set>-Preview` image beside
-each for Settings. Release Notes' icon is the single folded v with a period
-on cobalt; the two must stay distinct side by side.
+each for Settings, and the in-app mark. Release Notes' icon is the single
+folded v with a period on cobalt; the two must stay distinct side by side.
+
+The mark beside "Changelog" (the bar atop each tab, the sign-in screen, the
+widgets) is Versions too: `BrandMark` in `Theme/Theme.swift` draws
+`Theme/Brand.xcassets`' `BrandMark` as a rounded tile, in the app, its
+widgets and its share extension alike. It replaced the drawn Release Notes
+mark (a v, a dot and two lines) on 2026-11-01, when Jamie found the old logo
+still inside the app. It stays Versions whichever icon a member chose.
 
 Settings, "App icon" (`Changelog/Views/AppIconSection.swift`, the list in
 ChangelogKit's `AppIcon`) offers the five to Supporting Members of the
