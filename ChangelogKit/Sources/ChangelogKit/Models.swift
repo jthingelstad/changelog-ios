@@ -25,6 +25,10 @@ public struct Me: Codable, Sendable, Equatable {
   /// changing. A queued note is stamped with it (`OutboxItem.account`). Nil
   /// from a server before 1.4.0.
   public var account: String? = nil
+  /// Whether the account gets what Supporting Members of the Weekly Thing
+  /// get (API 1.12.0): the app's other icons. Nil from a server before
+  /// 1.12.0, which reads as no.
+  public var supportingMember: Bool? = nil
 
   /// The version for a local day the server listed in `days`, so a widget or
   /// an offline header can show tomorrow's number without the arithmetic.

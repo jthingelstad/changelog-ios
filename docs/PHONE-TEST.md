@@ -94,9 +94,14 @@ Upcoming and the activity log.
     notifications switches. A note added on the web or by an agent brings
     a notice minutes or hours later: iOS decides when the app looks.
 15. **Activity.** Rows from every channel; "Older" loads more.
-16. **The build.** The foot of Settings names the version, the commit and
-    when it was made (`Changelog 0.0.0, build 571b43d, made Oct 29 at
-    1:25 PM CDT.`). "Privacy", under Release Notes, opens the privacy page.
+16. **The build and the icon.** The foot of Settings names the version, the
+    commit and when it was made (`Changelog 0.0.0, build 571b43d, made Oct
+    29 at 1:25 PM CDT.`). "Privacy", under Release Notes, opens the privacy
+    page. On the Home Screen, touch and hold, Edit, Customize: in Dark,
+    Tinted and Clear the icon stays three stacked v marks, apart from
+    Release Notes' single v. For a Supporting Member, Settings, "App icon"
+    offers five: choose one, OK iOS's alert, and the Home Screen shows it;
+    Versions puts it back. Anyone else sees no "App icon" at all.
 17. **Sign out.** Settings, "Sign out", then "Sign out and revoke
     this token". The token shows as revoked on the web, anything still
     waiting stays on the phone, Notification Center holds nothing of
