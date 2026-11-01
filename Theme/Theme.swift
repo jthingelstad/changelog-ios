@@ -1,5 +1,6 @@
 import CoreText
 import SwiftUI
+import WidgetKit
 
 // Release Notes' look, from its web app (web/src/styles/site.css in
 // jthingelstad/yvn-release-notes): type on paper. Colours are the email's,
@@ -178,26 +179,23 @@ func versionText(_ version: String) -> Text {
   }
 }
 
-/// Release Notes' mark: a version, its dot, and two written lines.
+/// Changelog's mark: its Home Screen icon, Versions (three folded v marks
+/// on ink navy, from the 2026-11-01 icon study), as a small rounded tile.
+/// `Theme/Brand.xcassets` holds it, so the widgets and the share extension
+/// have it too; scripts/make_icons.sh draws it.
 struct BrandMark: View {
   var size: CGFloat = 24
 
   var body: some View {
-    Canvas { context, size in
-      let s = min(size.width, size.height) / 100
-      var v = Path()
-      v.addLines([CGPoint(x: 12, y: 12), CGPoint(x: 31, y: 12), CGPoint(x: 45, y: 50), CGPoint(x: 59, y: 12),
-                  CGPoint(x: 78, y: 12), CGPoint(x: 57, y: 64), CGPoint(x: 33, y: 64)].map { $0.applying(.init(scaleX: s, y: s)) })
-      v.closeSubpath()
-      var lines = Path()
-      lines.addRoundedRect(in: CGRect(x: 18 * s, y: 72 * s, width: 68 * s, height: 6 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s))
-      lines.addRoundedRect(in: CGRect(x: 18 * s, y: 85 * s, width: 46 * s, height: 6 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s))
-      context.fill(v, with: .color(.cobalt))
-      context.fill(lines, with: .color(.cobalt))
-      context.fill(Path(ellipseIn: CGRect(x: 67 * s, y: 43 * s, width: 22 * s, height: 22 * s)), with: .color(.tangerine))
-    }
-    .frame(width: size, height: size)
-    .accessibilityHidden(true)
+    Image(.brandMark)
+      .resizable()
+      .interpolation(.high)
+      // On a tinted Home Screen, a widget's picture otherwise fills in as
+      // one flat tinted square.
+      .widgetAccentedRenderingMode(.accentedDesaturated)
+      .frame(width: size, height: size)
+      .clipShape(.rect(cornerRadius: size * 0.225, style: .continuous))
+      .accessibilityHidden(true)
   }
 }
 

@@ -99,9 +99,12 @@ Upcoming and the activity log.
     29 at 1:25 PM CDT.`). "Privacy", under Release Notes, opens the privacy
     page. On the Home Screen, touch and hold, Edit, Customize: in Dark,
     Tinted and Clear the icon stays three stacked v marks, apart from
-    Release Notes' single v. For a Supporting Member, Settings, "App icon"
-    offers five: choose one, OK iOS's alert, and the Home Screen shows it;
-    Versions puts it back. Anyone else sees no "App icon" at all.
+    Release Notes' single v. The mark beside "Changelog" atop each tab,
+    and in the widgets, is the same Versions tile; on a Tinted Home Screen
+    the widgets' mark shows as a toned tile, not a flat square. For a
+    Supporting Member, Settings, "App icon" offers five: choose one, OK
+    iOS's alert, and the Home Screen shows it; Versions puts it back.
+    Anyone else sees no "App icon" at all.
 17. **Sign out.** Settings, "Sign out", then "Sign out and revoke
     this token". The token shows as revoked on the web, anything still
     waiting stays on the phone, Notification Center holds nothing of
