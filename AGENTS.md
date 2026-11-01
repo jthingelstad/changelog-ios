@@ -182,6 +182,18 @@ there first, never work around it here.
 - Codex reviews every PR (`chatgpt-codex-connector[bot]`). Read its
   findings and fix or answer each before calling the work done.
 
+## Icons
+
+The app icons come from the 2026-11-01 icon study in
+`docs/design/icon-study-2026-11-01/`: "Versions", three folded v marks on ink
+navy (`AppIcon`), and four Supporting Member editions (`AppIcon-Paper`,
+`-Copper`, `-Terminal`, `-Afterglow`, named in
+`ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES`). `sh scripts/make_icons.sh`
+rebuilds the sets from the study. Release Notes' icon is the single folded v
+with a period on cobalt; the two must stay distinct side by side. The member
+editions have no picker yet: who may choose them waits on Jamie's call about
+App Review guideline 3.1.1 (unlocking a feature for an outside membership).
+
 ## Building
 
 ```sh

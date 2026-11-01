@@ -1,0 +1,53 @@
+{
+  "title": "Changelog Versions icon design study",
+  "saved_date": "2026-11-01",
+  "mode": "Built-in image_gen tool",
+  "status": "Design concepts only; active app icons and app code unchanged.",
+  "selected_direction": "Three stacked folded v marks, receding up-left, with cobalt, tangerine and ivory layers on ink navy.",
+  "member_editions": [
+    "Paper",
+    "Copper",
+    "Terminal",
+    "Afterglow"
+  ],
+  "membership_intent": "Alternative app icons are intended to unlock for Supporting Members of the Weekly Thing.",
+  "files": [
+    "icons/changelog-afterglow-60px.png",
+    "icons/changelog-afterglow.png",
+    "icons/changelog-copper-60px.png",
+    "icons/changelog-copper.png",
+    "icons/changelog-paper-60px.png",
+    "icons/changelog-paper.png",
+    "icons/changelog-primary-60px.png",
+    "icons/changelog-primary.png",
+    "icons/changelog-terminal-60px.png",
+    "icons/changelog-terminal.png",
+    "explorations/versions-before-refinement.png"
+  ],
+  "reference_images": {
+    "primary_refinement": "explorations/versions-before-refinement.png",
+    "member_editions": "icons/changelog-primary.png"
+  },
+  "prompts": {
+    "primary": "Use case: precise-object-edit.\nAsset type: refined PRIMARY iPhone app icon concept for Changelog.\nInput image: EDIT TARGET, the selected \"Versions\" icon. Preserve its identity and design. This is a careful optical refinement, NOT a redesign.\nPrimary request: Refine this exact icon for small Home Screen sizes. Keep exactly THREE identical folded v-shaped paper ribbons in a diagonal stack receding up-left: cobalt blue rear, tangerine middle, warm ivory front. Keep the recognizable sculptural upper-right curl of each v, the current broad stroke widths, the current lower rounded valleys, same overall shape, same colors, same near-frontal angle. Keep the existing even step between the three versions so all three left arms and all three right curled terminals remain clearly countable.\nOnly refinement: slightly reduce the WHOLE emblem as a single unit so the group fits inside approximately the central 78 percent of the canvas, optically centered with a balanced 11\u201312 percent clear outer margin at left and right and ample top and bottom clearance for iOS corner masking. Simplify the fine paper grain and deepest fold shadows very slightly for clarity at 60 pixels. Keep the folds sculptural and elegant. Do not make the strokes thinner. Retain crisp separation between the three layers.\nScene/backdrop: same full bleed deep ink navy #14163A. Matte, subtly tonal, no obvious spotlight.\nPalette invariant: rear cobalt #1A4FE0, middle tangerine #FF5A1F, front ivory #FFFBF2.\nConstraints: preserve the selected design, exactly three v forms, no circular period, no words, no numbers, no extra glyphs, no book or notebook, no extra shapes, no badges, no borders, no device, no frame or mockup, no watermark. Square image with sharp outer square corners, full bleed navy. Refined minimal premium paper-sculpture icon.",
+    "member_editions": [
+      {
+        "name": "paper",
+        "prompt": "Use case: style-transfer.\nAsset type: ONE Supporting Member alternate iPhone app icon concept for Changelog.\nInput image role: EDIT TARGET, the refined primary \"Versions\" icon. Preserve the EXACT composition and identity. Change ONLY the color and material treatment described below.\nInvariants: exactly THREE identical broad folded v-shaped paper ribbons in a diagonal stack, receding evenly up-left, with all three left arms and all three upper-right curled terminals clearly countable. Same silhouette, broad stroke widths, valleys, curl geometry, scale, positioning, layer spacing, viewpoint, optical balance, and generous clear margins as reference. Preserve the graceful paper sculpture. No period dot. No change in orientation. No added ornaments or marks. Single bold icon readable at 60px.\nSquare full-bleed image with sharp square outer corners, no enclosing frame or rounded-square inset, no device, no mockup, no labels, no text, no numbers, no new symbols, no watermark. Edition: PAPER. Change background to warm ivory #FFFBF2. The FRONT v becomes deep ink navy #14163A, MIDDLE v stays saturated tangerine #FF5A1F, REAR v stays vivid cobalt #1A4FE0. All three have the same quiet matte paper finish and restrained curls as reference, with soft fine ambient shadows on the ivory field. No grainy noise or speckles. Rich solid paper colors, clean uncluttered surfaces, elegant editorial feeling. The blue rear and orange middle must be as visible as in the reference. Keep all three shapes the same exact size and positioning. No other objects or colors."
+      },
+      {
+        "name": "copper",
+        "prompt": "Use case: style-transfer.\nAsset type: ONE Supporting Member alternate iPhone app icon concept for Changelog.\nInput image role: EDIT TARGET, the refined primary \"Versions\" icon. Preserve the EXACT composition and identity. Change ONLY the color and material treatment described below.\nInvariants: exactly THREE identical broad folded v-shaped paper ribbons in a diagonal stack, receding evenly up-left, with all three left arms and all three upper-right curled terminals clearly countable. Same silhouette, broad stroke widths, valleys, curl geometry, scale, positioning, layer spacing, viewpoint, optical balance, and generous clear margins as reference. Preserve the graceful paper sculpture. No period dot. No change in orientation. No added ornaments or marks. Single bold icon readable at 60px.\nSquare full-bleed image with sharp square outer corners, no enclosing frame or rounded-square inset, no device, no mockup, no labels, no text, no numbers, no new symbols, no watermark. Edition: COPPER. Change background to almost-black warm charcoal #1B1715. Transform the same three paper forms into three thin folded satin metal sheets, keeping their exact paperlike silhouettes. FRONT v is bright pale reddish brushed copper, MIDDLE v is deep burnt-orange copper, REAR v is medium warm bronze-copper with a slightly lighter upper rim. Separate the three layers with distinct metal tones and restrained shadows, so three forms remain clearly countable at small sizes. Materials must read warm red COPPER, not yellow gold. Very subtle brushed grain, broad soft highlights, no strong specular glare. Quiet premium collector's edition, not flashy. No engravings, gemstones, ornaments, badge or extra elements."
+      },
+      {
+        "name": "terminal",
+        "prompt": "Use case: style-transfer.\nAsset type: ONE Supporting Member alternate iPhone app icon concept for Changelog.\nInput image role: EDIT TARGET, the refined primary \"Versions\" icon. Preserve the EXACT composition and identity. Change ONLY the color and material treatment described below.\nInvariants: exactly THREE identical broad folded v-shaped paper ribbons in a diagonal stack, receding evenly up-left, with all three left arms and all three upper-right curled terminals clearly countable. Same silhouette, broad stroke widths, valleys, curl geometry, scale, positioning, layer spacing, viewpoint, optical balance, and generous clear margins as reference. Preserve the graceful paper sculpture. No period dot. No change in orientation. No added ornaments or marks. Single bold icon readable at 60px.\nSquare full-bleed image with sharp square outer corners, no enclosing frame or rounded-square inset, no device, no mockup, no labels, no text, no numbers, no new symbols, no watermark. Edition: TERMINAL. Change background to near-black green #06120C. Keep the same exact shape and geometry but render the three ribbons in phosphor-green tones: FRONT v bright luminous mint #BAFFD2, MIDDLE v vivid green #52D78A, REAR v clear medium jade #338B60. Make all three layers distinct, with enough contrast between the rear jade and the black background. Almost-flat luminous printed-paper treatment with minimal fold shading, extremely faint scanline texture only within the shapes, tiny restrained phosphor bloom. Do not thicken the edges or add outlines. Keep edges crisp. No code, no terminal window, no cursor, no pixel grid, no new shapes. A clean recognizable retro computing edition of precisely this icon."
+      },
+      {
+        "name": "afterglow",
+        "prompt": "Use case: style-transfer.\nAsset type: ONE Supporting Member alternate iPhone app icon concept for Changelog.\nInput image role: EDIT TARGET, the refined primary \"Versions\" icon. Preserve the EXACT composition and identity. Change ONLY the color and material treatment described below.\nInvariants: exactly THREE identical broad folded v-shaped paper ribbons in a diagonal stack, receding evenly up-left, with all three left arms and all three upper-right curled terminals clearly countable. Same silhouette, broad stroke widths, valleys, curl geometry, scale, positioning, layer spacing, viewpoint, optical balance, and generous clear margins as reference. Preserve the graceful paper sculpture. No period dot. No change in orientation. No added ornaments or marks. Single bold icon readable at 60px.\nSquare full-bleed image with sharp square outer corners, no enclosing frame or rounded-square inset, no device, no mockup, no labels, no text, no numbers, no new symbols, no watermark. Edition: AFTERGLOW. Change background to deep plum #27132E with a subtle uniform dark tonal gradient. FRONT v becomes soft warm peach #FFD3B3, MIDDLE v becomes vivid coral #FA6A62, REAR v becomes rich luminous orchid violet #A878E8. All three remain matte folded paper with restrained warm illumination and subtle fold shadows. Three distinct saturated color planes, exactly the same shape and spacing as reference. Expressive and warm, like a sunset palette translated into colored paper. No literal sunset, no sun, no scenery, no sparkle, no iridescent rainbow or glossy plastic. Keep the plain plum field unadorned."
+      }
+    ]
+  },
+  "companion": "jthingelstad/yvn-release-notes: docs/design/icon-study-2026-11-01"
+}
