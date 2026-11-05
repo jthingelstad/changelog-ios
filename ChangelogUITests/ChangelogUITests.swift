@@ -377,6 +377,7 @@ final class ChangelogUITests: XCTestCase {
     let elsewhere = NSPredicate(format: "label CONTAINS %@", words)
 
     var app = launch(as: old, more: ["CHANGELOG_SWITCH_TOKEN": reader, "CHANGELOG_LOCK_ANSWER": "yes"])
+    hideKeyboard(app)
     app.tabBars.buttons["Notes"].tap()
     let allow = app.buttons["Allow reading"]
     expect(allow, "the Notes tab offers reading", in: app, timeout: 15)
@@ -404,6 +405,7 @@ final class ChangelogUITests: XCTestCase {
     app = launch(as: reader, more: ["CHANGELOG_LOCK_ANSWER": "no"])
     XCTAssertFalse(app.descendants(matching: .any).matching(elsewhere).firstMatch.waitForExistence(timeout: 5),
                    "locked, Log's Today keeps the words back")
+    hideKeyboard(app)
     app.tabBars.buttons["Notes"].tap()
     expect(app.buttons["Unlock"], "Notes is locked", in: app, timeout: 15)
     XCTAssertFalse(app.descendants(matching: .any).matching(elsewhere).firstMatch.exists)
@@ -412,6 +414,7 @@ final class ChangelogUITests: XCTestCase {
 
     // Yes: it opens. Off again, so the next test finds it as it was.
     app = launch(as: reader, more: ["CHANGELOG_LOCK_ANSWER": "yes"])
+    hideKeyboard(app)
     app.tabBars.buttons["Notes"].tap()
     expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "unlocked, it reads", in: app, timeout: 30)
     app.tabBars.buttons["Settings"].tap()
