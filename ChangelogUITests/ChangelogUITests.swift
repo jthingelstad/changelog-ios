@@ -364,15 +364,74 @@ final class ChangelogUITests: XCTestCase {
     return (app, row, before)
   }
 
+  // MARK: Reading
+
+  /// The one button trades a four-tick token for one that may read; another
+  /// channel's note opens whole; the lock keeps it back and Log still writes.
+  @MainActor func testReading() async throws {
+    let scopes = ["notes:write", "media:write", "upcoming", "activity"]
+    let old = try await Self.tokenOnThisAccount(scopes, server: server)
+    let reader = try await Self.tokenOnThisAccount(scopes + ["notes:all"], server: server)
+    let words = note("From another channel")
+    try await Self.addNote(words, server: server, token: token)
+    let elsewhere = NSPredicate(format: "label CONTAINS %@", words)
+
+    var app = launch(as: old, more: ["CHANGELOG_SWITCH_TOKEN": reader, "CHANGELOG_LOCK_ANSWER": "yes"])
+    app.tabBars.buttons["Notes"].tap()
+    let allow = app.buttons["Allow reading"]
+    expect(allow, "the Notes tab offers reading", in: app, timeout: 15)
+    allow.tap()
+    let row = app.descendants(matching: .any).matching(elsewhere).firstMatch
+    expect(row, "a note from elsewhere reads whole", in: app, timeout: 30)
+    keep(app, "Notes")
+    let (status, _) = try await Self.statusOfMe(server: server, token: old)
+    XCTAssertEqual(status, 401, "the old token ended")
+    row.tap()
+    expect(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'via '")).firstMatch,
+           "the note says where it came from", in: app, timeout: 15)
+    keep(app, "A note")
+
+    app.tabBars.buttons["Log"].tap()
+    expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "Log's Today shows its words", in: app, timeout: 15)
+
+    app.tabBars.buttons["Settings"].tap()
+    let lock = app.switches["Lock reading"]
+    for _ in 0..<6 where !lock.isHittable { app.swipeUp() }
+    lock.switches.firstMatch.tap()
+    app.terminate()
+
+    // Face ID says no: nothing from elsewhere shows, and Log still takes a note.
+    app = launch(as: reader, more: ["CHANGELOG_LOCK_ANSWER": "no"])
+    XCTAssertFalse(app.descendants(matching: .any).matching(elsewhere).firstMatch.waitForExistence(timeout: 5),
+                   "locked, Log's Today keeps the words back")
+    app.tabBars.buttons["Notes"].tap()
+    expect(app.buttons["Unlock"], "Notes is locked", in: app, timeout: 15)
+    XCTAssertFalse(app.descendants(matching: .any).matching(elsewhere).firstMatch.exists)
+    keep(app, "Locked")
+    app.terminate()
+
+    // Yes: it opens. Off again, so the next test finds it as it was.
+    app = launch(as: reader, more: ["CHANGELOG_LOCK_ANSWER": "yes"])
+    app.tabBars.buttons["Notes"].tap()
+    expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "unlocked, it reads", in: app, timeout: 30)
+    app.tabBars.buttons["Settings"].tap()
+    let open = app.switches["Lock reading"]
+    for _ in 0..<6 where !open.isHittable { app.swipeUp() }
+    open.switches.firstMatch.tap()
+    app.terminate()
+    try await Self.revoke(reader, server: server)
+  }
+
   // MARK: Helpers
 
   /// The app signed in to the dev server: its own account, or another
   /// account's token; with a moment to pick, for the Moments test.
-  private func launch(as other: String? = nil, moment: Bool = false) -> XCUIApplication {
+  private func launch(as other: String? = nil, moment: Bool = false, more: [String: String] = [:]) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchEnvironment["CHANGELOG_DEV_TOKEN"] = other ?? token
     app.launchEnvironment["CHANGELOG_DEV_URL"] = server
     if moment { app.launchEnvironment["CHANGELOG_MOMENT"] = "1" }
+    for (key, value) in more { app.launchEnvironment[key] = value }
     app.launch()
     expect(app.buttons["Commit"], "signed in to the dev server", in: app, timeout: 30)
     return app
@@ -456,6 +515,45 @@ final class ChangelogUITests: XCTestCase {
     ], cookie: cookie, server: server)
     struct Made: Decodable { let token: String }
     return try JSONDecoder().decode(Made.self, from: made).token
+  }
+
+  /// A token on the dev server's own fictional account, with the sandbox
+  /// token's scopes left as they are: it can't read, and Quinn's branches
+  /// count on that.
+  private static func tokenOnThisAccount(_ scopes: [String], server: String) async throws -> String {
+    let email = "ada@example.com"
+    _ = try await web("POST", "/api/auth/start", ["email": email], server: server)
+    let (mail, _) = try await web("GET", "/dev-mail/?to=\(email)", nil, server: server)
+    let page = String(decoding: mail, as: UTF8.self)
+    let code = try XCTUnwrap(page.range(of: "code where you asked: [0-9]+", options: .regularExpression)
+      .flatMap { page[$0].split(separator: " ").last.map(String.init) }, "the dev mailbox has the code")
+    let (_, verified) = try await web("POST", "/api/auth/verify", ["email": email, "code": code], server: server)
+    let set = verified.value(forHTTPHeaderField: "Set-Cookie") ?? ""
+    let cookie = try XCTUnwrap(set.range(of: "__Host-rn=[^;, ]+", options: .regularExpression).map { String(set[$0]) },
+                               "signed in on the web")
+    let (made, _) = try await web("POST", "/api/tokens", ["name": "Changelog", "scopes": scopes, "expiry": "never"],
+                                  cookie: cookie, server: server)
+    struct Made: Decodable { let token: String }
+    return try JSONDecoder().decode(Made.self, from: made).token
+  }
+
+  /// A note from another channel, through the sandbox token.
+  private static func addNote(_ words: String, server: String, token: String) async throws {
+    var request = URLRequest(url: URL(string: "\(server)/v1/notes")!)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
+    request.httpBody = try JSONSerialization.data(withJSONObject: ["text": words])
+    let (_, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201, "the note went in")
+  }
+
+  private static func statusOfMe(server: String, token: String) async throws -> (Int, Data) {
+    var request = URLRequest(url: URL(string: "\(server)/v1/me")!)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+    return ((response as? HTTPURLResponse)?.statusCode ?? 0, data)
   }
 
   /// One call to the dev server's web API, as its own pages make it.

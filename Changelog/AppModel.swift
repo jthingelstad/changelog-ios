@@ -20,6 +20,22 @@ final class AppModel {
   /// The words of today's notes this token wrote, by note id, read back on
   /// each refresh (`TodayWords`). In memory only.
   private var todayWords: [String: String] = [:]
+  /// Today's notes, whole and from anywhere, for a token that may read them
+  /// (Jamie, 2026-11-05), oldest first. Only this token's while reading is
+  /// locked. In memory only: never on disk, in the App Group, a widget, a
+  /// notification or what Siri says.
+  private(set) var todayNotes: [NoteDetail] = []
+  /// `todayNotes` has been read, so an empty list means an empty day.
+  private(set) var todayNotesRead = false
+  /// Moves on each time a change this phone made reaches Release Notes, so
+  /// what a screen has read it reads again.
+  private(set) var changes = 0
+  /// Reading asks for Face ID when the owner comes back to the app. Off until
+  /// turned on, and never in the way of capture: Log, Share and Siri write
+  /// whether it is locked or not.
+  private(set) var lockOn: Bool
+  /// Face ID said yes since the app last left the screen.
+  private var unlocked = false
   /// Each read of Today, so one that finishes after a newer read (or after
   /// signing out) changes nothing.
   private var todayGeneration = 0
@@ -165,6 +181,7 @@ final class AppModel {
     self.promptOn = defaults.bool(forKey: "prompt")
     self.activityNotices = Set((defaults.stringArray(forKey: "activity.notices") ?? []).compactMap(ActivityNoticeKind.init(rawValue:)))
     self.hereByDefault = defaults.bool(forKey: "here")
+    self.lockOn = defaults.bool(forKey: "reading.lock")
     #if DEBUG
     self.server = defaults.string(forKey: "server").flatMap(URL.init(string:)) ?? APIClient.production
     #else
@@ -200,6 +217,7 @@ final class AppModel {
     // to the App Group, for the share extension.
     (tokens as? KeychainTokenStore)?.share()
     token = tokens.read()
+    PreviewFiles.sweep()
     beginAccounts()
     // The draft a run that ended left (iOS ends an app it isn't showing),
     // and shares the extension couldn't send, come in first, so the sweep
@@ -242,19 +260,12 @@ final class AppModel {
   /// may do; it comes back kept as a pasted one is. Nil when signed in, or
   /// when the owner chose Cancel; else what went wrong.
   func signInWithReleaseNotes(through authenticate: (URL) async throws -> URL?) async -> String? {
-    let flow = SignIn(server: server, userAgent: Self.userAgent)
-    let clientID: String
-    do throws(SignInError) { clientID = try await flow.register() } catch { return error.message }
-    let callback: URL?
-    do { callback = try await authenticate(flow.authorizeURL(clientID: clientID)) } catch {
-      return "The sign-in page couldn't open. Try again, or use a token."
-    }
-    guard let callback else { return nil }
     let grant: SignIn.Grant
-    do throws(SignInError) {
-      guard let code = try flow.code(from: callback) else { return nil }
-      grant = try await flow.exchange(code: code, clientID: clientID)
-    } catch { return error.message }
+    switch await askForToken(through: authenticate) {
+    case .cancelled: return nil
+    case .problem(let said): return said
+    case .granted(let answer): grant = answer
+    }
     guard let problem = await keep(grant.accessToken) else { return nil }
     // A token this sign-in made that the app can't keep is ended, not left
     // behind in the owner's list.
@@ -262,6 +273,81 @@ final class AppModel {
     return grant.scope.split(separator: " ").contains("notes:write")
       ? problem : "Changelog needs “Add notes” to send notes. Sign in again with it ticked."
   }
+
+  private enum Asked {
+    case granted(SignIn.Grant)
+    case cancelled
+    case problem(String)
+  }
+
+  /// Release Notes' own page, for a token. The owner chooses what it may do.
+  private func askForToken(through authenticate: (URL) async throws -> URL?) async -> Asked {
+    let flow = SignIn(server: server, userAgent: Self.userAgent)
+    let clientID: String
+    do throws(SignInError) { clientID = try await flow.register() } catch { return .problem(error.message) }
+    let callback: URL?
+    do { callback = try await authenticate(flow.authorizeURL(clientID: clientID)) } catch {
+      return .problem("The sign-in page couldn't open. Try again, or use a token.")
+    }
+    guard let callback else { return .cancelled }
+    do throws(SignInError) {
+      guard let code = try flow.code(from: callback) else { return .cancelled }
+      return .granted(try await flow.exchange(code: code, clientID: clientID))
+    } catch { return .problem(error.message) }
+  }
+
+  /// Trades this phone's token for one that may read, on Release Notes' own
+  /// page, without signing out: the reminder switches, the queue and what's
+  /// on Log all stay (Jamie, 2026-11-05). The old token ends only once the
+  /// new one is proved, kept and in use. Nil when it worked or was cancelled;
+  /// else what to say, with the old token still working unless it says so.
+  func allowReading(through authenticate: (URL) async throws -> URL?) async -> String? {
+    guard let current = token else { return nil }
+    let candidate: String
+    #if DEBUG
+    // The test cycle can't sign in on the page, so it hands the app a token
+    // it made on the dev server, and everything after the page runs as ever.
+    let handed = ProcessInfo.processInfo.environment["CHANGELOG_SWITCH_TOKEN"]
+    #else
+    let handed: String? = nil
+    #endif
+    if let handed {
+      candidate = handed
+    } else {
+      switch await askForToken(through: authenticate) {
+      case .cancelled: return nil
+      case .problem(let said): return said
+      case .granted(let grant): candidate = grant.accessToken
+      }
+    }
+    let server = self.server, agent = Self.userAgent
+    @Sendable func api(_ token: String) -> APIClient { APIClient(baseURL: server, token: token, userAgent: agent) }
+    // Signed out while the page was up: the token it made goes unused.
+    guard token == current else {
+      try? await api(candidate).revokeToken()
+      return nil
+    }
+    let answer = await TokenSwitch.adopt(
+      candidate, replacing: current, account: account, store: tokens,
+      me: { (token) async throws(APIError) -> Me in try await api(token).me() },
+      revoke: { token in try? await api(token).revokeToken() })
+    switch answer {
+    case .failure(let refused):
+      return refused.message
+    case .success(let fresh):
+      // In use before the old one ends, so a send under way sees a token
+      // this phone no longer holds and leaves its note for the new one.
+      token = candidate
+      todayWords = [:]
+      await took(fresh, from: api(candidate))
+      var ended = true
+      do throws(APIError) { try await api(current).revokeToken() } catch { ended = error.signedOut }
+      await refresh()
+      return ended ? nil : Self.oldNotEnded
+    }
+  }
+
+  static let oldNotEnded = "Notes is open, but Release Notes couldn't be reached to end this phone's old token. End it on the web, under Settings, API tokens."
 
   private func keep(_ candidate: String) async -> String? {
     let probe = APIClient(baseURL: server, token: candidate, userAgent: Self.userAgent)
@@ -309,8 +395,13 @@ final class AppModel {
     tags = nil
     today = []
     todayWords = [:]
+    todayNotes = []
+    todayNotesRead = false
+    unlocked = false
+    PreviewFiles.sweep()
     versions = [:]
     todayGeneration += 1
+    changes += 1
     phase = .signedOut
     // The next sign-in asks again before any reminder comes.
     remindersOn = false
@@ -350,26 +441,56 @@ final class AppModel {
       // Unreachable: a refresh later sends what waits, should the
       // connection not come back while the app is open.
       if holds(client) { retryLater(error) }
+      // A day's reads used up by reading doesn't hold up the notes: writes
+      // have limits of their own.
+      if holds(client), error.status == 429 { await send() }
     } catch {}
   }
 
   private func loadToday() async {
-    guard let client, let me, me.token.scopes.contains("activity") else { return }
+    guard let client, let me else { return }
     todayGeneration += 1
     let generation = todayGeneration
-    guard let page = try? await client.activity(limit: 100), generation == todayGeneration else { return }
-    // A note's row has its day's version. Another kind's can pair a note's
-    // day with the version it happened in (a badge earned today for a note
-    // two days back), so only these name a day's version.
-    for item in page.items where item.kind == "note.added" {
-      if let day = item.day, let version = item.version { versions[day] = version }
+    if me.token.scopes.contains("activity") {
+      guard let page = try? await client.activity(limit: 100), generation == todayGeneration else { return }
+      // A note's row has its day's version. Another kind's can pair a note's
+      // day with the version it happened in (a badge earned today for a note
+      // two days back), so only these name a day's version.
+      for item in page.items where item.kind == "note.added" {
+        if let day = item.day, let version = item.version { versions[day] = version }
+      }
+      today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
     }
-    today = page.items.filter { $0.day == me.today || ($0.day == nil && $0.at.hasPrefix(me.today)) }
-    let mine = TodayWords.notes(in: today, by: me.token)
-    let words = await TodayWords.read(mine, keeping: todayWords) { note in
-      try await client.note(date: note.date, id: note.id).text
+    if me.token.readsAll {
+      guard let notes = await readDay(me.today, mine: !readingOpen, using: client), generation == todayGeneration else { return }
+      todayNotes = notes
+      todayNotesRead = true
+    } else {
+      let mine = TodayWords.notes(in: today, by: me.token)
+      let words = await TodayWords.read(mine, keeping: todayWords) { note in
+        try await client.note(date: note.date, id: note.id).text
+      }
+      if generation == todayGeneration { todayWords = words }
     }
-    if generation == todayGeneration { todayWords = words }
+  }
+
+  /// A whole day's notes, oldest first; nil when a read fails, so what was
+  /// read before stays. A day past this many pages is a day of import.
+  private func readDay(_ date: String, mine: Bool, using client: APIClient, pages: Int = 5) async -> [NoteDetail]? {
+    var notes: [NoteDetail] = []
+    var after: String?
+    for _ in 0..<pages {
+      do throws(APIError) {
+        let page = try await client.notes(from: date, to: date, after: after, mine: mine, urls: true)
+        notes += page.items
+        after = page.next
+      } catch {
+        if error.signedOut { handle(error, from: client) }
+        return nil
+      }
+      if after == nil { break }
+    }
+    return notes
   }
 
   // MARK: Reminders and the daily prompt
@@ -801,7 +922,10 @@ final class AppModel {
         PhoneReminders.takeBack([DailyPrompt.id(today)])
       }
     }
-    if report.sent.contains(where: { $0.item.text != nil || $0.result == .deleted }) { await loadToday() }
+    if report.sent.contains(where: { $0.item.text != nil || $0.result == .deleted }) {
+      changes += 1
+      await loadToday()
+    }
     if let stopped = report.stopped { handle(stopped, from: client) }
   }
 
@@ -1175,25 +1299,131 @@ final class AppModel {
     placeFromMoment = false
   }
 
-  // MARK: Notes this token wrote
+  // MARK: Reading
 
-  /// Whether a row is a note this phone's token wrote, the only ones it may
-  /// change.
+  /// This token may read every note, so the Notes tab opens.
+  var readsNotes: Bool { me?.token.readsAll == true }
+  /// Reading is open: the token may, and the lock, if on, is off for now.
+  var readingOpen: Bool { readsNotes && (!lockOn || unlocked) }
+
+  /// Asks Face ID, and reads again what the lock kept back.
+  func unlockReading() async {
+    guard lockOn, !unlocked, await ReadingLock.confirm("Open your notes") else { return }
+    unlocked = true
+    await loadToday()
+  }
+
+  /// The app has left the screen: reading closes until Face ID says yes, and
+  /// what the lock keeps back is no longer held.
+  func lockReading() {
+    guard lockOn else { return }
+    unlocked = false
+    todayGeneration += 1
+    todayNotes = todayNotes.filter { $0.mine == true }
+    PreviewFiles.sweep()
+  }
+
+  /// Turning the lock on or off each asks Face ID first, so someone holding
+  /// an unlocked phone can't simply turn it off.
+  func setLock(_ on: Bool) async {
+    guard on != lockOn, await ReadingLock.confirm(on ? "Lock your notes" : "Stop locking your notes") else { return }
+    lockOn = on
+    // Just proved, so it stays open until the app next leaves the screen.
+    unlocked = on
+    defaults.set(on, forKey: "reading.lock")
+  }
+
+  /// Reads through this phone's token. One that no longer works signs out;
+  /// any other failure is for the screen to say.
+  private func reading<T>(_ read: (APIClient) async throws(APIError) -> T) async throws(APIError) -> T {
+    guard let client else { throw .notSignedIn }
+    do { return try await read(client) } catch {
+      if error.signedOut { handle(error, from: client) }
+      throw error
+    }
+  }
+
+  func days(before: String?) async throws(APIError) -> DayList {
+    try await reading { (client) async throws(APIError) in try await client.days(before: before) }
+  }
+
+  func day(_ date: String) async throws(APIError) -> DayDetail {
+    try await reading { (client) async throws(APIError) in try await client.day(date, urls: true) }
+  }
+
+  func moreNotes(on date: String, after: String) async throws(APIError) -> NoteList {
+    try await reading { (client) async throws(APIError) in
+      try await client.notes(from: date, to: date, after: after, urls: true)
+    }
+  }
+
+  /// Whether a note can be changed from this phone: any note with `notes:all`,
+  /// else only the notes this token wrote.
+  func canChange(_ note: NoteDetail) -> Bool {
+    me?.token.changesAll == true || note.mine == true
+  }
+
+  /// A note's file, through a session that keeps nothing on disk: the address
+  /// it came with, or a fresh one when that has run out (ten minutes).
+  func fileData(_ file: NoteFileEntry, of note: NoteDetail, thumb: Bool) async -> Data? {
+    func fetch(_ address: String?) async -> Data? {
+      guard let address, let url = URL(string: address),
+            let (data, response) = try? await Self.fileSession.data(from: url),
+            let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+      return data
+    }
+    if let data = await fetch(thumb ? file.thumb?.url : file.url) { return data }
+    guard let client else { return nil }
+    let fresh = try? await client.fileAddress(date: note.date, id: note.id, n: file.n, thumb: thumb)
+    return await fetch(fresh?.url)
+  }
+
+  private nonisolated static let fileSession = URLSession(configuration: .ephemeral)
+
+  /// A change to this note waits to send, so what shows may be behind it.
+  func hasChangeWaiting(_ note: NoteDetail) -> Bool {
+    waiting.contains { item in
+      switch item.operation {
+      case .edit(let date, let id, _, _), .delete(let date, let id): date == note.date && id == note.id
+      default: false
+      }
+    }
+  }
+
+  /// This note's delete waits to send, so it is gone as far as the owner goes.
+  func isBeingDeleted(_ note: NoteDetail) -> Bool {
+    waiting.contains { item in
+      if case .delete(let date, let id) = item.operation { date == note.date && id == note.id } else { false }
+    }
+  }
+
+  // MARK: Changing a note
+
+  /// Whether a row is a note this phone's token wrote.
   func isMine(_ item: ActivityItem) -> Bool {
     me.map { TodayWords.isMine(item, token: $0.token) } ?? false
   }
 
-  /// What a row of Today said, when it is a note this token wrote and its
-  /// words have been read back. Only Log shows them.
-  func words(of item: ActivityItem) -> String? {
-    isMine(item) ? item.note.flatMap { todayWords[$0] } : nil
+  /// Whether Today's row can be edited or deleted from here: a note this token
+  /// wrote, or any note while reading is open and the token may change them.
+  func canChange(_ item: ActivityItem) -> Bool {
+    guard item.kind == "note.added", item.note != nil else { return false }
+    return isMine(item) || (readingOpen && me?.token.changesAll == true)
   }
 
-  /// Reads a note this token wrote, to edit it. A token that no longer
-  /// works signs out; any other failure is for the editor to say.
-  func load(date: String, id: String) async throws(APIError) -> NoteDetail {
+  /// What a row of Today said: a note this token wrote, or with reading open
+  /// any note, once its words have been read. Only Log shows them.
+  func words(of item: ActivityItem) -> String? {
+    guard item.kind == "note.added", let id = item.note else { return nil }
+    if readsNotes { return todayNotes.first { $0.id == id }?.plainWords }
+    return isMine(item) ? todayWords[id] : nil
+  }
+
+  /// Reads a note, to show it or edit it. A token that no longer works signs
+  /// out; any other failure is for the screen to say.
+  func load(date: String, id: String, urls: Bool = false) async throws(APIError) -> NoteDetail {
     guard let client else { throw .notSignedIn }
-    do { return try await client.note(date: date, id: id) } catch {
+    do { return try await client.note(date: date, id: id, urls: urls) } catch {
       if error.signedOut { handle(error, from: client) }
       throw error
     }
@@ -1208,6 +1438,10 @@ final class AppModel {
   func delete(_ item: ActivityItem) async {
     guard let day = item.day, let id = item.note else { return }
     _ = await queue(.delete(date: day, id: id))
+  }
+
+  func delete(_ note: NoteDetail) async {
+    _ = await queue(.delete(date: note.date, id: note.id))
   }
 
   // MARK: Tags

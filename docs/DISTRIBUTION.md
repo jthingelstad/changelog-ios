@@ -40,7 +40,9 @@ Apple calls them external testers. What it takes:
   "must not expire". "Sign in with Release Notes" asks for a code by
   email, which a reviewer can't get, so the review details carry a token
   instead, in the demo password: on an account kept for review, with all
-  four boxes ticked, expiring never, named "App Review". The notes say to
+  five boxes ticked, expiring never, named "App Review", with fictional notes
+  on it for reading. Make that a second token and keep the four-box one until
+  the build that reads has passed review. The notes say to
   paste it under "Or use a token" and tap "Sign in with this token".
   Revoking it breaks the next review, so it stays. It is never committed
   here, and never printed: `scripts/asc.swift` puts it in from a file.

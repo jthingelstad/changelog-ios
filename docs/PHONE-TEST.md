@@ -22,14 +22,17 @@ The words in quotes are the iPhone app's.
 
 Nothing: signing in makes the token. For step 18, a second account to
 sign in to (another address of yours). For step 19, have a token made on
-the web, Settings, API tokens, with all four ticked: Add notes, Add files,
-Upcoming and the activity log.
+the web, Settings, API tokens, with all five ticked: Add notes, Add files,
+Read all your notes, Upcoming and the activity log. For steps 20 and 21, a
+token with the same ticks but without Read all your notes, and a note on the
+web, an emailed note, and a note from another channel with a photo, a voice
+memo and a transcript.
 
 ## The list
 
 1. **Sign in.** "Sign in with Release Notes". iOS asks to use
    notes.yourversionnumber.com; Continue. Sign in on the page if Safari
-   isn't already, then "Changelog wants to sign in" with all four ticked:
+   isn't already, then "Changelog wants to sign in" with all five ticked:
    Allow. Log opens on today's version, and Settings shows the token's
    name and what it can do. On the web, Settings, API tokens lists it, and
    Activity says "Signed in Changelog as the API token …".
@@ -124,6 +127,23 @@ Upcoming and the activity log.
     the page: back on the sign-in screen, with nothing to read. Then, under
     "Or use a token", "Paste token" with the token from the web: Log opens.
     Sign out again.
+20. **Allow reading.** Sign in with the four-tick token. It still captures.
+    Turn a reminder switch on, and in Airplane mode leave a note waiting. Back
+    online, tap Notes, then "Allow reading", and on the page Allow with all
+    five: Notes opens, the switch is still on, the note went once, and on the
+    web the old token shows revoked and the new one "Changelog 2". Do it again
+    from a four-tick token while sharing a photo in: it goes once. Do it again
+    and untick "Read all your notes": it says so and nothing changes.
+21. **Reading.** Notes shows today's notes from every channel. Open the emailed
+    note and edit it, then delete a note (the emailed one says its email goes
+    too). A note with a photo, a voice memo and a transcript: the photo opens
+    whole, the memo plays, the transcript reads. A rich note: bold, italic, a
+    list, a quote and a link. Scroll back through Earlier, into a day with
+    weather (its credit shows beside it), and down a day long enough to page.
+22. **The lock.** Settings, "Lock reading", on (Face ID asks). Leave the app and
+    come back: Notes asks, and the app switcher's picture shows no note. Say no:
+    Notes says Locked, and Log's Today shows only what this phone wrote. Log,
+    the share sheet and "Add a note in Changelog" all still work, locked.
 
 Anything wrong, slow or oddly worded becomes an issue here, with a
 screenshot of the dev server's fictional account if it needs one, never of

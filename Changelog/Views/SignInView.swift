@@ -24,7 +24,7 @@ struct SignInView: View {
             VStack(alignment: .leading, spacing: 14) {
               BrandMark(size: 56)
               Text("Changelog").face(.title).foregroundStyle(Color.ink).accessibilityAddTraits(.isHeader)
-              Text("Changelog sends notes, photos, voice memos and where you are into your Release Notes, and keeps your Upcoming dates. It can read back only the notes it sent, never the rest.")
+              Text("Changelog sends notes, photos, voice memos and where you are into your Release Notes, keeps your Upcoming dates, and reads your notes here if you let it.")
                 .face(.lede)
                 .foregroundStyle(Color.ink2)
             }
@@ -51,7 +51,7 @@ struct SignInView: View {
             }
           }
           Section {
-            Text("Make a token in Release Notes under Settings, API tokens, with all four ticked: “Add notes”, “Add files”, “Read and change your Upcoming dates” and “Read the activity log”. Then paste it here.")
+            Text("Make a token in Release Notes under Settings, API tokens, with all five ticked: “Add notes”, “Add files”, “Read all your notes”, “Read and change your Upcoming dates” and “Read the activity log”. Then paste it here.")
               .face(.hint)
               .foregroundStyle(Color.ink2)
             SecureField("rn_…", text: $pasted)

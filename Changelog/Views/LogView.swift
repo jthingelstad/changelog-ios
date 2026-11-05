@@ -137,7 +137,7 @@ struct LogView: View {
           ActivityRow(item: item, words: model.words(of: item))
             .paperRow(top: 8, bottom: 8)
             .swipeActions {
-              if model.isMine(item) {
+              if model.canChange(item) {
                 Button("Delete", role: .destructive) { deleting = item }
                 Button("Edit") { editing = item }
               }
@@ -166,8 +166,9 @@ struct LogView: View {
       .confirmationDialog("Delete this note?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                           titleVisibility: .visible, presenting: deleting) { item in
         Button("Delete", role: .destructive) { Task { await model.delete(item) } }
-      } message: { _ in
-        Text("It goes from Release Notes, with its photos and files. This can't be undone.")
+      } message: { item in
+        Text(item.via == "email" ? "It goes from Release Notes, with its photos and files and the email it came in. This can't be undone."
+             : "It goes from Release Notes, with its photos and files. This can't be undone.")
       }
       // A held note's Delete asks first too.
       .confirmationDialog(discarding?.isNote == false ? "Delete this change?" : "Delete this note?",

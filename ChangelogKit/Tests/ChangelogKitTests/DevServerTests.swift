@@ -224,6 +224,30 @@ struct DevServerTests {
     return out as Data
   }
 
+  /// Needs a token that may read every note. The dev server's own can't, so
+  /// this checks nothing with that one: make one on its Settings page.
+  @Test func aReadingTokenReadsTheArchive() async throws {
+    let client = DevServer.client()
+    let me = try await client.me()
+    guard me.token.readsAll else { return }
+    let words = "Read from anywhere \(UUID().uuidString.prefix(6))"
+    let made = try await client.createNote(NoteRequest(text: words), idempotencyKey: UUID().uuidString.lowercased()).note
+    let today = try await client.notes(from: made.date, to: made.date, urls: true)
+    let found = try #require(today.items.first { $0.id == made.id })
+    #expect(found.text == words)
+    #expect(found.version != nil)
+    #expect(found.parts != nil)
+    let read = try await client.note(date: made.date, id: made.id, urls: true)
+    #expect(!read.sourceName.isEmpty)
+    let list = try await client.days(limit: 3)
+    #expect(list.today == me.today)
+    #expect(!list.days.isEmpty)
+    let day = try await client.day(made.date, urls: true)
+    #expect(day.notes.contains { $0.id == made.id } || day.next != nil)
+    if let after = day.next { _ = try await client.notes(from: made.date, to: made.date, after: after, urls: true) }
+    try await client.deleteNote(date: made.date, id: made.id, idempotencyKey: UUID().uuidString.lowercased())
+  }
+
   @Test func errorsDecode() async throws {
     let bad = APIClient(baseURL: DevServer.url, token: "rn_" + String(repeating: "A", count: 43),
                         userAgent: "Changelog/0.1 (dev tests)", session: URLSession(configuration: .ephemeral))
