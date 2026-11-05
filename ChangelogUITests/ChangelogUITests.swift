@@ -531,7 +531,9 @@ final class ChangelogUITests: XCTestCase {
     let set = verified.value(forHTTPHeaderField: "Set-Cookie") ?? ""
     let cookie = try XCTUnwrap(set.range(of: "__Host-rn=[^;, ]+", options: .regularExpression).map { String(set[$0]) },
                                "signed in on the web")
-    let (made, _) = try await web("POST", "/api/tokens", ["name": "Changelog", "scopes": scopes, "expiry": "never"],
+    // A name a live token already has is refused.
+    let name = "Changelog \(UUID().uuidString.prefix(6))"
+    let (made, _) = try await web("POST", "/api/tokens", ["name": name, "scopes": scopes, "expiry": "never"],
                                   cookie: cookie, server: server)
     struct Made: Decodable { let token: String }
     return try JSONDecoder().decode(Made.self, from: made).token
