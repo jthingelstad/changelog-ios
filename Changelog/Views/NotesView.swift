@@ -33,6 +33,19 @@ struct NotesView: View {
       .navigationDestination(for: NoteDetail.self) { NotePage(note: $0) }
       .navigationDestination(for: DayRoute.self) { DayPage(date: $0.date) }
     }
+    .safeAreaInset(edge: .top) {
+      if let notice = model.readingNotice {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+          Text(notice).face(.hint).foregroundStyle(Color.tangerineInk)
+          Spacer(minLength: 0)
+          Button("OK") { model.readingNotice = nil }.buttonStyle(QuietButtonStyle())
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(Color.paper)
+        .accessibilityIdentifier("reading-notice")
+      }
+    }
     // Locked, or signed out: nothing stays open behind the lock, and what the
     // pages held goes with them.
     .onChange(of: model.readingOpen) { _, open in

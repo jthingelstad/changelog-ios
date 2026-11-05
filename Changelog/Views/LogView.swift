@@ -162,6 +162,13 @@ struct LogView: View {
       }
       .overlay(alignment: .bottom) { Toast() }
       .sheet(item: $editing) { item in EditNoteView(item: item) }
+      // Locked: an editor or a question open on a note from elsewhere closes
+      // with the rest of reading. This token's own notes stay, as they always have.
+      .onChange(of: model.readingOpen) { _, open in
+        guard !open else { return }
+        if let item = editing, !model.isMine(item) { editing = nil }
+        if let item = deleting, !model.isMine(item) { deleting = nil }
+      }
       // Jamie, 2026-10-30: a swipe asks before a note goes for good.
       .confirmationDialog("Delete this note?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                           titleVisibility: .visible, presenting: deleting) { item in

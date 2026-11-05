@@ -34,6 +34,9 @@ final class AppModel {
   /// turned on, and never in the way of capture: Log, Share and Siri write
   /// whether it is locked or not.
   private(set) var lockOn: Bool
+  /// The old token outlived the switch. Said on Notes itself, because the
+  /// button that asked has gone by the time this is known.
+  var readingNotice: String?
   /// Face ID said yes since the app last left the screen.
   private var unlocked = false
   /// Each read of Today, so one that finishes after a newer read (or after
@@ -299,8 +302,9 @@ final class AppModel {
   /// Trades this phone's token for one that may read, on Release Notes' own
   /// page, without signing out: the reminder switches, the queue and what's
   /// on Log all stay (Jamie, 2026-11-05). The old token ends only once the
-  /// new one is proved, kept and in use. Nil when it worked or was cancelled;
-  /// else what to say, with the old token still working unless it says so.
+  /// new one is proved, kept and in use. Nil when it worked or was cancelled,
+  /// with `readingNotice` set if the old one couldn't be ended; else what to
+  /// say, with nothing changed.
   func allowReading(through authenticate: (URL) async throws -> URL?) async -> String? {
     guard let current = token else { return nil }
     let candidate: String
@@ -342,8 +346,9 @@ final class AppModel {
       await took(fresh, from: api(candidate))
       var ended = true
       do throws(APIError) { try await api(current).revokeToken() } catch { ended = error.signedOut }
+      if !ended { readingNotice = Self.oldNotEnded }
       await refresh()
-      return ended ? nil : Self.oldNotEnded
+      return nil
     }
   }
 
@@ -397,6 +402,7 @@ final class AppModel {
     todayWords = [:]
     todayNotes = []
     todayNotesRead = false
+    readingNotice = nil
     unlocked = false
     PreviewFiles.sweep()
     versions = [:]

@@ -73,6 +73,14 @@ struct NotePage: View {
       Text(note.hasEmail ? "It goes from Release Notes, with its photos and files and the email it came in. This can't be undone."
            : "It goes from Release Notes, with its photos and files. This can't be undone.")
     }
+    // The stack closes when reading locks; these go first, so nothing shows
+    // over it on the way.
+    .onChange(of: model.readingOpen) { _, open in
+      if !open {
+        editing = false
+        confirmDelete = false
+      }
+    }
     // Read fresh on opening, and again once a change has gone: a list's copy
     // may be behind, and an edit needs the newest revision.
     .task(id: model.changes) { await read() }
@@ -270,7 +278,7 @@ private struct NoteFileView: View {
   let file: NoteFileEntry
   let note: NoteDetail
   @State private var previewing: URL?
-  @State private var opening = false
+  @State private var download: Task<Void, Never>?
   @State private var failed = false
 
   var body: some View {
@@ -283,8 +291,8 @@ private struct NoteFileView: View {
         }
       }
       .buttonStyle(.plain)
-      .disabled(opening)
-      .overlay { if opening { ProgressView() } }
+      .disabled(download != nil)
+      .overlay { if download != nil { ProgressView() } }
       if failed {
         Text("This file couldn't be fetched. Try again in a moment.").face(.meta).foregroundStyle(Color.tangerineInk)
       }
@@ -301,6 +309,11 @@ private struct NoteFileView: View {
     .onChange(of: previewing) { before, now in
       if now == nil, let before { PreviewFiles.remove(before) }
     }
+    // Only the fetch stops here. Quick Look open over this view keeps its file.
+    .onDisappear {
+      download?.cancel()
+      download = nil
+    }
   }
 
   private var title: String {
@@ -313,13 +326,15 @@ private struct NoteFileView: View {
   }
 
   private func open() {
-    opening = true
     failed = false
-    Task {
+    download = Task {
       let data = await model.fileData(file, of: note, thumb: false)
+      // The page closed, or the lock or a sign-out swept while it came: nothing
+      // goes on disk. No wait between this and the write, so no sweep slips in.
+      guard !Task.isCancelled, model.readingOpen else { return }
       previewing = data.flatMap { PreviewFiles.keep($0, name: file.previewName) }
       failed = previewing == nil
-      opening = false
+      download = nil
     }
   }
 }
