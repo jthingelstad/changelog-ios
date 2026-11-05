@@ -395,10 +395,7 @@ final class ChangelogUITests: XCTestCase {
     app.tabBars.buttons["Log"].tap()
     expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "Log's Today shows its words", in: app, timeout: 15)
 
-    app.tabBars.buttons["Settings"].tap()
-    let lock = app.switches["Lock reading"]
-    for _ in 0..<6 where !lock.isHittable { app.swipeUp() }
-    lock.switches.firstMatch.tap()
+    turnLock(in: app, on: true)
     app.terminate()
 
     // Face ID says no: nothing from elsewhere shows, and Log still takes a note.
@@ -417,12 +414,24 @@ final class ChangelogUITests: XCTestCase {
     hideKeyboard(app)
     app.tabBars.buttons["Notes"].tap()
     expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "unlocked, it reads", in: app, timeout: 30)
-    app.tabBars.buttons["Settings"].tap()
-    let open = app.switches["Lock reading"]
-    for _ in 0..<6 where !open.isHittable { app.swipeUp() }
-    open.switches.firstMatch.tap()
+    turnLock(in: app, on: false)
     app.terminate()
     try await Self.revoke(reader, server: server)
+  }
+
+  /// Settings' lock switch, on or off, and it says so.
+  @MainActor private func turnLock(in app: XCUIApplication, on: Bool) {
+    hideKeyboard(app)
+    app.tabBars.buttons["Settings"].tap()
+    let lock = app.switches["Lock reading"]
+    // Slowly: a quick swipe can carry the row past without stopping on it.
+    for _ in 0..<12 where !(lock.exists && lock.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    keep(app, on ? "The lock, off" : "The lock, on")
+    XCTAssertTrue(lock.isHittable, "Settings offers the lock")
+    // The row is the element; its switch is at the right-hand end.
+    lock.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", on ? "1" : "0"), object: lock)
+    XCTAssertEqual(XCTWaiter().wait(for: [said], timeout: 10), .completed, "the lock turned")
   }
 
   // MARK: Helpers

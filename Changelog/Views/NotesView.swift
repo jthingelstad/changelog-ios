@@ -181,8 +181,8 @@ private struct NotesList: View {
   var body: some View {
     List {
       Group {
-        BrandBar()
-        Text("Notes").face(.title).foregroundStyle(Color.ink).accessibilityAddTraits(.isHeader).padding(.top, 18)
+        BrandBar().paperRow(top: 14, bottom: 0)
+        Text("Notes").face(.title).foregroundStyle(Color.ink).accessibilityAddTraits(.isHeader).paperRow(top: 18, bottom: 0)
         Group {
           if let version = model.version {
             Text("Today in \(versionText(version))")
