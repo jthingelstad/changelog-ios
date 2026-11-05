@@ -375,6 +375,9 @@ final class ChangelogUITests: XCTestCase {
     let words = note("From another channel")
     try await Self.addNote(words, server: server, token: token)
     let elsewhere = NSPredicate(format: "label CONTAINS %@", words)
+    let mark = String(UUID().uuidString.prefix(6).lowercased())
+    try await Self.addNote("Rich \(mark) **bold** and *leaning*\n\n- first\n- second\n\n> quoted", markup: "rich",
+                           server: server, token: token)
 
     var app = launch(as: old, more: ["CHANGELOG_SWITCH_TOKEN": reader, "CHANGELOG_LOCK_ANSWER": "yes"])
     hideKeyboard(app)
@@ -391,6 +394,34 @@ final class ChangelogUITests: XCTestCase {
     expect(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'via '")).firstMatch,
            "the note says where it came from", in: app, timeout: 15)
     keep(app, "A note")
+    app.navigationBars.buttons.firstMatch.tap()
+
+    // A rich note: its marks are set, not shown.
+    let rich = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Rich \(mark)")).firstMatch
+    expect(rich, "the rich note is on the list", in: app, timeout: 15)
+    keep(app, "A rich note in the list")
+    XCTAssertFalse(rich.label.contains("**"), "its marks don't show")
+    rich.tap()
+    expect(app.staticTexts["second"], "its list is a list", in: app, timeout: 15)
+    keep(app, "A rich note")
+    app.navigationBars.buttons.firstMatch.tap()
+
+    // A day before today, with files on one of its notes.
+    let list = app.collectionViews.firstMatch
+    let day = list.buttons.matching(NSPredicate(format: "label CONTAINS 'files'")).firstMatch
+    for _ in 0..<6 where !(day.exists && day.isHittable) { list.swipeUp(velocity: .slow) }
+    expect(day, "an earlier day with files", in: app, timeout: 15)
+    keep(app, "Earlier")
+    day.tap()
+    let filed = app.collectionViews.firstMatch.buttons.firstMatch
+    expect(filed, "the day opens with its note", in: app, timeout: 15)
+    keep(app, "A past day")
+    filed.tap()
+    expect(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Photo' OR label CONTAINS 'Voice' OR label CONTAINS '.'")).firstMatch,
+           "the note shows its files", in: app, timeout: 15)
+    keep(app, "A note with files")
+    app.navigationBars.buttons.firstMatch.tap()
+    app.navigationBars.buttons.firstMatch.tap()
 
     app.tabBars.buttons["Log"].tap()
     expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "Log's Today shows its words", in: app, timeout: 15)
@@ -552,13 +583,15 @@ final class ChangelogUITests: XCTestCase {
   }
 
   /// A note from another channel, through the sandbox token.
-  private static func addNote(_ words: String, server: String, token: String) async throws {
+  private static func addNote(_ words: String, markup: String? = nil, server: String, token: String) async throws {
     var request = URLRequest(url: URL(string: "\(server)/v1/notes")!)
     request.httpMethod = "POST"
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
-    request.httpBody = try JSONSerialization.data(withJSONObject: ["text": words])
+    var body = ["text": words]
+    if let markup { body["markup"] = markup }
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
     let (_, response) = try await URLSession(configuration: .ephemeral).data(for: request)
     XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201, "the note went in")
   }
