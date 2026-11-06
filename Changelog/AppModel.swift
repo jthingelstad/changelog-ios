@@ -1528,6 +1528,17 @@ final class AppModel {
     }
   }
 
+  /// Check in now, from the control: there is no button beside it to say what
+  /// went wrong, so the toast does.
+  func checkInFromOutside() async {
+    if let problem = await checkInNow() { toast = problem }
+  }
+
+  /// A page of stays, newest first, for the map.
+  func checkInPage(before: String?) async throws(APIError) -> CheckInList {
+    try await reading { (client) async throws(APIError) in try await client.checkIns(before: before) }
+  }
+
   /// A stay by a row's day and any of its ids. The row has no spot, and `/v1`
   /// reads stays by day; the day before too, for a row about a stop that has
   /// since merged with one that began before midnight. Nil once it has gone.

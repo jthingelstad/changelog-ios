@@ -33,9 +33,10 @@ struct ChangelogApp: App {
           if phase != .active { model.keepDraft() }
           if phase == .background { model.lockReading() }
         }
-        // A widget's link: Log, ready to write.
+        // A widget's link: Log, ready to write, or a check-in.
         .onOpenURL { url in
           if url == AppRoute.newNoteURL { AppRoute.shared.newNote() }
+          if url == AppRoute.checkInURL { AppRoute.shared.checkIn() }
         }
     }
     .backgroundTask(.appRefresh(PhoneReminders.refreshTask)) { await model.backgroundRefresh() }
@@ -55,6 +56,10 @@ struct RootView: View {
         .background(Color.paper)
     case .signedOut:
       SignInView()
+        // Nothing to check in to: it mustn't happen later, on signing in.
+        .onChange(of: AppRoute.shared.checkInAsked, initial: true) { _, asked in
+          if asked { AppRoute.shared.checkInAsked = false }
+        }
     case .signedIn:
       TabView(selection: $tab) {
         Tab("Log", systemImage: "square.and.pencil", value: "log") { LogView() }
@@ -70,6 +75,13 @@ struct RootView: View {
         guard let asked else { return }
         tab = asked
         AppRoute.shared.tab = nil
+      }
+      // The Check In control, or its link. The app is on the screen by now, so
+      // the fix can be taken.
+      .onChange(of: AppRoute.shared.checkInAsked, initial: true) { _, asked in
+        guard asked else { return }
+        AppRoute.shared.checkInAsked = false
+        Task { await model.checkInFromOutside() }
       }
       // With the lock on, the app switcher's picture shows no note.
       .overlay {

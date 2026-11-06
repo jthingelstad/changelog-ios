@@ -168,4 +168,48 @@ import Testing
     """)
     #expect(item.source == nil && item.channel != nil)
   }
+
+  // MARK: The map
+
+  static func stay(_ id: String, _ label: String, lat: Double, lon: Double = -93.26, place: String? = nil) -> CheckIn {
+    CheckIn(id: id, at: "2026-11-06T12:00:00Z", day: "2026-11-06", lat: lat, lon: lon, source: "visit", revision: 1,
+            label: label, namedBy: place == nil ? "own" : "place", place: place)
+  }
+
+  @Test func stopsAtOneRememberedPlaceAreOnePin() {
+    // Far enough apart to need the place: a name can hold a second spot.
+    let pins = CheckInMap.pins([Self.stay("c3", "Workshop", lat: 44.97, place: "p-1"),
+                                Self.stay("c2", "Bakery", lat: 44.90),
+                                Self.stay("c1", "Workshop", lat: 44.98, place: "p-1")])
+    #expect(pins.map(\.label) == ["Workshop", "Bakery"])
+    #expect(pins[0].stays.map(\.id) == ["c3", "c1"], "newest first")
+    #expect(pins[0].id == "c3" && pins[0].lat == 44.97, "the newest stay's spot")
+  }
+
+  @Test func oneNameWithin100mIsOnePin() {
+    let pins = CheckInMap.pins([Self.stay("c2", "Library", lat: 44.97), Self.stay("c1", "Library", lat: 44.9705)])
+    #expect(pins.count == 1 && pins[0].stays.count == 2)
+  }
+
+  @Test func oneNameFarApartIsTwoPins() {
+    #expect(CheckInMap.pins([Self.stay("c2", "Library", lat: 44.97), Self.stay("c1", "Library", lat: 44.98)]).count == 2)
+  }
+
+  @Test func twoShopsNextDoorKeepTheirOwnPins() {
+    #expect(CheckInMap.pins([Self.stay("c2", "Bakery", lat: 44.97), Self.stay("c1", "Grocer", lat: 44.9701)]).count == 2)
+  }
+
+  @Test func aRememberedPlaceAndAnOwnNameDoNotShareAPin() {
+    let pins = CheckInMap.pins([Self.stay("c2", "Workshop", lat: 44.97, place: "p-1"), Self.stay("c1", "Workshop", lat: 44.9701)])
+    #expect(pins.count == 2)
+  }
+
+  @Test func noStaysNoPins() {
+    #expect(CheckInMap.pins([]).isEmpty)
+  }
+
+  @Test func metresMatchTheServersWorkingOut() {
+    // 0.001 of a degree of latitude, about 111 m.
+    #expect(abs(CheckInMap.metres(44.97, -93.26, 44.971, -93.26) - 111.2) < 0.5)
+  }
 }

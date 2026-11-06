@@ -66,8 +66,14 @@ struct ActivityView: View {
           .accessibilityElement(children: .contain)
           .accessibilityLabel("Show")
           .padding(.top, 8)
-          CheckInNowButton()
-            .padding(.top, 4)
+          HStack(alignment: .top, spacing: 20) {
+            CheckInNowButton()
+            if model.hasActivity {
+              Button("Map of check-ins") { path.append(CheckInMapRoute()) }
+                .buttonStyle(QuietButtonStyle())
+            }
+          }
+          .padding(.top, 4)
         }
         .paperRow()
 
@@ -117,6 +123,7 @@ struct ActivityView: View {
       .onChange(of: model.checkInChanges) { Task { await load() } }
       .overlay(alignment: .bottom) { Toast() }
       .navigationDestination(for: ActivityStop.self) { CheckInPage(day: $0.day, id: $0.id) }
+      .navigationDestination(for: CheckInMapRoute.self) { _ in CheckInMapView() }
       .navigationDestination(for: ActivityNote.self) { ActivityNotePage(route: $0) }
       .navigationDestination(for: DayRoute.self) { DayPage(date: $0.date) }
       // A day's own rows open their notes.
@@ -161,7 +168,7 @@ struct ActivityView: View {
   }
 }
 
-private struct ActivityStop: Hashable {
+struct ActivityStop: Hashable {
   let day: String
   let id: String
 }

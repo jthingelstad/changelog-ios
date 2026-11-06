@@ -62,9 +62,10 @@ there first, never work around it here.
   menus, swipe actions and the Lock Screen stay as iOS draws them. A
   colour or a size changes on the web first, then here.
 - `Shared/` is built into both the app and the widget extension:
-  `AppRoute` (the tab or the new note the app opens to) and `NewNoteIntent`
-  ("New Note", which opens Log ready to write; a control can only name an
-  intent both targets have).
+  `AppRoute` (the tab, the new note or the check-in the app opens to),
+  `NewNoteIntent` ("New Note", which opens Log ready to write) and
+  `CheckInIntent` ("Check In", which opens Activity and checks in). A control
+  can only name an intent both targets have.
 - `ShareExtension/` is the share sheet's Changelog. It keeps each share in
   a queue of its own in the App Group's `shares/` folder, sends it if it
   can within 25 seconds, and leaves the rest for the app, which adopts it
@@ -81,8 +82,8 @@ there first, never work around it here.
   server: a release build, and the share extension and Siri in one, always
   use Release Notes itself (`APIClient.production`).
 - `Widgets/` is the widget extension: Today (small and medium on the Home
-  Screen, three on the Lock Screen) and the New Note control (Control
-  Center, the Lock Screen, the Action Button). A widget never calls the
+  Screen, three on the Lock Screen) and the New Note and Check In controls
+  (Control Center, the Lock Screen, the Action Button). A widget never calls the
   API: it reads the `WidgetSnapshot` the app writes to the group's
   defaults each time it reads `/v1/me`, and has one entry a day from the
   server's `days`. A tap opens `com.yourversionnumber.changelog:new-note`.
@@ -150,8 +151,8 @@ there first, never work around it here.
 - A note's files are posted and its place named, and both saved, before
   the note is sent (the Outbox's `prepare`), so a resend is the same
   request. The token never goes to the storage form.
-- Location is When In Use, one fix when the owner asks (Here, Check in now, or
-  "Add where I am" on). Each Here is a lookup Release Notes pays for, capped at
+- Location is When In Use, one fix when the owner asks (Here, Check in now, the
+  Check In control, or "Add where I am" on). Each Here is a lookup Release Notes pays for, capped at
   100 a day: ask once a draft, never as words change. A check-in's page asks
   only when Name opens or Write about this is tapped.
 - Check-ins (`CheckInRecorder`, `docs/CHECK-INS.md` in the Release Notes repo)
@@ -161,10 +162,9 @@ there first, never work around it here.
   start the app to deliver one, with no window, before the phone's first
   unlock, when defaults read empty: never stop monitoring because of that, hold
   in memory what can't be queued yet, and only drop it once off really means off.
-  Rows and a check-in's page open with reading locked (Jamie's call); capture
-  is never locked. The privacy page must say this before any upload, and it has
-  no written reason for Beta App Review yet: that comes before any `--external`
-  upload.
+  Rows, a check-in's page and the map of them open with reading locked (Jamie's
+  call); capture is never locked. The privacy page says this, and the written
+  reason for Always that Beta App Review reads is in `docs/DISTRIBUTION.md`.
 - The visits test's file (`VisitsTest`) stays read-only, for the owner to read,
   share and delete, until Jamie decides what happens to it. Nothing writes to
   it and nothing in it goes to Release Notes. It goes when signing out, as the
@@ -182,8 +182,9 @@ there first, never work around it here.
   written by the Outbox, once, under a new key.
 - Changelog is "the fast way in, with your notes along; account and settings
   stay on the web" (Jamie, 2026-11-05). It reads days, notes and their files;
-  search, tags, On this day and releases come next, a map only on Jamie's word,
-  badges and the mail log stay on the web. A new sign-in asks for `notes:all`
+  search, tags, On this day and releases come next, the one map is of check-ins
+  (Jamie's word, 2026-11-06, phase 4 of `docs/CHECK-INS.md` in Release Notes), a
+  map of notes only on Jamie's word, badges and the mail log stay on the web. A new sign-in asks for `notes:all`
   (Jamie, 2026-10-30), which anyone may untick on the consent page; a token
   from before it, or one with it unticked, still captures, and reads back only
   the notes it wrote, by id, for Log's Today (`TodayWords`). The Notes tab's

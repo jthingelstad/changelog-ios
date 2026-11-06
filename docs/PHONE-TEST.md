@@ -160,6 +160,15 @@ memo and a transcript.
     places stay. Sign out: the switch goes off, check-ins stay on the web, and
     "Visits from the test" has gone.
 
+24. **The Check In control and the map.** Add "Check In" to Control Center, the
+    Lock Screen and the Action Button. Each press opens Activity and says
+    "Checked in at …", with the app closed, in the background and on another tab.
+    With location off for Changelog it says so instead. Signed out, it opens the
+    sign-in page and nothing checks in on signing in. Activity, "Map of check-ins":
+    a pin for each place, in the right place, and one place's stops under one pin.
+    Tap a pin, open a stop, Write about this, and Log opens with the sheet gone.
+    Delete a stop from there and its pin goes.
+
 Anything wrong, slow or oddly worded becomes an issue here, with a
 screenshot of the dev server's fictional account if it needs one, never of
 a real account.

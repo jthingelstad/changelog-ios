@@ -282,6 +282,60 @@ final class ChangelogUITests: XCTestCase {
     for (id, revision) in ids { try await Self.removeDate(id, revision: revision, server: server, token: token) }
   }
 
+  /// The map: a place's stops are one pin that opens them, then one stop's page;
+  /// and the Check In control's link, which opens Activity and says so. A control
+  /// itself can't be pressed from a test (`docs/PHONE-TEST.md`).
+  @MainActor func testCheckInMapAndControl() async throws {
+    let scopes = ["notes:write", "media:write", "upcoming", "activity", "notes:all"]
+    let owner = try await Self.tokenOnThisAccount(scopes, server: server)
+    try await Self.deleteCheckIns(server: server, token: owner)
+    try await Self.forgetPlaces(server: server, token: owner)
+    try await Self.send("POST", "/v1/check-ins/places", ["name": "Workshop", "lat": 44.9778, "lon": -93.2650],
+                        server: server, token: owner)
+    for (arrived, left, lat, lon) in [("2026-11-02T15:00:00Z", "2026-11-02T16:00:00Z", 44.9778, -93.2650),
+                                      ("2026-11-03T15:00:00Z", "2026-11-03T16:30:00Z", 44.9779, -93.2651),
+                                      ("2026-11-04T15:00:00Z", "2026-11-04T15:40:00Z", 44.9100, -93.2000)] {
+      try await Self.send("POST", "/v1/check-ins",
+                          ["arrived": arrived, "left": left, "lat": lat, "lon": lon, "source": "visit"],
+                          server: server, token: owner)
+    }
+    let app = launch(as: owner)
+    hideKeyboard(app)
+
+    app.tabBars.buttons["Activity"].tap()
+    let open = app.buttons["Map of check-ins"]
+    expect(open, "Activity opens the map", in: app, timeout: 15)
+    open.tap()
+    let pin = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Workshop'")).firstMatch
+    expect(pin, "a place's stops are a pin", in: app, timeout: 20)
+    keep(app, "The map of check-ins")
+    pin.tap()
+    let hour = app.buttons.matching(NSPredicate(format: "label CONTAINS '60 min'")).firstMatch
+    expect(hour, "the pin lists its older stop", in: app, timeout: 15)
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '90 min'")).firstMatch.exists,
+                  "and its newer one")
+    keep(app, "A place's stops")
+    hour.tap()
+    expect(app.buttons["Write about this"], "a stop opens its page", in: app, timeout: 15)
+    keep(app, "A stop from the map")
+    app.navigationBars["Check-in"].buttons.firstMatch.tap()
+    let close = app.buttons["Close"]
+    expect(close, "back to the place's stops", in: app)
+    close.tap()
+    XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the sheet closes")
+
+    // Where the control goes: Activity, a fix, and it says so.
+    app.tabBars.buttons["Settings"].tap()
+    app.open(URL(string: "com.yourversionnumber.changelog:check-in")!)
+    let said = app.staticTexts["toast"]
+    expect(said, "a check-in from outside says so", in: app, timeout: 30)
+    XCTAssertTrue(said.label.hasPrefix("Checked in at"), said.label)
+    XCTAssertTrue(app.tabBars.buttons["Activity"].isSelected, "it opens Activity")
+    keep(app, "Check in from the control")
+    try await Self.deleteCheckIns(server: server, token: owner)
+    try await Self.forgetPlaces(server: server, token: owner)
+  }
+
   /// Check-ins from the switch on: a visit iOS reports, one row and one stay;
   /// its page; a name for one stop, then one remembered; Write about this;
   /// Check in now; and everything deleted. A simulator never reports a visit,
@@ -839,6 +893,20 @@ final class ChangelogUITests: XCTestCase {
   }
 
   /// A note from another channel, through the sandbox token.
+  /// One write to `/v1`, which has to land.
+  @discardableResult
+  private static func send(_ method: String, _ path: String, _ body: [String: Any], server: String, token: String) async throws -> Data {
+    var request = URLRequest(url: URL(string: server + path)!)
+    request.httpMethod = method
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+    XCTAssertTrue((200..<300).contains((response as? HTTPURLResponse)?.statusCode ?? 0), String(decoding: data, as: UTF8.self))
+    return data
+  }
+
   private static func addNote(_ words: String, markup: String? = nil, server: String, token: String) async throws {
     var request = URLRequest(url: URL(string: "\(server)/v1/notes")!)
     request.httpMethod = "POST"
