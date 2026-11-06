@@ -7,6 +7,7 @@ struct ChangelogWidgets: WidgetBundle {
   var body: some Widget {
     TodayWidget()
     NewNoteControl()
+    CheckInControl()
   }
 }
 
@@ -239,5 +240,19 @@ struct NewNoteControl: ControlWidget {
     }
     .displayName("New Note")
     .description("Opens Changelog ready to write a note.")
+  }
+}
+
+/// Control Center, the Lock Screen and the Action Button: open Changelog and
+/// check in where you are.
+struct CheckInControl: ControlWidget {
+  var body: some ControlWidgetConfiguration {
+    StaticControlConfiguration(kind: "com.yourversionnumber.changelog.check-in") {
+      ControlWidgetButton(action: CheckInIntent()) {
+        Label("Check In", systemImage: "mappin.and.ellipse")
+      }
+    }
+    .displayName("Check In")
+    .description("Opens Changelog and checks in where you are.")
   }
 }

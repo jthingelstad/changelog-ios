@@ -57,6 +57,29 @@ Apple calls them external testers. What it takes:
   for a review. Apple takes six builds a day for review, one of each
   version at a time. A build stays installable for 90 days.
 
+### The reason for Always
+
+Check-ins are the one thing that asks for Always. This goes in the review
+details' notes, and each build that carries check-ins goes out with it:
+
+> Changelog asks for Always location only if the person turns on "Notice where I
+> stop" under Check-ins in Settings. It is off by default, and the question comes
+> at that moment, never before. Nothing else in the app needs it: a note's place
+> and "Check in now" ask for While Using, one fix at a time, when tapped.
+>
+> It uses iOS's Visits service (startMonitoringVisits), not continuous tracking.
+> iOS tells the app when the person has arrived at a place or left it, and each
+> stop goes to their own Activity in Release Notes, where they can name it, write
+> a note about it, see it on a map, and delete it or all of them. It has to be
+> Always because iOS delivers a visit with the app closed, which is the point: the
+> person doesn't have to remember to open the app at each stop. With less than
+> Always, Settings says what that means and links to the Settings app.
+>
+> To try it: sign in, then Settings, Check-ins, "Notice where I stop". A simulator
+> or a short review won't see a visit, since iOS decides when to report one, so
+> "Check in now" on Log or Activity shows what a stop looks like: its row in
+> Activity, its page, and "Map of check-ins" in Activity.
+
 ### The steps, once Jamie says go
 
 `scripts/asc.swift METHOD PATH [body.json] [--token-file <file>]` makes one
