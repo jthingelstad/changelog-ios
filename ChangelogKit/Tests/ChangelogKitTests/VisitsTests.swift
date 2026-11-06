@@ -88,6 +88,9 @@ import Testing
     try handle.write(contentsOf: Data("{\"id\":\"cut".utf8))
     try handle.close()
     #expect(log.read().map(\.id) == [event.id])
+    let next = Self.event(arrived: 0, left: 9, heard: 10)
+    try log.append(next)
+    #expect(log.read().map(\.id) == [event.id, next.id], "the next visit isn't lost with it")
   }
 
   @Test func theLogStaysOutOfBackups() throws {

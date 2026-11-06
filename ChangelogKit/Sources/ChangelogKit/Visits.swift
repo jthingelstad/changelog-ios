@@ -139,7 +139,19 @@ public struct VisitLog: Sendable {
     let handle = try FileHandle(forWritingTo: url)
     defer { try? handle.close() }
     try handle.seekToEnd()
+    // An app ended mid-write leaves a line cut short: this one starts afresh,
+    // so it isn't lost with it.
+    if try endsMidLine() { line.insert(0x0A, at: 0) }
     try handle.write(contentsOf: line)
+  }
+
+  private func endsMidLine() throws -> Bool {
+    let reader = try FileHandle(forReadingFrom: url)
+    defer { try? reader.close() }
+    let end = try reader.seekToEnd()
+    guard end > 0 else { return false }
+    try reader.seek(toOffset: end - 1)
+    return try reader.read(upToCount: 1) != Data([0x0A])
   }
 
   private func makeEmpty(_ files: FileManager) throws {
