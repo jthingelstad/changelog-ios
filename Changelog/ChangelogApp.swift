@@ -22,6 +22,7 @@ struct ChangelogApp: App {
           // Off the screen, iOS may end the app before it is back: the
           // draft is kept now, not a moment later.
           if phase != .active { model.keepDraft() }
+          if phase == .background { model.lockReading() }
         }
         // A widget's link: Log, ready to write.
         .onOpenURL { url in
@@ -34,6 +35,7 @@ struct ChangelogApp: App {
 
 struct RootView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.scenePhase) private var scenePhase
   @State private var tab = RootView.firstTab
 
   var body: some View {
@@ -47,6 +49,7 @@ struct RootView: View {
     case .signedIn:
       TabView(selection: $tab) {
         Tab("Log", systemImage: "square.and.pencil", value: "log") { LogView() }
+        Tab("Notes", systemImage: "book", value: "notes") { NotesView() }
         Tab("Upcoming", systemImage: "calendar", value: "upcoming") { UpcomingView() }
         Tab("Activity", systemImage: "list.bullet.rectangle", value: "activity") { ActivityView() }
         Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
@@ -58,6 +61,12 @@ struct RootView: View {
         guard let asked else { return }
         tab = asked
         AppRoute.shared.tab = nil
+      }
+      // With the lock on, the app switcher's picture shows no note.
+      .overlay {
+        if model.lockOn, model.readsNotes, scenePhase != .active {
+          Color.paper.ignoresSafeArea().overlay { BrandMark(size: 56) }
+        }
       }
     }
   }

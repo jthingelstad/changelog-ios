@@ -47,10 +47,12 @@ import Testing
     #expect(url.path == "/oauth/authorize")
     #expect(query == [
       "response_type": "code", "client_id": "c-1", "redirect_uri": "com.yourversionnumber.changelog:/oauth",
-      "scope": "notes:write media:write upcoming activity", "state": "s-1",
+      "scope": "notes:write media:write notes:all upcoming activity", "state": "s-1",
       "code_challenge": "gajotmTxoXP2wlQJSV-f5kybIRKDjsC5me1TPVJp4gQ", "code_challenge_method": "S256",
       "resource": "https://notes.test/v1",
     ])
+    // It reads through notes:all, which changes too, not notes:read, which
+    // would leave Edit and Delete to the notes it wrote.
     #expect(!query["scope"]!.contains("notes:read"))
   }
 

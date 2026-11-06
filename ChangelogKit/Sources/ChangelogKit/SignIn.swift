@@ -12,8 +12,9 @@ public struct SignIn: Sendable {
   public static let callbackScheme = "com.yourversionnumber.changelog"
   public static let redirectURI = callbackScheme + ":/oauth"
   /// Everything the app does, pre-ticked on the page for the owner to
-  /// narrow. Never `notes:read`: it reads back only the notes it sent.
-  public static let scopes = ["notes:write", "media:write", "upcoming", "activity"]
+  /// narrow. `notes:all` reads, changes and deletes every note (Jamie,
+  /// 2026-11-05), so a lost phone's token could too; the owner can untick it.
+  public static let scopes = ["notes:write", "media:write", "notes:all", "upcoming", "activity"]
 
   public var server: URL
   public var userAgent: String

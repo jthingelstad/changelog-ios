@@ -52,6 +52,8 @@ struct SettingsView: View {
                         problem: model.remindersProblem != nil)
           }
 
+          if model.readsNotes { ReadingLockSection() }
+
           NotificationSettings()
 
           Section {
@@ -122,6 +124,8 @@ struct SettingsView: View {
     case "media:write": "add files"
     case "upcoming": "Upcoming"
     case "activity": "read activity"
+    case "notes:all": "read and change all notes"
+    case "notes:read": "read all notes"
     default: scope
     }
   }

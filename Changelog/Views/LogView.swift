@@ -137,7 +137,7 @@ struct LogView: View {
           ActivityRow(item: item, words: model.words(of: item))
             .paperRow(top: 8, bottom: 8)
             .swipeActions {
-              if model.isMine(item) {
+              if model.canChange(item) {
                 Button("Delete", role: .destructive) { deleting = item }
                 Button("Edit") { editing = item }
               }
@@ -162,12 +162,20 @@ struct LogView: View {
       }
       .overlay(alignment: .bottom) { Toast() }
       .sheet(item: $editing) { item in EditNoteView(item: item) }
+      // Locked: an editor or a question open on a note from elsewhere closes
+      // with the rest of reading. This token's own notes stay, as they always have.
+      .onChange(of: model.readingOpen) { _, open in
+        guard !open else { return }
+        if let item = editing, !model.isMine(item) { editing = nil }
+        if let item = deleting, !model.isMine(item) { deleting = nil }
+      }
       // Jamie, 2026-10-30: a swipe asks before a note goes for good.
       .confirmationDialog("Delete this note?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                           titleVisibility: .visible, presenting: deleting) { item in
         Button("Delete", role: .destructive) { Task { await model.delete(item) } }
-      } message: { _ in
-        Text("It goes from Release Notes, with its photos and files. This can't be undone.")
+      } message: { item in
+        Text(item.via == "email" ? "It goes from Release Notes, with its photos and files and the email it came in. This can't be undone."
+             : "It goes from Release Notes, with its photos and files. This can't be undone.")
       }
       // A held note's Delete asks first too.
       .confirmationDialog(discarding?.isNote == false ? "Delete this change?" : "Delete this note?",
@@ -261,6 +269,7 @@ struct Streak: View {
 }
 
 struct WaitingRow: View {
+  @Environment(AppModel.self) private var model
   let item: OutboxItem
   /// Why it is held, in place of its status: written under another account.
   var held: String? = nil
@@ -268,7 +277,8 @@ struct WaitingRow: View {
   private var summary: String {
     switch item.operation {
     case .note(let text, _, _): text
-    case .edit(_, _, let text, _): "Edit: \(text)"
+    // An edit holds a note's whole words, and nothing here says whose note.
+    case .edit(_, _, let text, _): model.readingLocked ? "An edit to a note" : "Edit: \(text)"
     case .delete(let date, _): "Delete a note from \(date)"
     case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.map { "#\($0)" }.joined(separator: " ")
     case .post(let post):
@@ -386,6 +396,11 @@ struct EditNoteView: View {
   @State private var failure: APIError?
   @State private var text: String
   @State private var saving = false
+  @State private var lockedOut = false
+
+  /// Locked, the words of a note from elsewhere stay closed: what it says now,
+  /// and a refused edit's own, which are that note's too.
+  private var closed: Bool { model.readingLocked && note?.mine != true }
 
   init(item: ActivityItem) {
     self.init(date: item.day ?? "", id: item.note ?? "", title: item.version.map { "Edit in \($0)" } ?? "Edit")
@@ -407,7 +422,7 @@ struct EditNoteView: View {
             Section {
               Text(refusal).foregroundStyle(Color.tangerineInk)
             } footer: {
-              SectionNote("Your words are below. Saving puts them in place of what the note says now.")
+              if !closed { SectionNote("Your words are below. Saving puts them in place of what the note says now.") }
             }
           }
           if let failure {
@@ -416,12 +431,18 @@ struct EditNoteView: View {
               if failure.retryable { Button("Try again") { Task { await read() } } }
             }
           }
-          if note != nil || refused != nil {
+          if lockedOut {
+            Section {
+              Label("This note came from somewhere else, so it stays closed while Notes is locked. Unlock Notes, then come back to it.",
+                    systemImage: "lock")
+                .foregroundStyle(Color.ink2)
+            }
+          } else if !closed, note != nil || refused != nil {
             TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
           } else if failure == nil {
             ProgressView()
           }
-          if refused != nil {
+          if refused != nil, !closed {
             Section { CopyWordsButton(text: text) }
             if let note {
               Section {
@@ -457,6 +478,11 @@ struct EditNoteView: View {
         }
       }
       .task { await read() }
+      // Locked with this open: gone with the rest of reading, unless it's
+      // this token's own note, which stays as it always has.
+      .onChange(of: model.readingLocked) { _, locked in
+        if locked, note?.mine != true { dismiss() }
+      }
     }
   }
 
@@ -464,6 +490,10 @@ struct EditNoteView: View {
     failure = nil
     do {
       let read = try await model.load(date: date, id: id)
+      guard !model.readingLocked || read.mine == true else {
+        lockedOut = true
+        return
+      }
       note = read
       if refused == nil { text = read.text }
     } catch {

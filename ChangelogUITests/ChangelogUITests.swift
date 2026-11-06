@@ -364,15 +364,127 @@ final class ChangelogUITests: XCTestCase {
     return (app, row, before)
   }
 
+  // MARK: Reading
+
+  /// The one button trades a four-tick token for one that may read; another
+  /// channel's note opens whole; the lock keeps it back and Log still writes.
+  @MainActor func testReading() async throws {
+    let scopes = ["notes:write", "media:write", "upcoming", "activity"]
+    let old = try await Self.tokenOnThisAccount(scopes, server: server)
+    let reader = try await Self.tokenOnThisAccount(scopes + ["notes:all"], server: server)
+    let words = note("From another channel")
+    try await Self.addNote(words, server: server, token: token)
+    let elsewhere = NSPredicate(format: "label CONTAINS %@", words)
+    let mark = String(UUID().uuidString.prefix(6).lowercased())
+    try await Self.addNote("Rich \(mark) **bold** and *leaning*\n\n- first\n- second\n\n> quoted", markup: "rich",
+                           server: server, token: token)
+
+    var app = launch(as: old, more: ["CHANGELOG_SWITCH_TOKEN": reader, "CHANGELOG_LOCK_ANSWER": "yes"])
+    hideKeyboard(app)
+    app.tabBars.buttons["Notes"].tap()
+    let allow = app.buttons["Allow reading"]
+    expect(allow, "the Notes tab offers reading", in: app, timeout: 15)
+    allow.tap()
+    let row = app.descendants(matching: .any).matching(elsewhere).firstMatch
+    expect(row, "a note from elsewhere reads whole", in: app, timeout: 30)
+    keep(app, "Notes")
+    let (status, _) = try await Self.statusOfMe(server: server, token: old)
+    XCTAssertEqual(status, 401, "the old token ended")
+    row.tap()
+    expect(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'via '")).firstMatch,
+           "the note says where it came from", in: app, timeout: 15)
+    keep(app, "A note")
+    app.navigationBars.buttons.firstMatch.tap()
+
+    // A rich note: its marks are set, not shown.
+    let rich = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Rich \(mark)")).firstMatch
+    expect(rich, "the rich note is on the list", in: app, timeout: 15)
+    keep(app, "A rich note in the list")
+    XCTAssertFalse(rich.label.contains("**"), "its marks don't show")
+    rich.tap()
+    expect(app.staticTexts["second"], "its list is a list", in: app, timeout: 15)
+    keep(app, "A rich note")
+    app.navigationBars.buttons.firstMatch.tap()
+
+    // A day before today, with files on one of its notes.
+    let list = app.collectionViews.firstMatch
+    let day = list.buttons.matching(NSPredicate(format: "label CONTAINS 'files'")).firstMatch
+    for _ in 0..<6 where !(day.exists && day.isHittable) { list.swipeUp(velocity: .slow) }
+    expect(day, "an earlier day with files", in: app, timeout: 15)
+    keep(app, "Earlier")
+    day.tap()
+    let filed = app.collectionViews.firstMatch.buttons.firstMatch
+    expect(filed, "the day opens with its note", in: app, timeout: 15)
+    keep(app, "A past day")
+    filed.tap()
+    // The picture itself, not its box: the box stands there whether or not it came.
+    expect(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Photo' AND value == 'Showing'")).firstMatch,
+           "the note's photo shows", in: app, timeout: 15)
+    keep(app, "A note with files")
+    // A recording comes down and opens in Quick Look.
+    app.buttons["Voice memo"].tap()
+    let closePreview = app.buttons["QLOverlayDoneButtonAccessibilityIdentifier"]
+    expect(closePreview, "the voice memo opens in Quick Look", in: app, timeout: 15)
+    // Its name up means it has loaded; a tap on the close button before that is lost.
+    expect(app.buttons["Voice memo, Actions Menu"], "Quick Look names the voice memo", in: app, timeout: 15)
+    keep(app, "A voice memo in Quick Look")
+    closePreview.tap()
+    XCTAssertTrue(closePreview.waitForNonExistence(timeout: 10), "Quick Look closes")
+    app.navigationBars.buttons.firstMatch.tap()
+    app.navigationBars.buttons.firstMatch.tap()
+
+    app.tabBars.buttons["Log"].tap()
+    expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "Log's Today shows its words", in: app, timeout: 15)
+
+    turnLock(in: app, on: true)
+    app.terminate()
+
+    // Face ID says no: nothing from elsewhere shows, and Log still takes a note.
+    app = launch(as: reader, more: ["CHANGELOG_LOCK_ANSWER": "no"])
+    XCTAssertFalse(app.descendants(matching: .any).matching(elsewhere).firstMatch.waitForExistence(timeout: 5),
+                   "locked, Log's Today keeps the words back")
+    hideKeyboard(app)
+    app.tabBars.buttons["Notes"].tap()
+    expect(app.buttons["Unlock"], "Notes is locked", in: app, timeout: 15)
+    XCTAssertFalse(app.descendants(matching: .any).matching(elsewhere).firstMatch.exists)
+    keep(app, "Locked")
+    app.terminate()
+
+    // Yes: it opens. Off again, so the next test finds it as it was.
+    app = launch(as: reader, more: ["CHANGELOG_LOCK_ANSWER": "yes"])
+    hideKeyboard(app)
+    app.tabBars.buttons["Notes"].tap()
+    expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "unlocked, it reads", in: app, timeout: 30)
+    turnLock(in: app, on: false)
+    app.terminate()
+    try await Self.revoke(reader, server: server)
+  }
+
+  /// Settings' lock switch, on or off, and it says so.
+  @MainActor private func turnLock(in app: XCUIApplication, on: Bool) {
+    hideKeyboard(app)
+    app.tabBars.buttons["Settings"].tap()
+    let lock = app.switches["Lock reading"]
+    // Slowly: a quick swipe can carry the row past without stopping on it.
+    for _ in 0..<12 where !(lock.exists && lock.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    keep(app, on ? "The lock, off" : "The lock, on")
+    XCTAssertTrue(lock.isHittable, "Settings offers the lock")
+    // The row is the element; its switch is at the right-hand end.
+    lock.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", on ? "1" : "0"), object: lock)
+    XCTAssertEqual(XCTWaiter().wait(for: [said], timeout: 10), .completed, "the lock turned")
+  }
+
   // MARK: Helpers
 
   /// The app signed in to the dev server: its own account, or another
   /// account's token; with a moment to pick, for the Moments test.
-  private func launch(as other: String? = nil, moment: Bool = false) -> XCUIApplication {
+  private func launch(as other: String? = nil, moment: Bool = false, more: [String: String] = [:]) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchEnvironment["CHANGELOG_DEV_TOKEN"] = other ?? token
     app.launchEnvironment["CHANGELOG_DEV_URL"] = server
     if moment { app.launchEnvironment["CHANGELOG_MOMENT"] = "1" }
+    for (key, value) in more { app.launchEnvironment[key] = value }
     app.launch()
     expect(app.buttons["Commit"], "signed in to the dev server", in: app, timeout: 30)
     return app
@@ -456,6 +568,49 @@ final class ChangelogUITests: XCTestCase {
     ], cookie: cookie, server: server)
     struct Made: Decodable { let token: String }
     return try JSONDecoder().decode(Made.self, from: made).token
+  }
+
+  /// A token on the dev server's own fictional account, with the sandbox
+  /// token's scopes left as they are: it can't read, and Quinn's branches
+  /// count on that.
+  private static func tokenOnThisAccount(_ scopes: [String], server: String) async throws -> String {
+    let email = "ada@example.com"
+    _ = try await web("POST", "/api/auth/start", ["email": email], server: server)
+    let (mail, _) = try await web("GET", "/dev-mail/?to=\(email)", nil, server: server)
+    let page = String(decoding: mail, as: UTF8.self)
+    let code = try XCTUnwrap(page.range(of: "code where you asked: [0-9]+", options: .regularExpression)
+      .flatMap { page[$0].split(separator: " ").last.map(String.init) }, "the dev mailbox has the code")
+    let (_, verified) = try await web("POST", "/api/auth/verify", ["email": email, "code": code], server: server)
+    let set = verified.value(forHTTPHeaderField: "Set-Cookie") ?? ""
+    let cookie = try XCTUnwrap(set.range(of: "__Host-rn=[^;, ]+", options: .regularExpression).map { String(set[$0]) },
+                               "signed in on the web")
+    // A name a live token already has is refused.
+    let name = "Changelog \(UUID().uuidString.prefix(6))"
+    let (made, _) = try await web("POST", "/api/tokens", ["name": name, "scopes": scopes, "expiry": "never"],
+                                  cookie: cookie, server: server)
+    struct Made: Decodable { let token: String }
+    return try JSONDecoder().decode(Made.self, from: made).token
+  }
+
+  /// A note from another channel, through the sandbox token.
+  private static func addNote(_ words: String, markup: String? = nil, server: String, token: String) async throws {
+    var request = URLRequest(url: URL(string: "\(server)/v1/notes")!)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
+    var body = ["text": words]
+    if let markup { body["markup"] = markup }
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    let (_, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201, "the note went in")
+  }
+
+  private static func statusOfMe(server: String, token: String) async throws -> (Int, Data) {
+    var request = URLRequest(url: URL(string: "\(server)/v1/me")!)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+    return ((response as? HTTPURLResponse)?.statusCode ?? 0, data)
   }
 
   /// One call to the dev server's web API, as its own pages make it.

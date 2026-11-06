@@ -2,11 +2,14 @@
 
 A fast iPhone app for sending notes into
 [Release Notes](https://notes.yourversionnumber.com), the daily email from
-Your Version Number. It is not a second Release Notes: you read, search and
-look back on the web. Changelog is for getting things in, in two taps.
+Your Version Number. Changelog is the fast way in, with your notes along;
+account and settings stay on the web.
 
 - **Log** a line, with one-tap tags. The button says Commit. Today shows
   what this phone sent today, words and all, read back from Release Notes.
+- **Notes**, if you let it: today and the days before it, wherever you wrote
+  them, whole, with their files. Edit or delete any of them. Reading can sit
+  behind Face ID; adding a note never does.
 - **Never lose a note.** Everything goes through an offline queue, and a
   resend never makes a duplicate.
 - **Check** what happened: the activity log, from every channel, without

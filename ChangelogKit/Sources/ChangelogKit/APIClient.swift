@@ -59,8 +59,8 @@ public struct APIClient: Sendable {
     try await send("POST", "v1/notes", body: note, idempotencyKey: idempotencyKey, expect: 201)
   }
 
-  public func note(date: String, id: String) async throws(APIError) -> NoteDetail {
-    try await send("GET", "v1/notes/\(date)/\(id)")
+  public func note(date: String, id: String, urls: Bool = false) async throws(APIError) -> NoteDetail {
+    try await send("GET", "v1/notes/\(date)/\(id)", query: urls ? [URLQueryItem(name: "include", value: "urls")] : [])
   }
 
   public func editNote(date: String, id: String, text: String, revision: String, idempotencyKey: String) async throws(APIError) -> NoteRef {

@@ -23,7 +23,10 @@ there first, never work around it here.
   (Upcoming reminders and the daily prompt, within iOS's 64 waiting
   notifications), `ActivityNotices` (which activity rows tell the phone
   something), `TodayWords` (the words of today's notes this token wrote,
-  read back for Log), `QuickNote` (a note sent from outside the app's screens,
+  read back for Log by a token that can't read the rest), `Rich` (a rich note's
+  words as blocks, a port of Release Notes' `packages/domain/rich.ts`; keep them
+  in step), `TokenSwitch` (trading a token for one that may read, without
+  signing out), `QuickNote` (a note sent from outside the app's screens,
   within a deadline, else left for the app), `Moment` (a moment picked in
   Apple's Journaling Suggestions, as plain values, and what it puts in the
   draft) and `WidgetSnapshot` (what the widgets show, one day per local
@@ -158,12 +161,25 @@ there first, never work around it here.
   to today, and a day Release Notes refuses (`date_out_of_range`, before
   the birthday, which the app never learns) is filed to the day it was
   written by the Outbox, once, under a new key.
-- The app reads back only notes this token wrote, and the activity log
-  (which has no words in it). It never asks for `notes:read`. Log's Today
-  shows the words of today's notes this token wrote (Jamie, 2026-10-29:
-  "just add the API calls to read what was sent"), read back by id on
-  each refresh (`TodayWords`) and held in memory only: never on disk, in
-  the App Group, a widget, a notification or what Siri says.
+- Changelog is "the fast way in, with your notes along; account and settings
+  stay on the web" (Jamie, 2026-11-05). It reads days, notes and their files;
+  search, tags, On this day and releases come next, a map only on Jamie's word,
+  badges and the mail log stay on the web. A new sign-in asks for `notes:all`
+  (Jamie, 2026-10-30), which anyone may untick on the consent page; a token
+  from before it, or one with it unticked, still captures, and reads back only
+  the notes it wrote, by id, for Log's Today (`TodayWords`). The Notes tab's
+  one button is the only way to upgrade: no pop-up anywhere else, and the
+  switches, the queue and the draft stay.
+- A note's words and files are held in memory only: never on disk, in the App
+  Group, a widget, a notification or what Siri says. The JSON comes `no-store`.
+  Files come through an ephemeral session; a file open in Quick Look sits in
+  `tmp/previews/` until the preview closes, the lock closes or the app starts.
+  `forget()` clears all of it.
+- The Face ID lock is on reading, never on capture: Log, Share and Siri write
+  whether it is locked or not, off until turned on. Locked, Today reads only
+  this token's notes, so Log shows what it always did, a waiting edit shows no
+  words, and Fix opens only on this token's own note. Turning it on or off asks
+  first.
 - iOS 26 and later, iPhone only, Swift 6 strict concurrency.
 - No task groups (`withTaskGroup` and its kin). Built with Swift 6.4
   (Xcode 27.1) and optimized, as TestFlight builds are, the one in

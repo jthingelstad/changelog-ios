@@ -119,7 +119,7 @@ struct ActivityView: View {
 
 struct ActivityRow: View {
   let item: ActivityItem
-  /// What the note said, on Log's Today alone, for a note this token wrote.
+  /// What the note said, on Log's Today alone.
   var words: String?
   @Environment(\.dynamicTypeSize) private var size
 

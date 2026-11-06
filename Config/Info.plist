@@ -22,6 +22,8 @@
 		<key>UIColorName</key>
 		<string>LaunchPaper</string>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>To keep your notes locked in Changelog, if you turn that on. Adding a note never asks.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>To add a photo you take to a note.</string>
 	<key>NSMicrophoneUsageDescription</key>

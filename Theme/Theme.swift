@@ -54,6 +54,8 @@ struct Face {
   /// Past this, Dynamic Type grows it no more (the version, which must fit
   /// on one line).
   var largest: CGFloat = .infinity
+  /// Sheared to lean, as a browser does: these faces have no italic.
+  var slanted = false
 
   static let display = Face(family: .bricolage, size: 64, weight: 800, style: .largeTitle, tracking: -0.025, largest: 88)
   static let title = Face(family: .bricolage, size: 34, weight: 800, style: .largeTitle, tracking: -0.01)
@@ -61,6 +63,9 @@ struct Face {
   static let brand = Face(family: .bricolage, size: 18, weight: 800, style: .headline)
   static let writing = Face(family: .bricolage, size: 20, weight: 400, style: .body)
   static let note = Face(family: .bricolage, size: 17, weight: 400, style: .body)
+  static let noteStrong = Face(family: .bricolage, size: 17, weight: 700, style: .body)
+  static let noteEm = Face(family: .bricolage, size: 17, weight: 400, style: .body, slanted: true)
+  static let noteStrongEm = Face(family: .bricolage, size: 17, weight: 700, style: .body, slanted: true)
   static let line = Face(family: .bricolage, size: 17, weight: 600, style: .body)
   static let commit = Face(family: .bricolage, size: 17, weight: 800, style: .body)
   static let action = Face(family: .bricolage, size: 16, weight: 600, style: .callout)
@@ -88,7 +93,10 @@ struct Face {
     if family == .bricolage { axes[NSNumber(value: Self.opsz)] = NSNumber(value: Double(min(max(size, 12), 96))) }
     let name = family == .bricolage ? "BricolageGrotesque-96ptExtraBold" : "MartianMono-SemiExpandedRegular"
     let attributes: [CFString: Any] = [kCTFontNameAttribute: name, kCTFontVariationAttribute: axes]
-    return Font(CTFontCreateWithFontDescriptor(CTFontDescriptorCreateWithAttributes(attributes as CFDictionary), size, nil))
+    let descriptor = CTFontDescriptorCreateWithAttributes(attributes as CFDictionary)
+    guard slanted else { return Font(CTFontCreateWithFontDescriptor(descriptor, size, nil)) }
+    var lean = CGAffineTransform(a: 1, b: 0, c: 0.2, d: 1, tx: 0, ty: 0)
+    return Font(CTFontCreateWithFontDescriptor(descriptor, size, &lean))
   }
 
   // The axes' tags, as CoreText names them: 'wght', 'wdth', 'opsz'.
