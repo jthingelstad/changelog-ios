@@ -177,8 +177,9 @@ there first, never work around it here.
   `forget()` clears all of it.
 - The Face ID lock is on reading, never on capture: Log, Share and Siri write
   whether it is locked or not, off until turned on. Locked, Today reads only
-  this token's notes, so Log shows what it always did. Turning it on or off
-  asks first.
+  this token's notes, so Log shows what it always did, a waiting edit shows no
+  words, and Fix opens only on this token's own note. Turning it on or off asks
+  first.
 - iOS 26 and later, iPhone only, Swift 6 strict concurrency.
 - No task groups (`withTaskGroup` and its kin). Built with Swift 6.4
   (Xcode 27.1) and optimized, as TestFlight builds are, the one in

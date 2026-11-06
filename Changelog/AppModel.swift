@@ -1313,6 +1313,9 @@ final class AppModel {
   var readsNotes: Bool { me?.token.readsAll == true }
   /// Reading is open: the token may, and the lock, if on, is off for now.
   var readingOpen: Bool { readsNotes && (!lockOn || unlocked) }
+  /// The lock is keeping reading closed. Never for a token that can't read:
+  /// that one's own notes are all it ever had, and they stay.
+  var readingLocked: Bool { readsNotes && !readingOpen }
 
   /// Asks Face ID, and reads again what the lock kept back.
   func unlockReading() async {
