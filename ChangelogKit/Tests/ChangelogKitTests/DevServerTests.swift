@@ -248,6 +248,69 @@ struct DevServerTests {
     try await client.deleteNote(date: made.date, id: made.id, idempotencyKey: UUID().uuidString.lowercased())
   }
 
+  /// A stop through the queue as a phone reports it: an arrival, then its
+  /// leaving under another key, one stay. Then its name and its deleting.
+  @Test func aVisitReportedTwiceIsOneStayNamedThenDeleted() async throws {
+    let client = DevServer.client()
+    let arrival = Date.now.addingTimeInterval(-3600)
+    let arriving = try #require(CheckInReport.visit(arrival: arrival, departure: .distantFuture, lat: 44.9778, lon: -93.2650, accuracy: 120))
+    let leaving = try #require(CheckInReport.visit(arrival: arrival, departure: .now.addingTimeInterval(-600), lat: 44.9778, lon: -93.2650, accuracy: 60))
+
+    let first = try await client.report(arriving, idempotencyKey: UUID().uuidString)
+    #expect(first.left == nil && first.source == "visit")
+    let second = try await client.report(leaving, idempotencyKey: UUID().uuidString)
+    #expect(second.id == first.id, "the same stay")
+    #expect(second.left != nil)
+
+    let page = try await client.checkIns(from: first.day, to: first.day)
+    let found = try #require(page.items.first { $0.answers(to: first.id) })
+    #expect(found.left != nil)
+    #expect(try CheckInWords.stay(arrived: found.arrived, left: found.left, source: found.source, timeZone: #require(TimeZone(identifier: "UTC"))) != nil)
+
+    let named = try await client.nameCheckIn(id: found.id, name: "Workshop", revision: found.revision, idempotencyKey: UUID().uuidString)
+    #expect(named.label == "Workshop" && named.namedBy == "own" && named.isNamed)
+    let off = try await client.nameCheckIn(id: named.id, name: nil, revision: named.revision, idempotencyKey: UUID().uuidString)
+    #expect(off.name == nil && off.namedBy != "own", "null takes it off")
+
+    await #expect(throws: APIError.self, "an old revision is refused") {
+      _ = try await client.nameCheckIn(id: found.id, name: "Stale", revision: found.revision, idempotencyKey: UUID().uuidString)
+    }
+
+    let activity = try await client.activity(kinds: ["checkin"], limit: 20)
+    let rows = activity.items.filter { $0.checkin == first.id && $0.kind == "checkin" }
+    #expect(rows.count == 1, "one stay, one row")
+    let row = try #require(rows.first)
+    #expect(row.opens == .checkIn(day: first.day, id: first.id))
+    #expect(row.source == "visit" && row.stayLine != nil)
+
+    try await client.deleteCheckIn(id: off.id, idempotencyKey: UUID().uuidString)
+    let after = try await client.checkIns(from: first.day, to: first.day)
+    #expect(!after.items.contains { $0.answers(to: first.id) })
+  }
+
+  @Test func aTapThroughTheOutboxIsNeverContinued() async throws {
+    let client = DevServer.client(), outbox = Outbox(file: nil)
+    let spot = Spot(lat: 44.9778, lon: -93.2650, accuracyM: 15)
+    try await outbox.enqueue(.checkIn(.tap(at: .now, spot: spot)))
+    let report = await outbox.flush { (item) async throws(APIError) -> OutboxResult in try await client.perform(item) }
+    #expect(report.stopped == nil)
+    guard case .checkedIn(let stay)? = report.sent.first?.result else { Issue.record("no check-in came back"); return }
+    #expect(stay.source == "tap" && stay.left == nil)
+    try await client.deleteCheckIn(id: stay.id, idempotencyKey: UUID().uuidString)
+  }
+
+  /// A token without `notes:all` can read remembered places, not change them.
+  @Test func rememberedPlacesRead() async throws {
+    let client = DevServer.client()
+    _ = try await client.rememberedPlaces()
+    let me = try await client.me()
+    if !me.token.changesAll {
+      await #expect(throws: APIError.self) {
+        _ = try await client.remember(name: "Workshop", lat: 44.9778, lon: -93.2650, idempotencyKey: UUID().uuidString)
+      }
+    }
+  }
+
   @Test func errorsDecode() async throws {
     let bad = APIClient(baseURL: DevServer.url, token: "rn_" + String(repeating: "A", count: 43),
                         userAgent: "Changelog/0.1 (dev tests)", session: URLSession(configuration: .ephemeral))

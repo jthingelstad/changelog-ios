@@ -21,12 +21,13 @@ struct ActivityView: View {
   @State private var cameBack = false
 
   enum Filter: String, CaseIterable, Identifiable {
-    case all = "All", notes = "Notes", email = "Email", badges = "Badges", upcoming = "Upcoming", connections = "Connections", problems = "Problems"
+    case all = "All", notes = "Notes", checkIns = "Check-ins", email = "Email", badges = "Badges", upcoming = "Upcoming", connections = "Connections", problems = "Problems"
     var id: String { rawValue }
     var kinds: [String] {
       switch self {
       case .all: []
       case .notes: ["note", "transcript", "description", "import"]
+      case .checkIns: ["checkin"]
       case .email: ["mail", "email", "reminder"]
       case .badges: ["badge"]
       case .upcoming: ["upcoming", "reminder"]
@@ -65,6 +66,8 @@ struct ActivityView: View {
           .accessibilityElement(children: .contain)
           .accessibilityLabel("Show")
           .padding(.top, 8)
+          CheckInNowButton()
+            .padding(.top, 4)
         }
         .paperRow()
 
@@ -111,6 +114,9 @@ struct ActivityView: View {
       }
       .onAppear { if path.isEmpty { seenAtOpen = seen } }
       .onDisappear { if path.isEmpty, let first = items.first { seen = first.id } }
+      .onChange(of: model.checkInChanges) { Task { await load() } }
+      .overlay(alignment: .bottom) { Toast() }
+      .navigationDestination(for: ActivityStop.self) { CheckInPage(day: $0.day, id: $0.id) }
       .navigationDestination(for: ActivityNote.self) { ActivityNotePage(route: $0) }
       .navigationDestination(for: DayRoute.self) { DayPage(date: $0.date) }
       // A day's own rows open their notes.
@@ -126,7 +132,12 @@ struct ActivityView: View {
   }
 
   @ViewBuilder private func row(_ item: ActivityItem) -> some View {
-    switch model.readingOpen ? item.opens : nil {
+    // A check-in opens even with reading locked (Jamie's call 4, in the design).
+    switch item.opens {
+    case .checkIn(let day, let id):
+      NavigationLink(value: ActivityStop(day: day, id: id)) { ActivityRow(item: item) }
+    case _ where !model.readingOpen:
+      ActivityRow(item: item)
     case .note(let date, let id):
       NavigationLink(value: ActivityNote(date: date, id: id)) { ActivityRow(item: item) }
     case .day(let date):
@@ -148,6 +159,11 @@ struct ActivityView: View {
     items = more ? items + page.items : page.items
     next = page.next
   }
+}
+
+private struct ActivityStop: Hashable {
+  let day: String
+  let id: String
 }
 
 private struct ActivityNote: Hashable {
@@ -272,6 +288,18 @@ extension ActivityItem {
     case "pause.set": return "Email paused"
     case "pause.ended": return "Pause ended"
     case "place.set", "place.removed": return "Place for the day changed"
+    case "checkin": return "Checked in at \(CheckInWords.stopName(label))"
+    case "checkin.named": return "Named a check-in"
+    case "checkin.deleted":
+      guard all == true else { return "Deleted a check-in" }
+      return count.map { "Deleted all your check-ins, \($0)" } ?? "Deleted all your check-ins"
+    case "checkin.place":
+      switch change {
+      case "added": return "Remembered a place"
+      case "spot": return "Added a spot to a remembered place"
+      case "renamed": return "Renamed a remembered place"
+      default: return "Forgot a remembered place"
+      }
     default: return kind.replacingOccurrences(of: ".", with: " ").capitalized
     }
   }
@@ -282,7 +310,7 @@ extension ActivityItem {
   }
 
   var time: String {
-    guard let date = try? Date(at, strategy: .iso8601) else { return "" }
+    guard let date = CheckInWords.date(at) else { return "" }
     return Calendar.current.isDateInToday(date) ? date.formatted(date: .omitted, time: .shortened) : date.formatted(.dateTime.month().day())
   }
 }

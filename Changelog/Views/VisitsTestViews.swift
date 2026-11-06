@@ -3,56 +3,49 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
-/// The switch for the visits test, in Settings. Off until turned on.
-struct VisitsTestSection: View {
-  @Environment(\.openURL) private var openURL
-  private let recorder = VisitRecorder.shared
+/// The file the visits test left on this phone, kept as it was: the owner's
+/// to read, share and delete, in a file that stays out of backups and goes
+/// when signing out. Nothing writes to it now, and nothing in it goes to
+/// Release Notes. The map here is where the app's own map starts (phase 4 of
+/// `docs/CHECK-INS.md` in the Release Notes repo).
+enum VisitsTest {
+  static let log = VisitLog(url: URL.applicationSupportDirectory
+    .appending(path: "Visits", directoryHint: .isDirectory)
+    .appending(path: "changelog-visits.jsonl"))
 
-  var body: some View {
-    Section {
-      Toggle("Record visits", isOn: Binding(get: { recorder.on }, set: { recorder.set(on: $0) }))
-      if recorder.on, recorder.status != .authorizedAlways {
-        Button("Set Location to Always") {
-          if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
-        }
-      }
-      if recorder.on || !recorder.events.isEmpty {
-        NavigationLink("Visits recorded") { VisitsTestPage() }
-      }
-    } header: {
-      SectionHead("Visits test")
-    } footer: {
-      SectionNote(note, problem: recorder.on && recorder.status != .authorizedAlways)
-    }
-  }
+  static var hasFile: Bool { FileManager.default.fileExists(atPath: log.url.path(percentEncoded: false)) }
 
-  private var note: String {
-    guard recorder.on else {
-      return "A test for Breakpoints: writes down where iOS says you stopped, in a file on this phone. Nothing goes to Release Notes."
-    }
-    if recorder.status != .authorizedAlways {
-      return "Location isn't set to Always, so this can only record while Changelog is open."
-    }
-    if recorder.reduced { return "Precise Location is off for Changelog, so these will be rough." }
-    return "Recording on this phone. Nothing goes to Release Notes."
+  /// Signing out takes its record with it, as the test said it would.
+  static func forget() { try? log.clear() }
+
+  #if DEBUG
+  /// A build this new never writes the file, so the test cycle makes one as
+  /// the test did (`CHANGELOG_OLD_VISITS`, a debug build only).
+  static func standIn() {
+    guard ProcessInfo.processInfo.environment["CHANGELOG_OLD_VISITS"] != nil, !hasFile else { return }
+    let arrival = Date.now.addingTimeInterval(-3600)
+    try? log.append(VisitEvent(heard: .now, arrival: arrival, departure: .now.addingTimeInterval(-600), lat: 44.9778, lon: -93.2650,
+                               accuracyM: 60, timeZone: TimeZone.current.identifier, appState: "background"))
   }
+  #endif
 }
 
 /// What the test has found: the measures it is for, the stays on a map with
 /// how sure iOS was of each, and the file to share.
 struct VisitsTestPage: View {
-  private let recorder = VisitRecorder.shared
+  @State private var events = VisitsTest.log.read()
+  @State private var problem: String?
   @State private var confirmDelete = false
 
   var body: some View {
-    let stays = VisitStay.from(recorder.events)
+    let stays = VisitStay.from(events)
     List {
       Group {
-        if let problem = recorder.problem {
+        if let problem {
           Text(problem).face(.hint).foregroundStyle(Color.tangerineInk)
         }
         if stays.isEmpty {
-          Text("Nothing yet. iOS reports a stop in its own time, often after you leave.")
+          Text("Nothing here. The test's stops have been deleted.")
             .face(.hint)
             .foregroundStyle(Color.ink2)
         } else {
@@ -67,9 +60,9 @@ struct VisitsTestPage: View {
             }
           }
           .frame(height: 280)
-          .accessibilityLabel("Map of the visits recorded")
+          .accessibilityLabel("Map of the visits from the test")
           ForEach(stays) { stay in VisitStayRow(stay: stay) }
-          ShareLink("Share the file", item: recorder.url, preview: SharePreview("Changelog visits"))
+          ShareLink("Share the file", item: VisitsTest.log.url, preview: SharePreview("Changelog visits"))
             .buttonStyle(QuietButtonStyle())
           Button("Delete them all", role: .destructive) { confirmDelete = true }
             .buttonStyle(QuietButtonStyle())
@@ -80,10 +73,20 @@ struct VisitsTestPage: View {
       .listRowSeparator(.hidden)
     }
     .paperList()
-    .navigationTitle("Visits recorded")
+    .navigationTitle("Visits from the test")
     .navigationBarTitleDisplayMode(.inline)
-    .confirmationDialog("Delete every visit recorded?", isPresented: $confirmDelete, titleVisibility: .visible) {
-      Button("Delete", role: .destructive) { recorder.clear() }
+    // Settings hides its bar; this screen needs Back.
+    .toolbar(.visible, for: .navigationBar)
+    .confirmationDialog("Delete every visit from the test?", isPresented: $confirmDelete, titleVisibility: .visible) {
+      Button("Delete", role: .destructive) {
+        do {
+          try VisitsTest.log.clear()
+          events = []
+          problem = nil
+        } catch {
+          problem = "Couldn't delete them: \(error.localizedDescription)"
+        }
+      }
     }
   }
 

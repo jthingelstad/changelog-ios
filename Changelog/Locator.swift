@@ -2,9 +2,11 @@ import ChangelogKit
 import CoreLocation
 import Synchronization
 
-/// Where the phone is, once, when the owner asks for Here (or has "Add where
-/// I am" on). Nothing runs in the background and nothing is kept: the spot
-/// goes to Release Notes to be named, and only the place a note takes stays.
+/// Where the phone is, once, when the owner asks for Here or Check in now (or
+/// has "Add where I am" on). Nothing here runs in the background and nothing is
+/// kept: the spot goes to Release Notes, to name it or as the check-in, and
+/// only what the note or the check-in takes stays. `CheckInRecorder` is what
+/// iOS tells of stops.
 enum Locator {
   enum Fix: Equatable { case spot(Spot), denied, unavailable }
 

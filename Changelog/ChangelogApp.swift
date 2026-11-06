@@ -2,13 +2,19 @@ import SwiftUI
 
 @main
 struct ChangelogApp: App {
-  @State private var model = AppModel()
+  @State private var model: AppModel
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
     PhoneReminders.start()
-    // iOS can start the app just to deliver a visit: this has to be listening.
-    _ = VisitRecorder.shared
+    let model = AppModel()
+    _model = State(initialValue: model)
+    // iOS can start the app just to deliver a visit, with no window: this has
+    // to be listening, and the queue ready to take it.
+    CheckInRecorder.shared.attach { await model.report($0) }
+    #if DEBUG
+    VisitsTest.standIn()
+    #endif
   }
 
   var body: some Scene {
@@ -20,6 +26,7 @@ struct ChangelogApp: App {
         // Back online with the app open: what waits goes.
         .task { await model.watchConnection() }
         .onChange(of: scenePhase) { _, phase in
+          if phase == .active { CheckInRecorder.shared.refresh() }
           if phase == .active, model.phase == .signedIn { Task { await model.refresh() } }
           // Off the screen, iOS may end the app before it is back: the
           // draft is kept now, not a moment later.

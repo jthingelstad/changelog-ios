@@ -116,16 +116,20 @@ struct LogView: View {
           }
         }
 
-        Group {
-          if let version = model.version {
-            Text("Today in \(versionText(version))")
-          } else {
-            Text("Today")
+        HStack(alignment: .firstTextBaseline) {
+          Group {
+            if let version = model.version {
+              Text("Today in \(versionText(version))")
+            } else {
+              Text("Today")
+            }
           }
+          .face(.head)
+          .foregroundStyle(Color.ink2)
+          .accessibilityAddTraits(.isHeader)
+          Spacer()
+          CheckInNowButton(trailing: true)
         }
-        .face(.head)
-        .foregroundStyle(Color.ink2)
-        .accessibilityAddTraits(.isHeader)
         .paperRow(top: 28, bottom: 4)
         if model.today.isEmpty {
           Text(model.version.map { "No changes yet in \($0)." } ?? "Nothing yet today.")
@@ -178,7 +182,8 @@ struct LogView: View {
              : "It goes from Release Notes, with its photos and files. This can't be undone.")
       }
       // A held note's Delete asks first too.
-      .confirmationDialog(discarding?.isNote == false ? "Delete this change?" : "Delete this note?",
+      .confirmationDialog(discarding?.isCheckIn == true ? "Delete this check-in?"
+                            : discarding?.isNote == false ? "Delete this change?" : "Delete this note?",
                           isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }),
                           titleVisibility: .visible, presenting: discarding) { item in
         Button("Delete", role: .destructive) { Task { await model.discard(item) } }
@@ -283,6 +288,11 @@ struct WaitingRow: View {
     case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.map { "#\($0)" }.joined(separator: " ")
     case .post(let post):
       post.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.count(post.files) : post.text
+    // Never the spot.
+    case .checkIn(let stop):
+      CheckInWords.stay(arrived: stop.arrived, left: stop.left, source: stop.source,
+                        timeZone: stop.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)
+        .map { "Check-in: \($0)" } ?? "Check-in"
     }
   }
 
@@ -373,7 +383,9 @@ struct Toast: View {
         .padding(.bottom, 12)
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .task {
-          try? await Task.sleep(for: .seconds(2.5))
+          // Log and Activity each have one. Cancelled is a tab that isn't on
+          // the screen, and that one mustn't take the toast off the other.
+          guard (try? await Task.sleep(for: .seconds(2.5))) != nil else { return }
           withAnimation { model.clearToast() }
         }
         .accessibilityAddTraits(.updatesFrequently)
