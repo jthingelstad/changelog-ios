@@ -265,12 +265,15 @@ public struct NoteFileEntry: Codable, Sendable, Equatable, Identifiable {
   }
 
   /// A name for the file on this phone, for as long as it is previewed: its
-  /// own, with no folders in it, or one made from its type.
+  /// own, with no folders in it, or one made from what it is and its type.
   public var previewName: String {
     let own = (name ?? "").replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
     let kept = own.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
     let suffix = UTType(mimeType: type)?.preferredFilenameExtension
-    if kept.isEmpty { return suffix.map { "file.\($0)" } ?? "file" }
+    if kept.isEmpty {
+      let plain = kind == "audio" ? "Voice memo" : kind == "image" ? "Photo" : "file"
+      return suffix.map { "\(plain).\($0)" } ?? plain
+    }
     return (kept as NSString).pathExtension.isEmpty ? (suffix.map { "\(kept).\($0)" } ?? kept) : kept
   }
 }

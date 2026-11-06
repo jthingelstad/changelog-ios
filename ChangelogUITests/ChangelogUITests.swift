@@ -423,7 +423,7 @@ final class ChangelogUITests: XCTestCase {
     keep(app, "A note with files")
     // A recording comes down and opens in Quick Look.
     app.buttons["Voice memo"].tap()
-    let closePreview = app.buttons.matching(NSPredicate(format: "label == 'Done' OR label == 'Close'")).firstMatch
+    let closePreview = app.buttons["QLOverlayDoneButtonAccessibilityIdentifier"]
     expect(closePreview, "the voice memo opens in Quick Look", in: app, timeout: 15)
     keep(app, "A voice memo in Quick Look")
     closePreview.tap()

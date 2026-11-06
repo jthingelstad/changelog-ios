@@ -114,6 +114,11 @@ struct ReadingTests {
     #expect(entry(nil, "application/pdf").previewName == "file.pdf")
     #expect(entry("  ", "image/jpeg").previewName.hasPrefix("file."))
     #expect(entry("memo", "application/pdf").previewName == "memo.pdf")
+    // Quick Look heads the page with this, so no name reads as what it is.
+    let memo = NoteFileEntry(n: 1, kind: "audio", type: "audio/wav", name: nil, size: 1, thumb: nil)
+    #expect(memo.previewName == "Voice memo.wav")
+    let photo = NoteFileEntry(n: 1, kind: "image", type: "image/png", name: nil, size: 1, thumb: nil)
+    #expect(photo.previewName == "Photo.png")
   }
 
   // MARK: The switch
