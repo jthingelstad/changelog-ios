@@ -113,6 +113,8 @@ struct ActivityView: View {
       .onDisappear { if path.isEmpty, let first = items.first { seen = first.id } }
       .navigationDestination(for: ActivityNote.self) { ActivityNotePage(route: $0) }
       .navigationDestination(for: DayRoute.self) { DayPage(date: $0.date) }
+      // A day's own rows open their notes.
+      .navigationDestination(for: NoteDetail.self) { NotePage(note: $0) }
     }
     .onChange(of: path.isEmpty) { _, empty in
       if !empty { cameBack = true }
