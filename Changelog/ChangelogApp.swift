@@ -7,6 +7,8 @@ struct ChangelogApp: App {
 
   init() {
     PhoneReminders.start()
+    // iOS can start the app just to deliver a visit: this has to be listening.
+    _ = VisitRecorder.shared
   }
 
   var body: some Scene {

@@ -150,6 +150,12 @@ there first, never work around it here.
 - Location is When In Use, one fix when the owner asks (or has "Add where
   I am" on), never in the background. Each Here is a lookup Release Notes
   pays for, capped at 100 a day: ask once a draft, never as words change.
+- The one exception is the visits test for Breakpoints (`VisitRecorder`, Jamie,
+  2026-11-05), off until its Settings switch is turned on: Always, iOS's Visits
+  service, in a file on this phone that stays out of backups and goes when
+  signing out. Nothing goes to Release Notes. It has no written reason for
+  Beta App Review and the privacy page doesn't cover it, so it comes out or
+  becomes Breakpoints before any `--external` upload.
 - A moment only fills the draft: nothing is sent until the person
   commits. Its photos go through `addPhoto` within the draft's room, its
   place through the same Here naming as the location button, once a pick,
