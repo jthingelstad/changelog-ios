@@ -243,6 +243,45 @@ final class ChangelogUITests: XCTestCase {
     XCTAssertEqual(left, 0, "deleted on the server")
   }
 
+  /// The list says how far off each date is, and sets them under their months.
+  @MainActor func testUpcomingMonths() async throws {
+    let (_, data) = try await Self.statusOfMe(server: server, token: token)
+    let today = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])["today"] as? String
+    let mark = UUID().uuidString.prefix(6).lowercased()
+    var utc = Calendar(identifier: .gregorian)
+    utc.timeZone = TimeZone(secondsFromGMT: 0)!
+    let day = DateFormatter()
+    day.calendar = utc
+    day.timeZone = utc.timeZone
+    day.locale = Locale(identifier: "en_US_POSIX")
+    day.dateFormat = "yyyy-MM-dd"
+    let start = try XCTUnwrap(day.date(from: try XCTUnwrap(today)))
+    let on = { (ahead: Int) in day.string(from: utc.date(byAdding: .day, value: ahead, to: start)!) }
+    // A date more than a year off shows its year in its month's heading.
+    let dates = [(1, "Tomorrow"), (7, "In 7 days"), (23, "3 weeks 2 days"), (400, "57 weeks 1 day")]
+    var ids: [(id: String, revision: Int)] = []
+    for (ahead, _) in dates {
+      ids.append(try await Self.addDate("Soon \(mark) \(ahead)", on: on(ahead), server: server, token: token))
+    }
+
+    let app = launch()
+    hideKeyboard(app)
+    app.tabBars.buttons["Upcoming"].tap()
+    let list = app.collectionViews.firstMatch
+    for (ahead, words) in dates {
+      let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Soon \(mark) \(ahead)")).firstMatch
+      for _ in 0..<10 where !(row.exists && row.isHittable) { list.swipeUp(velocity: .slow) }
+      expect(row, "a date \(ahead) days off", in: app, timeout: 15)
+      XCTAssertTrue(row.label.localizedCaseInsensitiveContains(words), "\(row.label) says \(words)")
+    }
+    let far = try XCTUnwrap(utc.date(byAdding: .day, value: 400, to: start))
+    day.dateFormat = "LLLL yyyy"
+    let heading = app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", day.string(from: far))).firstMatch
+    expect(heading, "its month's heading says the year", in: app, timeout: 15)
+    keep(app, "Upcoming by month")
+    for (id, revision) in ids { try await Self.removeDate(id, revision: revision, server: server, token: token) }
+  }
+
   /// A widget's tap (or the New Note control) opens Log from any tab, with
   /// the keyboard up.
   @MainActor func testANewNoteLink() throws {
@@ -433,6 +472,25 @@ final class ChangelogUITests: XCTestCase {
     app.navigationBars.buttons.firstMatch.tap()
     app.navigationBars.buttons.firstMatch.tap()
 
+    // Activity's rows open their notes. The newest row filed is a note deleted
+    // since, which says so; the one before it is the rich note.
+    let spent = try await Self.addNoteNamed("Gone soon \(mark)", server: server, token: reader)
+    try await Self.deleteNote(spent, server: server, token: reader)
+    app.tabBars.buttons["Activity"].tap()
+    let filedRows = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Filed in'"))
+    expect(filedRows.firstMatch, "Activity's rows open", in: app, timeout: 15)
+    keep(app, "Activity")
+    filedRows.element(boundBy: 0).tap()
+    expect(app.staticTexts["This note is gone: it was deleted somewhere else."], "a note since deleted says so", in: app, timeout: 15)
+    app.navigationBars.buttons.firstMatch.tap()
+    expect(filedRows.element(boundBy: 1), "the list is still there", in: app, timeout: 15)
+    filedRows.element(boundBy: 1).tap()
+    expect(app.staticTexts["second"], "a row opens its note", in: app, timeout: 15)
+    keep(app, "A note from Activity")
+    app.navigationBars.buttons.firstMatch.tap()
+    XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Deleted from'")).firstMatch.exists,
+                   "a deleted note's row opens nothing")
+
     app.tabBars.buttons["Log"].tap()
     expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "Log's Today shows its words", in: app, timeout: 15)
 
@@ -448,6 +506,11 @@ final class ChangelogUITests: XCTestCase {
     expect(app.buttons["Unlock"], "Notes is locked", in: app, timeout: 15)
     XCTAssertFalse(app.descendants(matching: .any).matching(elsewhere).firstMatch.exists)
     keep(app, "Locked")
+    // Activity still reads, wordless, and its rows open nothing while locked.
+    app.tabBars.buttons["Activity"].tap()
+    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Filed in'")).firstMatch, "locked, Activity reads", in: app, timeout: 15)
+    XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Filed in'")).firstMatch.exists,
+                   "locked, a row opens nothing")
     app.terminate()
 
     // Yes: it opens. Off again, so the next test finds it as it was.
@@ -604,6 +667,58 @@ final class ChangelogUITests: XCTestCase {
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
     let (_, response) = try await URLSession(configuration: .ephemeral).data(for: request)
     XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201, "the note went in")
+  }
+
+  /// A note added for a test, with where to find it again.
+  private static func addNoteNamed(_ words: String, server: String, token: String) async throws -> (date: String, id: String) {
+    var request = URLRequest(url: URL(string: "\(server)/v1/notes")!)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
+    request.httpBody = try JSONSerialization.data(withJSONObject: ["text": words])
+    let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201, "the note went in")
+    let receipt = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let note = try XCTUnwrap(receipt["note"] as? [String: Any])
+    return (try XCTUnwrap(note["date"] as? String), try XCTUnwrap(note["id"] as? String))
+  }
+
+  private static func deleteNote(_ note: (date: String, id: String), server: String, token: String) async throws {
+    var request = URLRequest(url: URL(string: "\(server)/v1/notes/\(note.date)/\(note.id)")!)
+    request.httpMethod = "DELETE"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
+    let (_, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 204, "the note went")
+  }
+
+  /// One Upcoming event on the fictional account, on the batch `/v1` takes.
+  private static func upcomingBatch(_ body: [String: Any], server: String, token: String) async throws -> Data {
+    var request = URLRequest(url: URL(string: "\(server)/v1/upcoming/batch")!)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, String(decoding: data, as: UTF8.self))
+    return data
+  }
+
+  private static func addDate(_ title: String, on date: String, server: String, token: String) async throws -> (id: String, revision: Int) {
+    _ = try await upcomingBatch(["add": [["kind": "event", "title": title, "date": date]]], server: server, token: token)
+    var request = URLRequest(url: URL(string: "\(server)/v1/upcoming")!)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, _) = try await URLSession(configuration: .ephemeral).data(for: request)
+    let list = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let entries = try XCTUnwrap(list["entries"] as? [[String: Any]])
+    let entry = try XCTUnwrap(entries.first { $0["title"] as? String == title })
+    return (try XCTUnwrap(entry["id"] as? String), try XCTUnwrap(entry["revision"] as? Int))
+  }
+
+  private static func removeDate(_ id: String, revision: Int, server: String, token: String) async throws {
+    _ = try await upcomingBatch(["remove": [["id": id, "revision": revision]]], server: server, token: token)
   }
 
   private static func statusOfMe(server: String, token: String) async throws -> (Int, Data) {

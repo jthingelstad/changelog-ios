@@ -179,7 +179,8 @@ there first, never work around it here.
   whether it is locked or not, off until turned on. Locked, Today reads only
   this token's notes, so Log shows what it always did, a waiting edit shows no
   words, and Fix opens only on this token's own note. Turning it on or off asks
-  first.
+  first. Activity's rows open their notes only while reading is open, and
+  close with it; the rows themselves never carry a note's words.
 - iOS 26 and later, iPhone only, Swift 6 strict concurrency.
 - No task groups (`withTaskGroup` and its kin). Built with Swift 6.4
   (Xcode 27.1) and optimized, as TestFlight builds are, the one in
@@ -261,7 +262,8 @@ Keychain.
 builds ad-hoc signed, grants photos, location and the microphone, sets the
 simulator in Minneapolis, and drives a note, a photo, Here, a moment (the
 stand-in, filed to its day and then to today), a voice memo,
-Upcoming (a date added and deleted), Activity and Settings, the app icons
+Upcoming (a date added and deleted, and dates under their months with
+how far off they are), Activity and Settings, the app icons
 (chosen and put back), and a share
 from Photos against the dev server, checking `/v1/activity` that each made
 exactly one note (and `/v1/upcoming` the date); and a note held for

@@ -108,6 +108,79 @@ public struct UpcomingEntry: Codable, Sendable, Equatable, Identifiable {
   }
 }
 
+/// How far off a date is, in whole calendar days. Days as the API writes them,
+/// counted in a calendar with no clock changes, so one never comes out short.
+public enum UpcomingCountdown {
+  private static let calendar: Calendar = {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+    return calendar
+  }()
+
+  private static func date(_ day: String) -> Date? {
+    guard let (y, m, d) = UpcomingDraft.parse(day) else { return nil }
+    return calendar.date(from: DateComponents(year: y, month: m, day: d))
+  }
+
+  public static func days(from today: String, to day: String) -> Int? {
+    guard let start = date(today), let end = date(day) else { return nil }
+    return calendar.dateComponents([.day], from: start, to: end).day
+  }
+
+  /// "Tomorrow", "In 7 days", and from two weeks on "3 weeks 2 days". Nothing
+  /// for today or a day gone: the row says those itself.
+  public static func words(to day: String, today: String) -> String? {
+    guard let days = days(from: today, to: day), days > 0 else { return nil }
+    if days == 1 { return "Tomorrow" }
+    if days < 14 { return "In \(days) days" }
+    let (weeks, left) = days.quotientAndRemainder(dividingBy: 7)
+    let inWeeks = "\(weeks) weeks"
+    return switch left {
+    case 0: inWeeks
+    case 1: inWeeks + " 1 day"
+    default: inWeeks + " \(left) days"
+    }
+  }
+}
+
+/// One month of the dates ahead, under its own heading. A trip already on
+/// has today as its next date, so it sits in this month.
+public struct UpcomingMonth: Sendable, Equatable, Identifiable {
+  /// `YYYY-MM`.
+  public var id: String
+  /// "December", and "January 2027" when it isn't this year's. Nothing for a
+  /// date the app can't read, which still shows, at the end.
+  public var title: String?
+  public var entries: [UpcomingEntry]
+}
+
+extension UpcomingList {
+  /// The entries in the server's order, by the month of their next date.
+  public func months(locale: Locale = .current) -> [UpcomingMonth] {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.locale = locale
+    let names = calendar.standaloneMonthSymbols
+    var months: [UpcomingMonth] = []
+    var unread: [UpcomingEntry] = []
+    for entry in entries {
+      guard let (year, month, _) = UpcomingDraft.parse(entry.next) else {
+        unread.append(entry)
+        continue
+      }
+      let id = String(entry.next.prefix(7))
+      if let at = months.firstIndex(where: { $0.id == id }) {
+        months[at].entries.append(entry)
+      } else {
+        let name = names[month - 1]
+        let title = entry.next.prefix(4) == today.prefix(4) ? name : "\(name) \(year)"
+        months.append(UpcomingMonth(id: id, title: title, entries: [entry]))
+      }
+    }
+    if !unread.isEmpty { months.append(UpcomingMonth(id: "unread", title: nil, entries: unread)) }
+    return months
+  }
+}
+
 /// `GET /v1/upcoming`: every date ahead, soonest first. A one-time date
 /// already over is left out and only counted, since it still takes one of
 /// the account's `maxEntries`.
