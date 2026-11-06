@@ -417,9 +417,16 @@ final class ChangelogUITests: XCTestCase {
     expect(filed, "the day opens with its note", in: app, timeout: 15)
     keep(app, "A past day")
     filed.tap()
-    expect(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Photo' OR label CONTAINS 'Voice' OR label CONTAINS '.'")).firstMatch,
-           "the note shows its files", in: app, timeout: 15)
+    // The picture itself, not its box: the box stands there whether or not it came.
+    expect(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Photo' AND value == 'Showing'")).firstMatch,
+           "the note's photo shows", in: app, timeout: 15)
     keep(app, "A note with files")
+    // A recording comes down and opens in Quick Look.
+    app.buttons["Voice memo"].tap()
+    let closePreview = app.buttons.matching(NSPredicate(format: "label == 'Done' OR label == 'Close'")).firstMatch
+    expect(closePreview, "the voice memo opens in Quick Look", in: app, timeout: 15)
+    keep(app, "A voice memo in Quick Look")
+    closePreview.tap()
     app.navigationBars.buttons.firstMatch.tap()
     app.navigationBars.buttons.firstMatch.tap()
 

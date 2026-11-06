@@ -1373,7 +1373,8 @@ final class AppModel {
   /// it came with, or a fresh one when that has run out (ten minutes).
   func fileData(_ file: NoteFileEntry, of note: NoteDetail, thumb: Bool) async -> Data? {
     func fetch(_ address: String?) async -> Data? {
-      guard let address, let url = URL(string: address),
+      // The service's addresses are whole; the dev server's are paths on it.
+      guard let address, let url = URL(string: address, relativeTo: client?.baseURL)?.absoluteURL,
             let (data, response) = try? await Self.fileSession.data(from: url),
             let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
       return data

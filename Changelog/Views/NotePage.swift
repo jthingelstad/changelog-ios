@@ -262,6 +262,7 @@ struct NoteThumb: View {
     }
     .clipShape(.rect(cornerRadius: 6))
     .accessibilityLabel(file.description ?? "Photo")
+    .accessibilityValue(image != nil ? "Showing" : failed ? "Couldn't be fetched" : "Fetching")
     .task(id: file.n) {
       // A photo too small to have a small copy shows itself.
       let data = await model.fileData(file, of: note, thumb: file.thumb != nil)
