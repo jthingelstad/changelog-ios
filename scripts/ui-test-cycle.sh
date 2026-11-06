@@ -1,6 +1,6 @@
 #!/bin/bash
 # One test cycle of Changelog on a simulator: a note, a photo, Here, a
-# moment, a voice memo, Upcoming, Activity and Settings, a share from
+# moment, a voice memo, Upcoming, Activity, Check-ins and Settings, a share from
 # Photos, and a note held for another account (a new fictional one, sent
 # and deleted), against the Release Notes dev server's fictional account.
 # Never production: it runs only against localhost.

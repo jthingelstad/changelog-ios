@@ -1,8 +1,8 @@
 import Foundation
 
 /// One event iOS delivered from its Visits service, as it came. The test of
-/// whether Breakpoints can rest on Visits keeps these on the phone and sends
-/// them nowhere.
+/// whether Check-ins could rest on Visits kept these on the phone and sent
+/// them nowhere; what it left there can still be read (`VisitsTestPage`).
 public struct VisitEvent: Codable, Sendable, Equatable, Identifiable {
   public var id: UUID
   /// When the phone heard about it, which can be well after either time.

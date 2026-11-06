@@ -30,6 +30,10 @@ final class AppModel {
   /// Moves on each time a change this phone made reaches Release Notes, so
   /// what a screen has read it reads again.
   private(set) var changes = 0
+  /// The same for check-ins, which Activity lists.
+  private(set) var checkInChanges = 0
+  /// Check in now is finding the phone.
+  private(set) var checkingIn = false
   /// Reading asks for Face ID when the owner comes back to the app. Off until
   /// turned on, and never in the way of capture: Log, Share and Siri write
   /// whether it is locked or not.
@@ -407,7 +411,8 @@ final class AppModel {
     readingNotice = nil
     unlocked = false
     PreviewFiles.sweep()
-    VisitRecorder.shared.forget()
+    CheckInRecorder.shared.forget()
+    VisitsTest.forget()
     versions = [:]
     todayGeneration += 1
     changes += 1
@@ -811,7 +816,8 @@ final class AppModel {
         item = try await outbox.enqueue(.note(text: text, date: date, writtenAt: stamp), account: account)
       } else {
         item = try await outbox.enqueue(.post(NotePost(text: text, date: date, writtenAt: stamp, files: files,
-                                                       spot: placed.spot, place: placed.spot == nil ? nil : place)),
+                                                       spot: placed.spot, place: placed.spot == nil ? nil : place,
+                                                       venue: placed.venue)),
                                         account: account)
       }
     } catch {
@@ -931,9 +937,20 @@ final class AppModel {
         PhoneReminders.takeBack([DailyPrompt.id(today)])
       }
     }
-    if report.sent.contains(where: { $0.item.text != nil || $0.result == .deleted }) {
+    // A stop reported with the app off the screen changes nothing anyone sees.
+    let onScreen = UIApplication.shared.applicationState == .active
+    if report.sent.contains(where: { $0.item.isCheckIn }) { checkInChanges += 1 }
+    if report.sent.contains(where: { $0.item.text != nil || $0.result == .deleted || ($0.item.isCheckIn && onScreen) }) {
       changes += 1
       await loadToday()
+    }
+    // Asked for by a tap, so it says so; a visit iOS reported never does.
+    if let tap = report.sent.last(where: \.item.isTap) {
+      if case .checkedIn(let stay) = tap.result {
+        toast = "Checked in at \(CheckInWords.stopName(stay.label))."
+      } else {
+        toast = "Checked in."
+      }
     }
     if let stopped = report.stopped { handle(stopped, from: client) }
   }
@@ -1197,11 +1214,11 @@ final class AppModel {
   /// Has Release Notes name a spot, the phone's or a moment's, with the
   /// businesses nearby: one Here each time it is asked. Offline, the spot
   /// is kept and named when the note is sent.
-  private func name(_ found: Spot) async {
+  private func name(_ found: Spot, venue chosen: String? = nil) async {
     spot = found
     spotAt = .now
     here = nil
-    venue = nil
+    venue = chosen
     guard let client else { return }
     naming = found
     let answer: Result<Here, APIError>
@@ -1472,6 +1489,150 @@ final class AppModel {
     let before = tags
     tags?.pinned = pinned
     if !(await queue(.pins(pinned))) { tags = before }
+  }
+
+  // MARK: Check-ins
+
+  /// Keeps a stop in the queue, then tries to send it. iOS may have started
+  /// the app just for this, with no window and no `start()`, so it reads what
+  /// it needs itself, as a background refresh does. False when it can't be
+  /// kept yet: before the phone's first unlock, or with no room.
+  func report(_ report: CheckInReport) async -> Bool {
+    let time = BackgroundTime("Send a check-in") {}
+    defer { time.end() }
+    if token == nil { token = tokens.read() }
+    guard token != nil else { return false }
+    beginAccounts()
+    do { try await outbox.enqueue(.checkIn(report), account: account) } catch { return false }
+    waiting = await outbox.waiting
+    await send()
+    return true
+  }
+
+  /// Check in now: one fix, When In Use being enough, and a `tap` through the
+  /// queue. Nil when it went or waits to; else what to say, beside the button.
+  func checkInNow() async -> String? {
+    guard !checkingIn else { return nil }
+    checkingIn = true
+    defer { checkingIn = false }
+    let tapped = Date.now
+    switch await Locator.spot() {
+    case .denied:
+      return "Location is off for Changelog. Allow it in the Settings app to check in."
+    case .unavailable:
+      return "This phone couldn't find where it is just now."
+    case .spot(let found):
+      guard await report(.tap(at: tapped, spot: found)) else { return Self.notKept }
+      if waiting.contains(where: { $0.isTap && $0.refusal == nil }) { toast = "Check-in waiting to send." }
+      return nil
+    }
+  }
+
+  /// A stay by a row's day and any of its ids. The row has no spot, and `/v1`
+  /// reads stays by day; the day before too, for a row about a stop that has
+  /// since merged with one that began before midnight. Nil once it has gone.
+  func checkIn(day: String, id: String) async throws(APIError) -> CheckIn? {
+    let from = Day.date(day).flatMap { Calendar.current.date(byAdding: .day, value: -1, to: $0) }.map(Day.string) ?? day
+    var before: String?
+    repeat {
+      let cursor = before
+      let page = try await reading { (client) async throws(APIError) in
+        try await client.checkIns(from: from, to: day, before: cursor)
+      }
+      if let stay = page.items.first(where: { $0.answers(to: id) }) { return stay }
+      before = page.next
+    } while before != nil
+    return nil
+  }
+
+  /// A name on this stay alone, or nil to take its own name off. At once, as
+  /// Upcoming's saves are: it is made from a revision, and a refusal is for
+  /// the owner to answer there and then.
+  func name(_ stay: CheckIn, as name: String?, idempotencyKey: String) async throws(APIError) -> CheckIn {
+    let changed = try await reading { (client) async throws(APIError) in
+      try await client.nameCheckIn(id: stay.id, name: name, revision: stay.revision, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+    return changed
+  }
+
+  /// Remember this place: the name goes on the place, and this stop's own name
+  /// comes off, or it would go on outranking the place. Saving a name has to
+  /// show it, so where another place still wins here, the stop keeps the name
+  /// as its own, as the web does. Each step has its own key, so saving again
+  /// after a lost answer picks up where it stopped. Needs `notes:all`.
+  func remember(_ stay: CheckIn, as name: String, idempotencyKey key: String) async throws(APIError) -> CheckIn {
+    let place = try await reading { (client) async throws(APIError) in
+      try await client.remember(name: name, lat: stay.lat, lon: stay.lon, idempotencyKey: key + "-place")
+    }
+    checkInChanges += 1
+    guard var now = try await checkIn(day: stay.day, id: stay.id) else { return stay }
+    if now.name != nil { now = try await self.name(now, as: nil, idempotencyKey: key + "-off") }
+    if now.place != place.id { now = try await self.name(now, as: name, idempotencyKey: key + "-own") }
+    return now
+  }
+
+  func delete(_ stay: CheckIn, idempotencyKey: String) async throws(APIError) {
+    try await reading { (client) async throws(APIError) in
+      try await client.deleteCheckIn(id: stay.id, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+    changes += 1
+    await loadToday()
+  }
+
+  /// Answers how many went. The places remembered stay.
+  func deleteAllCheckIns(idempotencyKey: String) async throws(APIError) -> Int {
+    let deleted = try await reading { (client) async throws(APIError) in
+      try await client.deleteAllCheckIns(idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+    changes += 1
+    await loadToday()
+    return deleted
+  }
+
+  func rememberedPlaces() async throws(APIError) -> [RememberedPlace] {
+    try await reading { (client) async throws(APIError) in try await client.rememberedPlaces() }
+  }
+
+  func rename(_ place: RememberedPlace, as name: String, idempotencyKey: String) async throws(APIError) {
+    _ = try await reading { (client) async throws(APIError) in
+      try await client.renamePlace(id: place.id, name: name, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+  }
+
+  func forget(_ place: RememberedPlace, idempotencyKey: String) async throws(APIError) {
+    try await reading { (client) async throws(APIError) in
+      try await client.forgetPlace(id: place.id, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+  }
+
+  /// The names for a stay's spot, asked for only when wanted: each is a lookup
+  /// Release Notes pays for.
+  func spotNames(_ stay: CheckIn) async throws(APIError) -> Here {
+    try await reading { (client) async throws(APIError) in
+      try await client.here(Spot(lat: stay.lat, lon: stay.lon, accuracyM: stay.accuracyM))
+    }
+  }
+
+  /// Write about this: Log, ready to write, on the check-in's day and at its
+  /// place, with its name as the venue if the owner gave it one, as a moment
+  /// from an earlier day is. Nothing is sent, and the note has no link back.
+  /// Capture is never locked, so this isn't either.
+  func write(about stay: CheckIn) async {
+    let today = me?.today
+    day = today.map { stay.day < $0 ? stay.day : nil } ?? stay.day
+    placeAsk += 1
+    placeOff = false
+    placeFromMoment = true
+    momentNotice = nil
+    AppRoute.shared.newNote()
+    finding += 1
+    defer { finding -= 1 }
+    await name(Spot(lat: stay.lat, lon: stay.lon, accuracyM: stay.accuracyM), venue: stay.isNamed ? stay.label : nil)
   }
 
   // MARK: Activity

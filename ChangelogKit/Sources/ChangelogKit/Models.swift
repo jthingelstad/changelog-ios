@@ -386,6 +386,20 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
   /// The `token.id` of the token that wrote the row (API 1.4.0). A row
   /// written before then has none (the field is left out, never null).
   public var tokenId: String? = nil
+  /// A check-in's row: the stay's id, its name, its times, where those times
+  /// read, whether a tap or a visit. Never its spot.
+  public var checkin: String? = nil
+  public var label: String? = nil
+  public var arrived: String? = nil
+  public var left: String? = nil
+  public var timeZone: String? = nil
+  /// A check-in's row: `visit` or `tap`.
+  public var source: String? = nil
+  /// A `checkin.deleted` row: every check-in went, and how many.
+  public var all: Bool? = nil
+  public var count: Int? = nil
+  /// A `checkin.place` row: `added`, `spot`, `renamed` or `forgotten`.
+  public var change: String? = nil
 
   public var family: String { String(kind.split(separator: ".").first ?? Substring(kind)) }
 
@@ -400,7 +414,7 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
   }
 
   /// Through what it came, in the owner's words.
-  public var source: String? {
+  public var channel: String? {
     switch via {
     case "token": token.map { "via \($0)" } ?? "via a token"
     case "assistant": client.map { "by \($0)" } ?? "by an agent"
@@ -414,16 +428,27 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
   /// Under the headline: how it came and its day. A reminder went out in the
   /// daily email; it didn't come in by one.
   public var detail: String? {
-    let parts = [kind == "reminder" ? "in the daily email" : source, day].compactMap { $0 }
+    if kind == "checkin" {
+      let parts = [stayLine, channel].compactMap { $0 }
+      return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+    let parts = [kind == "reminder" ? "in the daily email" : channel, day].compactMap { $0 }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
-  /// What this row can open, for a token that may read every note. A note
-  /// deleted has nothing to open, and a reply filed by email names only its
-  /// day.
+  /// A check-in's times, in the zone it happened in.
+  public var stayLine: String? {
+    CheckInWords.stay(arrived: arrived, left: left, source: source, timeZone: timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)
+  }
+
+  /// What this row can open. A check-in opens for anyone who can see the row;
+  /// the rest are for a token that may read every note. A note deleted has
+  /// nothing to open, and a reply filed by email names only its day.
   public var opens: ActivityTarget? {
     guard let day else { return nil }
     switch kind {
+    case "checkin", "checkin.named":
+      return checkin.map { .checkIn(day: day, id: $0) }
     case "note.added", "note.edited", "note.files", "description.added", "transcript.added":
       return note.map { .note(date: day, id: $0) }
     case "mail":
@@ -438,6 +463,7 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
 public enum ActivityTarget: Hashable, Sendable {
   case note(date: String, id: String)
   case day(String)
+  case checkIn(day: String, id: String)
 }
 
 /// `GET /v1/upcoming/reminders`: the reminders each morning's email

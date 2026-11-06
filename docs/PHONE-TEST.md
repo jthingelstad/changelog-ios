@@ -145,6 +145,21 @@ memo and a transcript.
     Notes says Locked, and Log's Today shows only what this phone wrote. Log,
     the share sheet and "Add a note in Changelog" all still work, locked.
 
+23. **Check-ins.** Settings, "Notice where I stop" is off. Tap "Check in now" on
+    Log with it off: While Using is enough, it says "Checked in at …" and Activity
+    has the row. Turn the switch on and pick Always at iOS's question; pick less
+    and it says what that means and links to the Settings app. Leave for
+    somewhere, stop for a while, and come back: without opening the app, the
+    stop is on the web's Activity, which only real delivery can prove. Then the
+    same with the phone locked, and in Airplane mode (it waits on Log, says so
+    without saying where, and sends once back online). Then the one a simulator
+    can't show at all: force-quit the app, stop somewhere, and see whether iOS
+    still started it and the stop arrived. A row opens its page locked too:
+    name it, take the name off, Remember it, Write about this, Delete. Settings,
+    Remembered places: rename and forget one. Delete all check-ins, and the
+    places stay. Sign out: the switch goes off, check-ins stay on the web, and
+    "Visits from the test" has gone.
+
 Anything wrong, slow or oddly worded becomes an issue here, with a
 screenshot of the dev server's fictional account if it needs one, never of
 a real account.

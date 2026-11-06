@@ -12,6 +12,8 @@ public enum OutboxOperation: Codable, Sendable, Equatable {
   /// A new note with files, a place or both. Its own case, so a queue saved
   /// by an earlier build still reads.
   case post(NotePost)
+  /// A stop to report, as iOS told of it or Check in now took it. Never words.
+  case checkIn(CheckInReport)
 }
 
 extension OutboxOperation {
@@ -44,8 +46,12 @@ public struct NotePost: Codable, Sendable, Equatable {
   public var place: DevicePlace?
   /// Times the uploads were made again after the note found them gone.
   public var reuploads: Int
+  /// A check-in's name, so a note about it keeps it when its place is only
+  /// named as it sends. Its own field, so a queue saved earlier still reads.
+  public var venue: String? = nil
 
-  public init(text: String, date: String? = nil, writtenAt: String, files: [QueuedFile] = [], spot: Spot? = nil, place: DevicePlace? = nil) {
+  public init(text: String, date: String? = nil, writtenAt: String, files: [QueuedFile] = [], spot: Spot? = nil, place: DevicePlace? = nil,
+              venue: String? = nil) {
     self.text = text
     self.date = date
     self.writtenAt = writtenAt
@@ -53,6 +59,7 @@ public struct NotePost: Codable, Sendable, Equatable {
     self.spot = spot
     self.place = place
     self.reuploads = 0
+    self.venue = venue
   }
 
   /// Every file posted and the place named: ready to send.
@@ -100,7 +107,7 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
     switch operation {
     case .note(let text, _, _), .edit(_, _, let text, _): text
     case .post(let post): post.text
-    case .delete, .pins: nil
+    case .delete, .pins, .checkIn: nil
     }
   }
 
@@ -110,6 +117,16 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
     case .note, .post: true
     default: false
     }
+  }
+
+  /// A stop waiting to be reported.
+  public var isCheckIn: Bool {
+    if case .checkIn = operation { true } else { false }
+  }
+
+  /// A stop the owner asked for, which says so when it lands.
+  public var isTap: Bool {
+    if case .checkIn(let report) = operation { report.source == "tap" } else { false }
   }
 
   /// The files it carries.
@@ -133,7 +150,7 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   public var canMove: Bool {
     switch operation {
     case .edit, .delete: false
-    case .note, .post, .pins: true
+    case .note, .post, .pins, .checkIn: true
     }
   }
 }
@@ -155,6 +172,7 @@ public enum OutboxResult: Sendable, Equatable {
   case edited(NoteRef)
   case deleted
   case pinned(Tags)
+  case checkedIn(CheckIn)
   /// Done (a 2xx), in an answer this build couldn't read.
   case done
 }
@@ -566,7 +584,12 @@ public actor Outbox {
   public func name(_ id: UUID, spot: Spot, place: DevicePlace?) {
     guard let i = items.firstIndex(where: { $0.id == id }), case .post(var post) = items[i].operation,
           post.spot == spot, post.place == nil else { return }
-    if let place { post.place = place } else { post.spot = nil }
+    if let place {
+      post.place = place
+      post.place?.venue = post.venue ?? place.venue
+    } else {
+      post.spot = nil
+    }
     items[i].operation = .post(post)
     // Unsaved, the note still goes: it asks Here again as it is prepared.
     try? save()
@@ -623,6 +646,8 @@ public extension APIClient {
       return .pinned(try await setPinned(pinned, idempotencyKey: key))
     case .post(let post):
       return .filed(try await createNote(post.request, idempotencyKey: key))
+    case .checkIn(let stop):
+      return .checkedIn(try await report(stop, idempotencyKey: key))
     }
   }
 
@@ -650,7 +675,10 @@ public extension APIClient {
       post.files[i].type = form.type
     }
     if let spot = post.spot, post.place == nil {
-      do { post.place = try await here(spot).place } catch {
+      do {
+        post.place = try await here(spot).place
+        if let venue = post.venue { post.place?.venue = venue }
+      } catch {
         if error.signedOut || (error.retryable && error.status != 429) { throw error }
         post.spot = nil
       }

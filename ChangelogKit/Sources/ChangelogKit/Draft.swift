@@ -43,7 +43,7 @@ public struct Draft: Codable, Sendable, Equatable {
       switch item.operation {
       case .note(let queued, _, let stamp): queued == text && stamp == writtenAt
       case .post(let post): post.text == text && post.writtenAt == writtenAt
-      case .edit, .delete, .pins: false
+      case .edit, .delete, .pins, .checkIn: false
       }
     }
   }

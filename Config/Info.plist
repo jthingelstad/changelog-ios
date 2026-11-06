@@ -29,9 +29,9 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>To add a voice memo to a note.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>To add the neighbourhood or city you are in to a note, with the businesses nearby to pick from. Only when you ask, or when Add where I am is on.</string>
+	<string>To add the neighbourhood or city you are in to a note, with the businesses nearby to pick from, and to check in when you tap Check in now. Only when you ask, or when Add where I am is on.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>To write down the places you stop, in a file on this phone, if you turn on Record visits in Settings. Nothing goes to Release Notes.</string>
+	<string>To add the places you stop to your Activity in Release Notes, if you turn on Check-ins in Settings. You can name them, write about them and delete them.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

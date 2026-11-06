@@ -282,35 +282,182 @@ final class ChangelogUITests: XCTestCase {
     for (id, revision) in ids { try await Self.removeDate(id, revision: revision, server: server, token: token) }
   }
 
-  /// The visits test: its switch, what it found from an arrival and its
-  /// leaving, and deleting it. A simulator never reports a visit, so
-  /// `CHANGELOG_VISIT` stands in for iOS.
-  @MainActor func testVisits() throws {
-    let app = launch(more: ["CHANGELOG_VISIT": "1"])
+  /// Check-ins from the switch on: a visit iOS reports, one row and one stay;
+  /// its page; a name for one stop, then one remembered; Write about this;
+  /// Check in now; and everything deleted. A simulator never reports a visit,
+  /// so `CHANGELOG_VISIT` stands in for iOS, and real delivery is for a phone
+  /// (`docs/PHONE-TEST.md`).
+  @MainActor func testCheckIns() async throws {
+    let scopes = ["notes:write", "media:write", "upcoming", "activity", "notes:all"]
+    let owner = try await Self.tokenOnThisAccount(scopes, server: server)
+    try await Self.deleteCheckIns(server: server, token: owner)
+    try await Self.forgetPlaces(server: server, token: owner)
+    let app = launch(as: owner, more: ["CHANGELOG_VISIT": "1"])
+    let stops = NSPredicate(format: "label BEGINSWITH 'Checked in at'")
     hideKeyboard(app)
+
     app.tabBars.buttons["Settings"].tap()
-    let toggle = app.switches["Record visits"]
+    let toggle = app.switches["Notice where I stop"]
     for _ in 0..<12 where !(toggle.exists && toggle.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
     expect(toggle, "Settings has the switch", in: app)
     XCTAssertEqual(toggle.value as? String, "0", "it is off until turned on")
+    keep(app, "Check-ins off")
     toggle.switches.firstMatch.tap()
-    let recorded = app.buttons["Visits recorded"]
-    expect(recorded, "turned on, its page opens", in: app, timeout: 15)
-    keep(app, "The visits test on")
-    recorded.tap()
-    expect(app.staticTexts["1 stop over 1 day"], "an arrival and its leaving are one stop", in: app, timeout: 15)
-    expect(app.staticTexts["Shortest stay: 50 min"], "it measures the stay", in: app, timeout: 5)
-    keep(app, "Visits recorded")
+    XCTAssertEqual(toggle.value as? String, "1", "it turns on")
+    keep(app, "Check-ins on")
+
+    // The arrival and its leaving are one stay on the server, and one row.
+    app.tabBars.buttons["Activity"].tap()
+    let filter = app.buttons["Check-ins"]
+    expect(filter, "Activity can show just check-ins", in: app, timeout: 15)
+    filter.tap()
+    let row = app.buttons.matching(stops).firstMatch
+    // At the hour it began, so below whatever else has happened since.
+    for _ in 0..<8 where !row.waitForExistence(timeout: 4) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    expect(row, "the stop is a row in Activity", in: app, timeout: 15)
+    XCTAssertEqual(app.buttons.matching(stops).count, 1, "an arrival and its leaving are one row")
+    XCTAssertTrue(row.label.contains("50 min"), "the row says how long: \(row.label)")
+    keep(app, "Check-ins in Activity")
+
+    // Its page, then a name on this stop alone.
+    row.tap()
+    expect(app.buttons["Write about this"], "the row opens its page", in: app, timeout: 15)
+    expect(app.staticTexts["The neighbourhood, until you name it."], "it says where the name came from", in: app)
+    keep(app, "A check-in")
+    app.buttons["Name it"].tap()
+    let name = app.textFields["Name"]
+    expect(name, "naming it asks for a name", in: app)
+    let nearby = app.buttons["Corner Café"]
+    expect(nearby, "the businesses nearby are offered", in: app, timeout: 15)
+    keep(app, "Naming a check-in")
+    name.tap()
+    name.typeText("Workshop")
+    app.buttons["Save name"].tap()
+    expect(app.staticTexts["You named this stop."], "the name is the stop's own", in: app, timeout: 15)
+    expect(app.staticTexts["Workshop"], "the page takes it", in: app)
+
+    // Remembered: the name goes on the place, and the stop's own comes off.
+    app.buttons["Change the name"].tap()
+    let remember = app.switches["Remember this place"]
+    expect(remember, "a token that may change every note can remember", in: app, timeout: 15)
+    XCTAssertEqual(remember.value as? String, "0", "Remember is off by default")
+    remember.switches.firstMatch.tap()
+    app.buttons["Save name"].tap()
+    expect(app.staticTexts["A place you remember. Rename or forget it in Settings."], "the place names it now", in: app, timeout: 15)
+    expect(app.staticTexts["Workshop"], "with the same name", in: app)
+    keep(app, "A remembered place")
+
+    // Write about this: Log, at that place, and nothing sent.
+    let before = try await filed()
+    app.buttons["Write about this"].tap()
+    expect(app.buttons["Commit"], "it opens Log", in: app, timeout: 15)
+    XCTAssertTrue(app.tabBars.buttons["Log"].isSelected, "Log is open")
+    expect(app.buttons["Place: Workshop"], "the note starts at the place", in: app, timeout: 30)
+    keep(app, "Writing about a check-in")
+    let after = try await filed()
+    XCTAssertEqual(after.count, before.count, "nothing is sent until Commit")
+    type(note("About that stop"), into: app)
+    app.buttons["Commit"].tap()
+    expectFiled(app)
+    let written = try await newNotes(since: before)
+    XCTAssertEqual(written.count, 1, "it files one note")
+    hideKeyboard(app)
+    // The toast has to go before the next one can be told from it.
+    XCTAssertTrue(app.staticTexts["toast"].waitForNonExistence(timeout: 10))
+
+    // Check in now: a tap, said so, and its own row.
+    let now = app.buttons["Check in now"]
+    expect(now, "Log has Check in now", in: app)
+    now.tap()
+    let said = app.staticTexts["toast"]
+    expect(said, "a tap says it went", in: app, timeout: 30)
+    XCTAssertEqual(said.label, "Checked in at Workshop.", "by the name that place has")
+    keep(app, "Check in now")
+    // Back at the same place, it merges with the stop before it (the design's
+    // merge rule), so still one row.
+    app.tabBars.buttons["Activity"].tap()
+    app.navigationBars.buttons.firstMatch.tap()
+    let tapped = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Checked in at Workshop'")).firstMatch
+    for _ in 0..<8 where !tapped.waitForExistence(timeout: 4) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    expect(tapped, "the stop is still a row", in: app, timeout: 15)
+    XCTAssertEqual(app.buttons.matching(stops).count, 1, "a tap at the same place merges")
+
+    // Deleting one from its page.
+    tapped.tap()
+    let delete = app.buttons["Delete"]
+    expect(delete, "a check-in can be deleted", in: app, timeout: 15)
+    for _ in 0..<6 where !delete.isHittable { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    delete.tap()
+    let confirm = app.buttons.matching(identifier: "Delete").firstMatch
+    expect(confirm, "deleting asks first", in: app)
+    let sheet = app.sheets.buttons["Delete"]
+    (sheet.exists ? sheet : confirm).tap()
+    XCTAssertTrue(app.buttons["Write about this"].waitForNonExistence(timeout: 15), "gone, it goes back to Activity")
+
+    // Settings: the place, then all of them, then the switch back off.
+    app.tabBars.buttons["Settings"].tap()
+    let places = app.buttons["Remembered places"]
+    for _ in 0..<12 where !(places.exists && places.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    places.tap()
+    let kept = app.staticTexts["Workshop"]
+    expect(kept, "Settings lists the place", in: app, timeout: 15)
+    keep(app, "Remembered places")
+    kept.swipeLeft()
+    let forget = app.buttons["Forget"]
+    expect(forget, "a place can be forgotten", in: app)
+    forget.tap()
+    let sure = app.buttons.matching(NSPredicate(format: "label == 'Forget'")).firstMatch
+    expect(sure, "forgetting asks first", in: app)
+    sure.tap()
+    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'None yet'")).firstMatch, "the place went", in: app, timeout: 15)
+    app.navigationBars.buttons.firstMatch.tap()
+
+    let all = app.buttons["Delete all check-ins"]
+    for _ in 0..<6 where !(all.exists && all.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    all.tap()
+    let everyOne = app.buttons.matching(identifier: "Delete").firstMatch
+    expect(everyOne, "deleting them all asks first", in: app)
+    everyOne.tap()
+    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Deleted '")).firstMatch, "they went", in: app, timeout: 15)
+    toggle.switches.firstMatch.tap()
+    XCTAssertEqual(toggle.value as? String, "0", "off again, so the next test finds it as it was")
+  }
+
+  /// Check in now needs no switch: a tap from Log, said so, with its own row.
+  @MainActor func testCheckInNow() async throws {
+    let app = launch()
+    hideKeyboard(app)
+    let now = app.buttons["Check in now"]
+    expect(now, "Log has Check in now", in: app)
+    now.tap()
+    let said = app.staticTexts["toast"]
+    expect(said, "a tap says it went", in: app, timeout: 30)
+    XCTAssertTrue(said.label.hasPrefix("Checked in at "), said.label)
+    keep(app, "Check in now")
+    try await Self.deleteCheckIns(server: server, token: token)
+  }
+
+  /// What the visits test left on a phone stays readable and deletable, and
+  /// nothing goes up. `CHANGELOG_OLD_VISITS` makes the file as the test did.
+  @MainActor func testVisitsFromTheTest() throws {
+    let app = launch(more: ["CHANGELOG_OLD_VISITS": "1"])
+    hideKeyboard(app)
+    app.tabBars.buttons["Settings"].tap()
+    let page = app.buttons["Visits from the test"]
+    for _ in 0..<12 where !(page.exists && page.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    expect(page, "the test's file is still there", in: app)
+    page.tap()
+    expect(app.staticTexts["1 stop over 1 day"], "it reads as it did", in: app, timeout: 15)
+    keep(app, "Visits from the test")
     let delete = app.buttons["Delete them all"]
     for _ in 0..<6 where !(delete.exists && delete.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
     delete.tap()
     let confirm = app.buttons.matching(identifier: "Delete").firstMatch
     expect(confirm, "deleting asks first", in: app)
     confirm.tap()
-    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Nothing yet'")).firstMatch, "they went", in: app, timeout: 15)
+    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Nothing here'")).firstMatch, "they went", in: app, timeout: 15)
     app.navigationBars.buttons.firstMatch.tap()
-    toggle.switches.firstMatch.tap()
-    XCTAssertEqual(toggle.value as? String, "0", "off again, so the next test finds it as it was")
+    XCTAssertFalse(page.waitForExistence(timeout: 3), "with the file gone, Settings stops offering it")
   }
 
   /// A widget's tap (or the New Note control) opens Log from any tab, with
@@ -523,7 +670,12 @@ final class ChangelogUITests: XCTestCase {
                    "a deleted note's row opens nothing")
 
     app.tabBars.buttons["Log"].tap()
-    expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "Log's Today shows its words", in: app, timeout: 15)
+    // Log takes the keyboard as it opens, and that covers Today.
+    expect(app.keyboards.firstMatch, "Log is ready to write", in: app)
+    hideKeyboard(app)
+    let todayRow = app.descendants(matching: .any).matching(elsewhere).firstMatch
+    for _ in 0..<6 where !todayRow.waitForExistence(timeout: 3) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    expect(todayRow, "Log's Today shows its words", in: app, timeout: 15)
 
     turnLock(in: app, on: true)
     app.terminate()
@@ -804,6 +956,36 @@ final class ChangelogUITests: XCTestCase {
   }
 
   struct Account: Decodable, Sendable { let today: String; let tz: String; let version: String }
+
+  /// Every check-in on the dev server's account, so a test starts clear.
+  private static func deleteCheckIns(server: String, token: String) async throws {
+    struct Stays: Decodable { struct Stay: Decodable { let id: String }; let items: [Stay] }
+    var list = URLRequest(url: URL(string: "\(server)/v1/check-ins?limit=100")!)
+    list.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, _) = try await URLSession.shared.data(for: list)
+    for stay in try JSONDecoder().decode(Stays.self, from: data).items {
+      var delete = URLRequest(url: URL(string: "\(server)/v1/check-ins/\(stay.id)")!)
+      delete.httpMethod = "DELETE"
+      delete.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+      delete.setValue(UUID().uuidString, forHTTPHeaderField: "Idempotency-Key")
+      _ = try await URLSession.shared.data(for: delete)
+    }
+  }
+
+  /// Every remembered place, for a token that may read and change all notes.
+  private static func forgetPlaces(server: String, token: String) async throws {
+    struct Places: Decodable { struct Place: Decodable { let id: String }; let places: [Place] }
+    var list = URLRequest(url: URL(string: "\(server)/v1/check-ins/places")!)
+    list.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, _) = try await URLSession.shared.data(for: list)
+    for place in try JSONDecoder().decode(Places.self, from: data).places {
+      var forget = URLRequest(url: URL(string: "\(server)/v1/check-ins/places/\(place.id)")!)
+      forget.httpMethod = "DELETE"
+      forget.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+      forget.setValue(UUID().uuidString, forHTTPHeaderField: "Idempotency-Key")
+      _ = try await URLSession.shared.data(for: forget)
+    }
+  }
 
   /// The dev server account's day and time zone.
   @MainActor private func account() async throws -> Account {

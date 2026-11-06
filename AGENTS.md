@@ -12,7 +12,8 @@ there first, never work around it here.
 
 - `ChangelogKit/` is a Swift package with everything that isn't a screen:
   `APIClient` (every `/v1` call, typed errors), `Outbox` (the offline queue,
-  each write with the account it was written under),
+  each write with the account it was written under), `CheckIns` (reports, the
+  check-in calls and the words a stay is said in),
   `Media` (uploads, the types Release Notes keeps, the storage form),
   `Hashtags` (a port of Release Notes' `packages/domain/tags.ts`; keep them
   in step), `TokenStore` (the Keychain), `SignIn` (signing in with
@@ -35,7 +36,8 @@ there first, never work around it here.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
   screens (Log, Upcoming, Activity, Settings, sign-in: Release Notes'
   page in a sign-in sheet on Safari's shared session, or a pasted token),
-  `Locator` one location fix, `Recorder` a voice memo, `PhoneReminders`
+  `Locator` one location fix, `CheckInRecorder` the Check-ins switch and iOS's
+  Visits service, `Recorder` a voice memo, `PhoneReminders`
   the phone's own notifications (there is no push server: they are
   scheduled ahead, or found by background refresh), `Intents` Shortcuts'
   and Siri's "Add a Note" (sent as a share is, without opening the app,
@@ -116,8 +118,9 @@ there first, never work around it here.
   files are, and the file is then never found. Tests keep files in folders
   with a space for this.
 - Every write goes through the Outbox with its idempotency key, so a resend
-  never makes a second note. Upcoming's saves and deletes are the one
-  exception: they go at once, since each is made from a revision and a
+  never makes a second note. Upcoming's saves and deletes, and a check-in's
+  name, its deleting and remembered places, are the exceptions (a check-in's
+  report and a tap queue as usual): they go at once, since each is made from a revision and a
   refusal (a city the search doesn't know) is for the person to fix there
   and then. Each still carries an Idempotency-Key held for as long as the
   same request is tried again (`RequestKey`).
@@ -147,15 +150,25 @@ there first, never work around it here.
 - A note's files are posted and its place named, and both saved, before
   the note is sent (the Outbox's `prepare`), so a resend is the same
   request. The token never goes to the storage form.
-- Location is When In Use, one fix when the owner asks (or has "Add where
-  I am" on), never in the background. Each Here is a lookup Release Notes
-  pays for, capped at 100 a day: ask once a draft, never as words change.
-- The one exception is the visits test for Breakpoints (`VisitRecorder`, Jamie,
-  2026-11-05), off until its Settings switch is turned on: Always, iOS's Visits
-  service, in a file on this phone that stays out of backups and goes when
-  signing out. Nothing goes to Release Notes. It has no written reason for
-  Beta App Review and the privacy page doesn't cover it, so it comes out or
-  becomes Breakpoints before any `--external` upload.
+- Location is When In Use, one fix when the owner asks (Here, Check in now, or
+  "Add where I am" on). Each Here is a lookup Release Notes pays for, capped at
+  100 a day: ask once a draft, never as words change. A check-in's page asks
+  only when Name opens or Write about this is tapped.
+- Check-ins (`CheckInRecorder`, `docs/CHECK-INS.md` in the Release Notes repo)
+  are the one thing that uses Always and iOS's Visits service, and only once
+  their Settings switch is turned on: it is off until then. Each stop goes to
+  the Outbox under its own key, so a bad connection loses nothing. iOS can
+  start the app to deliver one, with no window, before the phone's first
+  unlock: read the switch at each visit and on opening, never stop monitoring
+  because defaults read empty, and hold what can't be queued yet in memory.
+  Rows and a check-in's page open with reading locked (Jamie's call); capture
+  is never locked. The privacy page must say this before any upload, and it has
+  no written reason for Beta App Review yet: that comes before any `--external`
+  upload.
+- The visits test's file (`VisitsTest`) stays read-only, for the owner to read,
+  share and delete, until Jamie decides what happens to it. Nothing writes to
+  it and nothing in it goes to Release Notes. It goes when signing out, as the
+  test promised; check-ins stay on the account.
 - A moment only fills the draft: nothing is sent until the person
   commits. Its photos go through `addPhoto` within the draft's room, its
   place through the same Here naming as the location button, once a pick,
