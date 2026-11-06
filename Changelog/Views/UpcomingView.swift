@@ -67,12 +67,22 @@ struct UpcomingView: View {
                   .face(.hint)
                   .foregroundStyle(Color.ink2)
               }
-              ForEach(list.entries) { entry in
-                Button { open(.entry(entry)) } label: { UpcomingRow(entry: entry, today: list.today) }
-                  .buttonStyle(.plain)
-                  .swipeActions {
-                    Button("Delete", role: .destructive) { deleting = entry }
-                  }
+              ForEach(list.months()) { month in
+                if let title = month.title {
+                  Text(title)
+                    .textCase(.uppercase)
+                    .face(.dateline)
+                    .foregroundStyle(Color.ink2)
+                    .padding(.top, 10)
+                    .accessibilityAddTraits(.isHeader)
+                }
+                ForEach(month.entries) { entry in
+                  Button { open(.entry(entry)) } label: { UpcomingRow(entry: entry, today: list.today) }
+                    .buttonStyle(.plain)
+                    .swipeActions {
+                      Button("Delete", role: .destructive) { deleting = entry }
+                    }
+                }
               }
               if let footer = footer(list) {
                 Text(footer).face(.meta).foregroundStyle(Color.ink3)
@@ -250,7 +260,9 @@ struct UpcomingRow: View {
     switch entry.status {
     case "today": return "Today"
     case "ongoing": return entry.through.map { "Now, through \(Day.label($0, today: today))" } ?? "Now"
-    default: return Day.label(entry.next, today: today)
+    default:
+      let date = Day.label(entry.next, today: today)
+      return UpcomingCountdown.words(to: entry.next, today: today).map { "\(date) · \($0)" } ?? date
     }
   }
 }

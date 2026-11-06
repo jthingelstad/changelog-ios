@@ -398,6 +398,46 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
     if let tokenId { return tokenId == token.id }
     return self.token == token.name
   }
+
+  /// Through what it came, in the owner's words.
+  public var source: String? {
+    switch via {
+    case "token": token.map { "via \($0)" } ?? "via a token"
+    case "assistant": client.map { "by \($0)" } ?? "by an agent"
+    case "email": "by email"
+    case "web": "on the web"
+    case "import": "by import"
+    default: nil
+    }
+  }
+
+  /// Under the headline: how it came and its day. A reminder went out in the
+  /// daily email; it didn't come in by one.
+  public var detail: String? {
+    let parts = [kind == "reminder" ? "in the daily email" : source, day].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+
+  /// What this row can open, for a token that may read every note. A note
+  /// deleted has nothing to open, and a reply filed by email names only its
+  /// day.
+  public var opens: ActivityTarget? {
+    guard let day else { return nil }
+    switch kind {
+    case "note.added", "note.edited", "note.files", "description.added", "transcript.added":
+      return note.map { .note(date: day, id: $0) }
+    case "mail":
+      return outcome == "filed" ? .day(day) : nil
+    default:
+      return nil
+    }
+  }
+}
+
+/// Where an activity row leads.
+public enum ActivityTarget: Hashable, Sendable {
+  case note(date: String, id: String)
+  case day(String)
 }
 
 /// `GET /v1/upcoming/reminders`: the reminders each morning's email

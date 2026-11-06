@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The activity log, newest first, from every channel: what came in, what
 /// changed, what went out. It never shows what a note said; the server
-/// leaves the words out.
+/// leaves the words out. With reading open, a row about a note opens it, read
+/// as it opens and held in memory only.
 struct ActivityView: View {
   @Environment(AppModel.self) private var model
   @State private var items: [ActivityItem] = []
@@ -14,6 +15,10 @@ struct ActivityView: View {
   /// so the server stores nothing new.
   @AppStorage("activity.seen") private var seen = ""
   @State private var seenAtOpen = ""
+  @State private var path = NavigationPath()
+  /// A row was opened, so coming back finds the list as it was, however far
+  /// back it had been paged.
+  @State private var cameBack = false
 
   enum Filter: String, CaseIterable, Identifiable {
     case all = "All", notes = "Notes", email = "Email", badges = "Badges", upcoming = "Upcoming", connections = "Connections", problems = "Problems"
@@ -32,7 +37,7 @@ struct ActivityView: View {
   }
 
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $path) {
       List {
         Group {
           BrandBar()
@@ -81,7 +86,7 @@ struct ActivityView: View {
             }
             .paperRow(top: 10, bottom: 4)
           }
-          ActivityRow(item: item)
+          row(item)
             .paperRow(top: 8, bottom: 8)
         }
         if next != nil {
@@ -97,9 +102,35 @@ struct ActivityView: View {
       .navigationTitle("Activity")
       .toolbar(.hidden, for: .navigationBar)
       .refreshable { await load() }
-      .task(id: filter) { await load() }
-      .onAppear { seenAtOpen = seen }
-      .onDisappear { if let first = items.first { seen = first.id } }
+      .task(id: filter) {
+        if cameBack {
+          cameBack = false
+        } else {
+          await load()
+        }
+      }
+      .onAppear { if path.isEmpty { seenAtOpen = seen } }
+      .onDisappear { if path.isEmpty, let first = items.first { seen = first.id } }
+      .navigationDestination(for: ActivityNote.self) { ActivityNotePage(route: $0) }
+      .navigationDestination(for: DayRoute.self) { DayPage(date: $0.date) }
+    }
+    .onChange(of: path.isEmpty) { _, empty in
+      if !empty { cameBack = true }
+    }
+    // Nothing a row opened stays open behind the lock.
+    .onChange(of: model.readingOpen) { _, open in
+      if !open { path = NavigationPath() }
+    }
+  }
+
+  @ViewBuilder private func row(_ item: ActivityItem) -> some View {
+    switch model.readingOpen ? item.opens : nil {
+    case .note(let date, let id):
+      NavigationLink(value: ActivityNote(date: date, id: id)) { ActivityRow(item: item) }
+    case .day(let date):
+      NavigationLink(value: DayRoute(date: date)) { ActivityRow(item: item) }
+    case nil:
+      ActivityRow(item: item)
     }
   }
 
@@ -114,6 +145,56 @@ struct ActivityView: View {
     guard let page = await model.activity(before: more ? next : nil, kinds: filter.kinds) else { return }
     items = more ? items + page.items : page.items
     next = page.next
+  }
+}
+
+private struct ActivityNote: Hashable {
+  let date: String
+  let id: String
+}
+
+/// A note an activity row points at. The row has its id and day, not the note,
+/// so it reads it here, and says so plainly if it has gone since.
+private struct ActivityNotePage: View {
+  @Environment(AppModel.self) private var model
+  let route: ActivityNote
+  @State private var note: NoteDetail?
+  @State private var gone = false
+  @State private var problem: String?
+
+  var body: some View {
+    if let note {
+      NotePage(note: note)
+    } else {
+      List {
+        Group {
+          if gone {
+            Text("This note is gone: it was deleted somewhere else.").face(.hint).foregroundStyle(Color.tangerineInk)
+          } else if let problem {
+            Text(problem).face(.hint).foregroundStyle(Color.tangerineInk)
+            Button("Try again") { Task { await read() } }
+              .buttonStyle(QuietButtonStyle())
+          } else {
+            ProgressView()
+          }
+        }
+        .paperRow(top: 12, bottom: 8)
+        .listRowSeparator(.hidden)
+      }
+      .paperList()
+      .navigationTitle(Day.label(route.date, today: model.me?.today ?? route.date))
+      .navigationBarTitleDisplayMode(.inline)
+      .task { await read() }
+    }
+  }
+
+  private func read() async {
+    problem = nil
+    do throws(APIError) {
+      note = try await model.load(date: route.date, id: route.id, urls: true)
+    } catch {
+      if error.status == 404 { gone = true } else { problem = error.message }
+    }
   }
 }
 
@@ -159,18 +240,6 @@ extension AppModel {
 }
 
 extension ActivityItem {
-  /// Through what it came, in the owner's words.
-  var source: String? {
-    switch via {
-    case "token": token.map { "via \($0)" } ?? "via a token"
-    case "assistant": client.map { "by \($0)" } ?? "by an agent"
-    case "email": "by email"
-    case "web": "on the web"
-    case "import": "by import"
-    default: nil
-    }
-  }
-
   var headline: String {
     // A row without a version (a deleted note's, say) reads whole without
     // one, never "Deleted from".
@@ -182,7 +251,7 @@ extension ActivityItem {
     case "note.files": return of("Files added in", else: "Files added")
     case "mail": return outcome == "filed" ? of("Reply filed in", else: "Reply filed") : "Email not filed"
     case "email.sent": return of("Email sent for", else: "Email sent")
-    case "reminder": return title.map { "Reminder: \($0)" } ?? "Reminder in the email"
+    case "reminder": return title.map { "Reminder: \($0)" } ?? "Reminder in the daily email"
     case "badge.earned": return name.map { "Badge: \($0)" } ?? "Badge earned"
     case "transcript.added": return "Recording written out"
     case "description.added": return "Photos described"
@@ -203,11 +272,6 @@ extension ActivityItem {
     case "place.set", "place.removed": return "Place for the day changed"
     default: return kind.replacingOccurrences(of: ".", with: " ").capitalized
     }
-  }
-
-  var detail: String? {
-    let parts = [source, day].compactMap { $0 }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
   var isProblem: Bool {

@@ -7,6 +7,7 @@
 #
 #   CHANGELOG_DEV_TOKEN=rn_... scripts/ui-test-cycle.sh ["iPhone 17" [test ...]]
 #
+# A simulator's id works in place of its name, and picks the iOS.
 # Name tests (testHere, testShareFromPhotos) to run only those.
 # Start the dev server first, with places faked (in Release Notes, Node 24):
 #   node --import tsx tools/dev-server.ts --fake-places
@@ -30,7 +31,12 @@ if (( $# > 1 )); then
   only=()
   for test in "${@:2}"; do only+=("-only-testing:ChangelogUITests/ChangelogUITests/$test"); done
 fi
-device=$(xcrun simctl list devices available | grep -E "^ +$name \(" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+# A name can mean more than one simulator, one per iOS; an id means one.
+if [[ $name =~ ^[0-9A-F-]{36}$ ]]; then
+  device=$name
+else
+  device=$(xcrun simctl list devices available | grep -E "^ +$name \(" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+fi
 [[ -n $device ]] || { echo "No simulator named $name." >&2; exit 1; }
 xcrun simctl boot "$device" 2>/dev/null || true
 xcrun simctl bootstatus "$device" -b >/dev/null

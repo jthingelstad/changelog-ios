@@ -289,7 +289,7 @@ private struct DayRow: View {
 }
 
 /// One past day: where it was, its weather, and every note it has.
-private struct DayPage: View {
+struct DayPage: View {
   @Environment(AppModel.self) private var model
   let date: String
   @State private var day: DayDetail?

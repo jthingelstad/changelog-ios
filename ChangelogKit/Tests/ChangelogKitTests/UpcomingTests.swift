@@ -236,4 +236,55 @@ import Testing
     #expect(batch.add.first?.place == "Paris, Texas")
     #expect(draft.title.isEmpty)
   }
+
+  // MARK: How far off, and by month
+
+  @Test(arguments: [
+    ("2026-11-06", "Tomorrow"), ("2026-11-07", "In 2 days"), ("2026-11-12", "In 7 days"), ("2026-11-18", "In 13 days"),
+    ("2026-11-19", "2 weeks"), ("2026-11-20", "2 weeks 1 day"), ("2026-11-28", "3 weeks 2 days"), ("2026-11-26", "3 weeks"),
+    ("2027-11-05", "52 weeks 1 day"),
+  ]) func aCountdown(day: String, words: String) {
+    #expect(UpcomingCountdown.words(to: day, today: "2026-11-05") == words)
+  }
+
+  @Test func noCountdownForTodayADayGoneOrADayItCantRead() {
+    #expect(UpcomingCountdown.words(to: "2026-11-05", today: "2026-11-05") == nil)
+    #expect(UpcomingCountdown.words(to: "2026-11-04", today: "2026-11-05") == nil)
+    #expect(UpcomingCountdown.words(to: "soon", today: "2026-11-05") == nil)
+  }
+
+  /// A clock change between the two days takes nothing off, in spring or fall.
+  @Test func aCountdownAcrossAClockChange() {
+    #expect(UpcomingCountdown.days(from: "2026-03-07", to: "2026-03-09") == 2)
+    #expect(UpcomingCountdown.days(from: "2026-10-31", to: "2026-11-02") == 2)
+    #expect(UpcomingCountdown.days(from: "2028-02-28", to: "2028-03-01") == 2)
+  }
+
+  static func dated(_ id: String, _ next: String, status: String = "upcoming") -> UpcomingEntry {
+    UpcomingEntry(id: id, revision: 1, next: next, status: status, line: id,
+                  fields: UpcomingFields(kind: .event, title: id, date: next))
+  }
+
+  @Test func monthsKeepTheServersOrderAndSayTheYearWhenItIsAnother() {
+    let list = UpcomingList(today: "2026-11-05", entries: [
+      Self.dated("trip", "2026-11-05", status: "ongoing"), Self.dated("a", "2026-11-20"), Self.dated("b", "2026-12-01"),
+      Self.dated("c", "2027-01-02"), Self.dated("d", "2027-12-25"),
+    ])
+    let months = list.months(locale: Locale(identifier: "en_US"))
+    #expect(months.map(\.title) == ["November", "December", "January 2027", "December 2027"])
+    #expect(months.map(\.id) == ["2026-11", "2026-12", "2027-01", "2027-12"])
+    #expect(months[0].entries.map(\.id) == ["trip", "a"])
+  }
+
+  /// One date the app can't read still shows, and doesn't take a heading.
+  @Test func aDateItCantReadStillShows() {
+    let list = UpcomingList(today: "2026-11-05", entries: [Self.dated("odd", "someday"), Self.dated("a", "2026-11-20")])
+    let months = list.months(locale: Locale(identifier: "en_US"))
+    #expect(months.map(\.title) == ["November", nil])
+    #expect(months[1].entries.map(\.id) == ["odd"])
+  }
+
+  @Test func noDatesNoMonths() {
+    #expect(UpcomingList(today: "2026-11-05", entries: []).months().isEmpty)
+  }
 }
