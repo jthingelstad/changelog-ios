@@ -62,6 +62,7 @@ final class CheckInRecorder: NSObject, CLLocationManagerDelegate {
     on = wanted
     defaults.set(wanted, forKey: Self.onKey)
     guard wanted else {
+      unkept = []
       manager.stopMonitoringVisits()
       return
     }
@@ -74,7 +75,6 @@ final class CheckInRecorder: NSObject, CLLocationManagerDelegate {
 
   /// Signing out stops recording. The check-ins stay on the account.
   func forget() {
-    unkept = []
     set(on: false)
   }
 
@@ -94,9 +94,7 @@ final class CheckInRecorder: NSObject, CLLocationManagerDelegate {
   }
 
   private func heard(arrival: Date, departure: Date, lat: Double, lon: Double, accuracy: Double) {
-    // Read again: a launch before the phone's first unlock read no switch.
-    on = defaults.bool(forKey: Self.onKey)
-    guard on, let report = CheckInReport.visit(arrival: arrival, departure: departure, lat: lat, lon: lon, accuracy: accuracy) else { return }
+    guard let report = CheckInReport.visit(arrival: arrival, departure: departure, lat: lat, lon: lon, accuracy: accuracy) else { return }
     unkept.append(report)
     Task { await handOver() }
   }
@@ -107,8 +105,17 @@ final class CheckInRecorder: NSObject, CLLocationManagerDelegate {
     handing = true
     defer { handing = false }
     while let next = unkept.first {
+      // Read each time. Before the phone's first unlock the switch reads off
+      // whatever it is, so what was heard then waits to be sure. Only with the
+      // defaults readable does off mean off.
+      on = defaults.bool(forKey: Self.onKey)
+      guard on else {
+        if UIApplication.shared.isProtectedDataAvailable { unkept = [] }
+        return
+      }
       guard await keep(next) else { return }
-      unkept.removeFirst()
+      // Signing out while that went clears these, so check it's still here.
+      if unkept.first == next { unkept.removeFirst() }
     }
   }
 

@@ -1576,9 +1576,10 @@ final class AppModel {
     try await reading { (client) async throws(APIError) in
       try await client.deleteCheckIn(id: stay.id, idempotencyKey: idempotencyKey)
     }
-    checkInChanges += 1
     changes += 1
     await loadToday()
+    // Last: an open page reads again on this, and it is about to close.
+    checkInChanges += 1
   }
 
   /// Answers how many went. The places remembered stay.

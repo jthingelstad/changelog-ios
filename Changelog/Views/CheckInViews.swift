@@ -306,7 +306,8 @@ struct CheckInPage: View {
   private func read() async {
     problem = nil
     do throws(APIError) {
-      if let found = try await model.checkIn(day: day, id: id) { stay = found } else { gone = true }
+      stay = try await model.checkIn(day: day, id: id)
+      gone = stay == nil
     } catch {
       problem = error.message
     }

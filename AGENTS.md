@@ -159,8 +159,8 @@ there first, never work around it here.
   their Settings switch is turned on: it is off until then. Each stop goes to
   the Outbox under its own key, so a bad connection loses nothing. iOS can
   start the app to deliver one, with no window, before the phone's first
-  unlock: read the switch at each visit and on opening, never stop monitoring
-  because defaults read empty, and hold what can't be queued yet in memory.
+  unlock, when defaults read empty: never stop monitoring because of that, hold
+  in memory what can't be queued yet, and only drop it once off really means off.
   Rows and a check-in's page open with reading locked (Jamie's call); capture
   is never locked. The privacy page must say this before any upload, and it has
   no written reason for Beta App Review yet: that comes before any `--external`
