@@ -141,6 +141,7 @@ struct ReadingTests {
 
   private func adopt(store: any TokenStore, ended: Ended, answer: Result<Me, APIError>) async -> Result<Me, TokenSwitch.Refused> {
     await TokenSwitch.adopt(new, replacing: old, account: "acct_1", store: store,
+                            stillCurrent: { store.read() == old },
                             me: { (_) async throws(APIError) -> Me in try answer.get() },
                             revoke: { ended.add($0) })
   }
@@ -152,6 +153,34 @@ struct ReadingTests {
     #expect(store.read() == new)
     // The old one is the caller's to end, once it has moved over.
     #expect(ended.all.isEmpty)
+  }
+
+  /// Signed out while the new token was being proved: it must not land in the
+  /// Keychain of a phone that shows signed out, and it mustn't stay alive.
+  @Test func signingOutDuringTheProofLeavesNoToken() async throws {
+    let store = MemoryTokenStore(old), ended = Ended(), fresh = me(scopes: reading)
+    let answer = await TokenSwitch.adopt(new, replacing: old, account: "acct_1", store: store,
+                                         stillCurrent: { store.read() == old },
+                                         me: { (_) async throws(APIError) -> Me in store.clear(); return fresh },
+                                         revoke: { ended.add($0) })
+    guard case .failure = answer else { Issue.record("expected a refusal"); return }
+    #expect(store.read() == nil)
+    #expect(ended.all == [new])
+  }
+
+  /// Signed in again meanwhile: the stale switch doesn't overwrite the new sign-in.
+  @Test func aNewSignInDuringTheProofIsKept() async throws {
+    let store = MemoryTokenStore(old), ended = Ended(), fresh = me(scopes: reading)
+    let answer = await TokenSwitch.adopt(new, replacing: old, account: "acct_1", store: store,
+                                         stillCurrent: { store.read() == old },
+                                         me: { (_) async throws(APIError) -> Me in
+                                           try? store.write("rn_other")
+                                           return fresh
+                                         },
+                                         revoke: { ended.add($0) })
+    guard case .failure = answer else { Issue.record("expected a refusal"); return }
+    #expect(store.read() == "rn_other")
+    #expect(ended.all == [new])
   }
 
   @Test func anotherAccountNeverTakesThePhone() async throws {

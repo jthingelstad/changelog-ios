@@ -24,13 +24,20 @@ public enum TokenSwitch {
   /// the token's `/v1/me`, or a sentence for the owner, having ended the
   /// candidate and put `current` back. The caller moves to the new token
   /// before it ends the old one, so a send under way never reads as signed out.
+  ///
+  /// `stillCurrent` says the phone still holds `current`: the owner can sign
+  /// out while the token is being proved. This runs on the caller's actor, so
+  /// nothing of the caller's can run between that answer, the write and the
+  /// caller taking the new token up.
   public static func adopt(
     _ candidate: String,
     replacing current: String,
     account: String?,
     store: any TokenStore,
+    stillCurrent: () -> Bool,
     me: @Sendable (String) async throws(APIError) -> Me,
-    revoke: @Sendable (String) async -> Void
+    revoke: @Sendable (String) async -> Void,
+    isolation: isolated (any Actor)? = #isolation
   ) async -> Result<Me, Refused> {
     let fresh: Me
     do throws(APIError) {
@@ -42,6 +49,10 @@ public enum TokenSwitch {
     if let said = refusal(of: fresh, account: account) {
       await revoke(candidate)
       return .failure(Refused(message: said))
+    }
+    guard stillCurrent() else {
+      await revoke(candidate)
+      return .failure(Refused(message: "This phone isn't using that token any more, so nothing changed."))
     }
     do {
       try store.write(candidate)

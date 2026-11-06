@@ -333,11 +333,13 @@ final class AppModel {
     }
     let answer = await TokenSwitch.adopt(
       candidate, replacing: current, account: account, store: tokens,
+      stillCurrent: { self.token == current },
       me: { (token) async throws(APIError) -> Me in try await api(token).me() },
       revoke: { token in try? await api(token).revokeToken() })
     switch answer {
     case .failure(let refused):
-      return refused.message
+      // Signed out meanwhile: the page that asked isn't there to say it.
+      return token == current ? refused.message : nil
     case .success(let fresh):
       // In use before the old one ends, so a send under way sees a token
       // this phone no longer holds and leaves its note for the new one.
@@ -346,7 +348,7 @@ final class AppModel {
       await took(fresh, from: api(candidate))
       var ended = true
       do throws(APIError) { try await api(current).revokeToken() } catch { ended = error.signedOut }
-      if !ended { readingNotice = Self.oldNotEnded }
+      if !ended, token == candidate { readingNotice = Self.oldNotEnded }
       await refresh()
       return nil
     }
