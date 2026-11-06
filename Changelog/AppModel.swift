@@ -407,6 +407,7 @@ final class AppModel {
     readingNotice = nil
     unlocked = false
     PreviewFiles.sweep()
+    VisitRecorder.shared.forget()
     versions = [:]
     todayGeneration += 1
     changes += 1

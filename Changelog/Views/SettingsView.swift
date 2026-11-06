@@ -64,6 +64,8 @@ struct SettingsView: View {
             SectionNote("Each note from this phone takes the neighbourhood or city it was written in, and you can pick a business nearby. Off, tap the location button for a note that should have one.")
           }
 
+          VisitsTestSection()
+
           Section {
             NavigationLink("Pinned tags") { PinnedTagsView() }
             if let sticky = model.sticky {

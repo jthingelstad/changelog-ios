@@ -282,6 +282,37 @@ final class ChangelogUITests: XCTestCase {
     for (id, revision) in ids { try await Self.removeDate(id, revision: revision, server: server, token: token) }
   }
 
+  /// The visits test: its switch, what it found from an arrival and its
+  /// leaving, and deleting it. A simulator never reports a visit, so
+  /// `CHANGELOG_VISIT` stands in for iOS.
+  @MainActor func testVisits() throws {
+    let app = launch(more: ["CHANGELOG_VISIT": "1"])
+    hideKeyboard(app)
+    app.tabBars.buttons["Settings"].tap()
+    let toggle = app.switches["Record visits"]
+    for _ in 0..<12 where !(toggle.exists && toggle.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    expect(toggle, "Settings has the switch", in: app)
+    XCTAssertEqual(toggle.value as? String, "0", "it is off until turned on")
+    toggle.switches.firstMatch.tap()
+    let recorded = app.buttons["Visits recorded"]
+    expect(recorded, "turned on, its page opens", in: app, timeout: 15)
+    keep(app, "The visits test on")
+    recorded.tap()
+    expect(app.staticTexts["1 stop over 1 day"], "an arrival and its leaving are one stop", in: app, timeout: 15)
+    expect(app.staticTexts["Shortest stay: 50 min"], "it measures the stay", in: app, timeout: 5)
+    keep(app, "Visits recorded")
+    let delete = app.buttons["Delete them all"]
+    for _ in 0..<6 where !(delete.exists && delete.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    delete.tap()
+    let confirm = app.buttons.matching(identifier: "Delete").firstMatch
+    expect(confirm, "deleting asks first", in: app)
+    confirm.tap()
+    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Nothing yet'")).firstMatch, "they went", in: app, timeout: 15)
+    app.navigationBars.buttons.firstMatch.tap()
+    toggle.switches.firstMatch.tap()
+    XCTAssertEqual(toggle.value as? String, "0", "off again, so the next test finds it as it was")
+  }
+
   /// A widget's tap (or the New Note control) opens Log from any tab, with
   /// the keyboard up.
   @MainActor func testANewNoteLink() throws {

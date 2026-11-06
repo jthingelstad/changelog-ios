@@ -49,7 +49,7 @@ xcodebuild -project "$root/Changelog.xcodeproj" -scheme Changelog -destination "
 
 bundle=com.yourversionnumber.changelog
 xcrun simctl install "$device" "$dd/Build/Products/Debug-iphonesimulator/Changelog.app"
-for service in photos location microphone; do xcrun simctl privacy "$device" grant "$service" "$bundle"; done
+for service in photos location-always microphone; do xcrun simctl privacy "$device" grant "$service" "$bundle"; done
 # Minneapolis, which the dev server names (with --fake-places).
 xcrun simctl location "$device" set 44.9778,-93.2650
 

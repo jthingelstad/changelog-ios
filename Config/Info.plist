@@ -30,6 +30,8 @@
 	<string>To add a voice memo to a note.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>To add the neighbourhood or city you are in to a note, with the businesses nearby to pick from. Only when you ask, or when Add where I am is on.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>To write down the places you stop, in a file on this phone, if you turn on Record visits in Settings. Nothing goes to Release Notes.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
