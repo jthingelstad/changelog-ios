@@ -425,8 +425,11 @@ final class ChangelogUITests: XCTestCase {
     app.buttons["Voice memo"].tap()
     let closePreview = app.buttons["QLOverlayDoneButtonAccessibilityIdentifier"]
     expect(closePreview, "the voice memo opens in Quick Look", in: app, timeout: 15)
+    // Its name up means it has loaded; a tap on the close button before that is lost.
+    expect(app.buttons["Voice memo, Actions Menu"], "Quick Look names the voice memo", in: app, timeout: 15)
     keep(app, "A voice memo in Quick Look")
     closePreview.tap()
+    XCTAssertTrue(closePreview.waitForNonExistence(timeout: 10), "Quick Look closes")
     app.navigationBars.buttons.firstMatch.tap()
     app.navigationBars.buttons.firstMatch.tap()
 
