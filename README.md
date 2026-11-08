@@ -25,7 +25,8 @@ account and settings stay on the web.
 - **Photos, voice memos and where you are** on a note: from the library
   or the camera, recorded in the app, and the neighbourhood or city with a
   business nearby to pick. They wait on the phone with the note until it
-  is sent. Files need a token with "Add files" ticked.
+  is sent. A note already sent takes files on or off from its Edit. Files
+  need a token with "Add files" ticked.
 - **Share** a photo, a PDF, a voice memo, a link or some text from any app:
   Changelog is in the share sheet, with a line to go with it and Commit.
   It sends straight away when it can; what it can't, the app sends next

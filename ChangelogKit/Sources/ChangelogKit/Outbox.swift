@@ -14,9 +14,31 @@ public enum OutboxOperation: Codable, Sendable, Equatable {
   case post(NotePost)
   /// A stop to report, as iOS told of it or Check in now took it. Never words.
   case checkIn(CheckInReport)
+  /// Files added to a note already filed, posted first as a new note's are.
+  case attach(NoteAttach)
+  /// One file taken off a note already filed, by its number (the others keep
+  /// theirs).
+  case removeFile(date: String, id: String, n: Int)
 }
 
 extension OutboxOperation {
+  /// Files to post again, once, after the note found their uploads gone; nil
+  /// for anything else, or files posted again already.
+  var reuploaded: OutboxOperation? {
+    switch self {
+    case .post(var post) where post.reuploads == 0:
+      post.reuploads += 1
+      for f in post.files.indices { post.files[f].upload = nil }
+      return .post(post)
+    case .attach(var attach) where attach.reuploads == 0:
+      attach.reuploads += 1
+      for f in attach.files.indices { attach.files[f].upload = nil }
+      return .attach(attach)
+    default:
+      return nil
+    }
+  }
+
   /// A new note filed to a day of its own, made to file to the day it was
   /// written; nil for anything else.
   var undated: OutboxOperation? {
@@ -73,6 +95,101 @@ public struct NotePost: Codable, Sendable, Equatable {
   }
 }
 
+/// Files to add to a note already filed. As with a new note's, the bytes wait
+/// in the Outbox's folder and each `upload` is filled in, and saved, before
+/// the files are sent, so every resend is the same request.
+public struct NoteAttach: Codable, Sendable, Equatable {
+  public var date: String
+  public var id: String
+  public var files: [QueuedFile]
+  /// Times the uploads were made again after the note found them gone.
+  public var reuploads: Int
+
+  public init(date: String, id: String, files: [QueuedFile]) {
+    self.date = date
+    self.id = id
+    self.files = files
+    self.reuploads = 0
+  }
+
+  /// Every file posted: ready to send.
+  public var ready: Bool { files.allSatisfy { $0.upload != nil } }
+
+  public var uploads: [UploadRef] { files.map { UploadRef(upload: $0.upload ?? "", type: $0.type, name: $0.name) } }
+}
+
+/// One edit to a note already filed: new words, files added and files taken
+/// off. They go in that order: the words from the revision read (adding or
+/// taking off a file changes it), then the files added, then those taken
+/// off, so a note losing its last file for a new one always has one.
+public struct NoteChange: Sendable, Equatable {
+  public var date: String
+  public var id: String
+  public var revision: String
+  /// The note's words and how many files it has, as read.
+  public var wordsNow: String
+  public var filesNow: Int
+  /// The new words; nil leaves them as they are.
+  public var words: String?
+  public var adding: [QueuedFile]
+  /// The numbers of the files taken off.
+  public var removing: Set<Int>
+
+  public init(date: String, id: String, revision: String, wordsNow: String, filesNow: Int,
+              words: String? = nil, adding: [QueuedFile] = [], removing: Set<Int> = []) {
+    self.date = date
+    self.id = id
+    self.revision = revision
+    self.wordsNow = wordsNow
+    self.filesNow = filesNow
+    self.words = words
+    self.adding = adding
+    self.removing = removing
+  }
+
+  /// A change to a note as read: words the same as it has, or blank where it
+  /// has none, are no change to them.
+  public init(_ note: NoteDetail, words: String, adding: [QueuedFile] = [], removing: Set<Int> = []) {
+    let same = words == note.text || (Self.blank(words) && Self.blank(note.text))
+    self.init(date: note.date, id: note.id, revision: note.revision, wordsNow: note.text,
+              filesNow: note.media?.count ?? note.files ?? 0, words: same ? nil : words, adding: adding, removing: removing)
+  }
+
+  public var isEmpty: Bool { words == nil && adding.isEmpty && removing.isEmpty }
+
+  /// How many files it leaves the note.
+  public var filesAfter: Int { filesNow - removing.count + adding.count }
+
+  /// Why Release Notes would refuse it, in the person's words, or nil: an
+  /// edit can't take a note's words away, a note holds at most
+  /// `MediaType.maxFiles` files, and one with no words keeps its last.
+  public var refusal: String? {
+    if let words, Self.blank(words) { return "A note's words can change but not go. To take it away, delete the note." }
+    if filesAfter > MediaType.maxFiles { return "A note holds up to \(MediaType.maxFiles) files." }
+    if filesAfter <= 0, Self.blank(words ?? wordsNow) { return "A note with no words keeps its last file. To take it away, delete the note." }
+    return nil
+  }
+
+  /// The writes, in an order Release Notes takes at every step: the words
+  /// first, files off before files on so the note stays within its files,
+  /// and for a note with no words, its last file off only once the new ones
+  /// are on.
+  public var operations: [OutboxOperation] {
+    var out: [OutboxOperation] = []
+    if let words { out.append(.edit(date: date, id: id, text: words, revision: revision)) }
+    var off = removing.sorted().map { OutboxOperation.removeFile(date: date, id: id, n: $0) }
+    let last = !adding.isEmpty && Self.blank(words ?? wordsNow) && removing.count >= filesNow ? off.popLast() : nil
+    out += off
+    if !adding.isEmpty { out.append(.attach(NoteAttach(date: date, id: id, files: adding))) }
+    if let last { out.append(last) }
+    return out
+  }
+
+  private static func blank(_ words: String) -> Bool {
+    words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+}
+
 /// A write waiting to be sent. Its `id` is the request's idempotency key, so
 /// sending it again after a lost answer never repeats it.
 public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
@@ -107,7 +224,7 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
     switch operation {
     case .note(let text, _, _), .edit(_, _, let text, _): text
     case .post(let post): post.text
-    case .delete, .pins, .checkIn: nil
+    case .delete, .pins, .checkIn, .attach, .removeFile: nil
     }
   }
 
@@ -131,7 +248,37 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
 
   /// The files it carries.
   public var files: [QueuedFile] {
-    if case .post(let post) = operation { post.files } else { [] }
+    switch operation {
+    case .post(let post): post.files
+    case .attach(let attach): attach.files
+    default: []
+    }
+  }
+
+  /// Files added to or taken off a note already filed.
+  public var changesFiles: Bool {
+    switch operation {
+    case .attach, .removeFile: true
+    default: false
+    }
+  }
+
+  /// The note it changes, for a change to a note already filed.
+  public var changing: (date: String, id: String)? {
+    switch operation {
+    case .edit(let date, let id, _, _), .delete(let date, let id), .removeFile(let date, let id, _): (date, id)
+    case .attach(let attach): (attach.date, attach.id)
+    default: nil
+    }
+  }
+
+  /// Its files posted and its place named, or nothing to post or name.
+  var ready: Bool {
+    switch operation {
+    case .post(let post): post.ready
+    case .attach(let attach): attach.ready
+    default: true
+    }
   }
 
   /// Written under another account than the one `recipient` sends for, or
@@ -149,7 +296,7 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   /// that account's token wrote, which no other token may change.
   public var canMove: Bool {
     switch operation {
-    case .edit, .delete: false
+    case .edit, .delete, .attach, .removeFile: false
     case .note, .post, .pins, .checkIn: true
     }
   }
@@ -277,6 +424,20 @@ public actor Outbox {
       throw error
     }
     return item
+  }
+
+  /// Queues writes that go together, in order, all or none, answering only
+  /// once they are on disk.
+  @discardableResult
+  public func enqueue(_ operations: [OutboxOperation], account: String? = nil) throws(OutboxNotKept) -> [OutboxItem] {
+    let added = operations.map { OutboxItem(id: UUID(), operation: $0, queuedAt: .now, attempts: 0, refusal: nil, account: account) }
+    items += added
+    do { try save() } catch {
+      let ids = Set(added.map(\.id))
+      items.removeAll { ids.contains($0.id) }
+      throw error
+    }
+    return added
   }
 
   /// Queues a new note, stamped with the moment it was typed.
@@ -469,7 +630,7 @@ public actor Outbox {
       // Set once the write itself is asked for: a 2xx then means it was done.
       var asked = false
       do throws(APIError) {
-        if let prepare, case .post(let post) = item.operation, !post.ready {
+        if let prepare, !item.ready {
           let ready: OutboxItem
           do throws(APIError) { ready = try await prepare(item, filesFolder) } catch {
             guard error.status == 429, item.needsUploads, let i = items.firstIndex(where: { $0.id == item.id }) else { throw error }
@@ -503,11 +664,9 @@ public actor Outbox {
         }
         // Uploads a note found gone (unused for a day, say) are made again
         // once, under a new key: the old key's request was refused.
-        if error.field == "uploads", case .post(var post) = item.operation, post.reuploads == 0,
+        if error.field == "uploads", let again = item.operation.reuploaded,
            let i = items.firstIndex(where: { $0.id == item.id }) {
-          post.reuploads += 1
-          for f in post.files.indices { post.files[f].upload = nil }
-          guard remake(i, as: .post(post)) else {
+          guard remake(i, as: again) else {
             report.stopped = APIError(status: 507, code: "not_kept", message: Self.notKept)
             break sending
           }
@@ -648,16 +807,22 @@ public extension APIClient {
       return .filed(try await createNote(post.request, idempotencyKey: key))
     case .checkIn(let stop):
       return .checkedIn(try await report(stop, idempotencyKey: key))
+    case .attach(let attach):
+      return .edited(try await addFiles(date: attach.date, id: attach.id, uploads: attach.uploads, idempotencyKey: key).note)
+    case .removeFile(let date, let id, let n):
+      do {
+        return .edited(try await removeFile(date: date, id: id, n: n, idempotencyKey: key).note)
+      } catch where error.status == 404 {
+        // Gone already, the file or its note, as the owner wanted.
+        return .done
+      }
     }
   }
 
-  /// Posts a queued note's files and names its place, so it is ready to send.
-  /// A place that can't be named (no city for the spot, or the day's 100
-  /// spots used) is left off: a note is never held back for its place.
-  func prepare(_ item: OutboxItem, files folder: URL?) async throws(APIError) -> OutboxItem {
-    guard case .post(var post) = item.operation else { return item }
-    for i in post.files.indices where post.files[i].upload == nil {
-      let file = post.files[i]
+  /// Posts each file not posted yet, filling in its upload.
+  private func upload(_ files: inout [QueuedFile], from folder: URL?) async throws(APIError) {
+    for i in files.indices where files[i].upload == nil {
+      let file = files[i]
       guard let url = folder?.appending(path: file.fileName),
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.size]) as? Int else {
         throw APIError(status: 400, code: "file_missing", message: Self.fileMissing)
@@ -671,9 +836,23 @@ public extension APIClient {
         form = try await startUpload(start)
         try await self.post(fileAt: url, name: file.name, to: form)
       }
-      post.files[i].upload = form.upload
-      post.files[i].type = form.type
+      files[i].upload = form.upload
+      files[i].type = form.type
     }
+  }
+
+  /// Posts a queued note's files and names its place, so it is ready to send.
+  /// A place that can't be named (no city for the spot, or the day's 100
+  /// spots used) is left off: a note is never held back for its place.
+  func prepare(_ item: OutboxItem, files folder: URL?) async throws(APIError) -> OutboxItem {
+    if case .attach(var attach) = item.operation {
+      try await upload(&attach.files, from: folder)
+      var ready = item
+      ready.operation = .attach(attach)
+      return ready
+    }
+    guard case .post(var post) = item.operation else { return item }
+    try await upload(&post.files, from: folder)
     if let spot = post.spot, post.place == nil {
       do {
         post.place = try await here(spot).place

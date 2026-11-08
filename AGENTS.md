@@ -151,6 +151,16 @@ there first, never work around it here.
 - A note's files are posted and its place named, and both saved, before
   the note is sent (the Outbox's `prepare`), so a resend is the same
   request. The token never goes to the storage form.
+- An edit changes a note's words and files together (`NoteChange`), queued
+  all or none: new words first (`PUT`), then files off (`DELETE
+  /v1/notes/{date}/{id}/media/{n}`), then files on (`.attach`, `POST …/media`
+  with uploads posted first, as a new note's). That order keeps every step
+  one Release Notes takes: an edit can't take a note's words away, a note
+  holds at most 20 files, and one with no words keeps its last, so for that
+  note its last file comes off only once the new ones are on. A file
+  already gone is done, not refused. Taking a file off asks first; a file
+  that came by email stays in that email. New files an edit never saved
+  leave the phone with the sheet.
 - Location is When In Use, one fix when the owner asks (Here, Check in now, the
   Check In control, or "Add where I am" on). Each Here is a lookup Release Notes pays for, capped at
   100 a day: ask once a draft, never as words change. A check-in's page asks

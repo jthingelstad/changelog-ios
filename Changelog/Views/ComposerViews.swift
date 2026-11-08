@@ -67,7 +67,8 @@ struct ComposerTools: View {
       .ignoresSafeArea()
     }
     .sheet(isPresented: $recording) {
-      RecorderView().presentationDetents([.medium]).presentationBackground(Color.paper)
+      RecorderView { data in Task { await model.addRecording(data) } }
+        .presentationDetents([.medium]).presentationBackground(Color.paper)
     }
   }
 }
@@ -264,9 +265,10 @@ private extension CGImagePropertyOrientation {
 
 /// A voice memo, recording from the moment it opens.
 struct RecorderView: View {
-  @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   @State private var recorder = Recorder()
+  /// What to do with the recording: the draft's, or an edit's.
+  let done: (Data) -> Void
 
   var body: some View {
     NavigationStack {
@@ -290,7 +292,7 @@ struct RecorderView: View {
               .accessibilityLabel("Recording")
           }
           Button {
-            if let data = recorder.finish() { Task { await model.addRecording(data) } }
+            if let data = recorder.finish() { done(data) }
             dismiss()
           } label: {
             Label("Add to the note", systemImage: "stop.fill")

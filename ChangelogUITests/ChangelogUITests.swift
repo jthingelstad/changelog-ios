@@ -143,7 +143,9 @@ final class ChangelogUITests: XCTestCase {
     let before = try await filed()
     app.buttons["Record a voice memo"].tap()
     let stop = app.buttons["Add to the note"]
-    expect(stop, "the recorder opens", in: app)
+    // The sheet, whether or not the microphone answers: one that fails at
+    // once shows no stop button.
+    expect(app.navigationBars["Voice memo"], "the recorder opens", in: app)
     if app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'The microphone is off'")).firstMatch.exists {
       XCTFail("The microphone is off for Changelog on this simulator")
     }
@@ -151,8 +153,8 @@ final class ChangelogUITests: XCTestCase {
     // Mac's, which can take minutes to answer, or never does.
     let couldnt = app.staticTexts["This phone couldn't record just now."]
     let deadline = Date.now.addingTimeInterval(180)
-    while !stop.isEnabled, !couldnt.exists, Date.now < deadline { try await Task.sleep(for: .seconds(1)) }
-    if couldnt.exists || !stop.isEnabled {
+    while !(stop.exists && stop.isEnabled), !couldnt.exists, Date.now < deadline { try await Task.sleep(for: .seconds(1)) }
+    if couldnt.exists || !(stop.exists && stop.isEnabled) {
       throw XCTSkip("This simulator couldn't open the Mac's microphone (allow Simulator in the Mac's Privacy settings).")
     }
     try await Task.sleep(for: .seconds(2))
@@ -639,6 +641,50 @@ final class ChangelogUITests: XCTestCase {
 
   /// The one button trades a four-tick token for one that may read; another
   /// channel's note opens whole; the lock keeps it back and Log still writes.
+  /// A note's files changed from its edit: a photo put on, then taken off,
+  /// which asks first. Release Notes has each change once it is saved.
+  @MainActor func testEditFiles() async throws {
+    let words = note("Files to change")
+    let made = try await Self.addNoteNamed(words, server: server, token: token)
+    let (server, token) = (self.server, self.token)
+    addTeardownBlock { try await Self.deleteNote(made, server: server, token: token) }
+    let app = launch()
+    hideKeyboard(app)
+    let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+    for _ in 0..<8 where !(row.waitForExistence(timeout: 3) && row.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    expect(row, "Today shows the note", in: app)
+
+    row.swipeLeft()
+    app.buttons["Edit"].firstMatch.tap()
+    let add = app.buttons["edit.addPhotos"]
+    expect(add, "the edit offers files", in: app)
+    add.tap()
+    // The library's photos, as "Photo, March 30, 2018…": not the edit's own "Photo On A Rectangle".
+    let photo = app.images.matching(NSPredicate(format: "label BEGINSWITH 'Photo,'")).firstMatch
+    expect(photo, "the photo picker shows the library", in: app)
+    photo.tap()
+    if app.buttons["Add"].waitForExistence(timeout: 3) { app.buttons["Add"].tap() }
+    expect(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Take off Photo'")).firstMatch, "the photo waits on the edit", in: app)
+    keep(app, "A photo to put on")
+    app.navigationBars.buttons["Save"].tap()
+    try await expectFiles(1, on: made, "the photo went on the note")
+
+    for _ in 0..<8 where !(row.waitForExistence(timeout: 3) && row.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    row.swipeLeft()
+    app.buttons["Edit"].firstMatch.tap()
+    let off = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Take off Photo'")).firstMatch
+    expect(off, "the edit shows the note's photo", in: app, timeout: 20)
+    off.tap()
+    expect(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Keep Photo'")).firstMatch, "a file taken off can be kept", in: app)
+    keep(app, "A photo to take off")
+    app.navigationBars.buttons["Save"].tap()
+    expect(app.staticTexts["Take this file off the note?"], "taking a file off asks first", in: app)
+    let before = try await Self.noteFiles(made, server: server, token: token)
+    XCTAssertEqual(before, 1, "nothing goes before the confirmation")
+    app.buttons["Take It Off"].firstMatch.tap()
+    try await expectFiles(0, on: made, "the photo came off the note")
+  }
+
   @MainActor func testReading() async throws {
     let scopes = ["notes:write", "media:write", "upcoming", "activity"]
     let old = try await Self.tokenOnThisAccount(scopes, server: server)
@@ -1030,6 +1076,27 @@ final class ChangelogUITests: XCTestCase {
     let receipt = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     let note = try XCTUnwrap(receipt["note"] as? [String: Any])
     return (try XCTUnwrap(note["date"] as? String), try XCTUnwrap(note["id"] as? String))
+  }
+
+  /// How many files a note has on the dev server.
+  private static func noteFiles(_ note: (date: String, id: String), server: String, token: String) async throws -> Int {
+    var request = URLRequest(url: URL(string: "\(server)/v1/notes/\(note.date)/\(note.id)")!)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, _) = try await URLSession(configuration: .ephemeral).data(for: request)
+    let read = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    return (read["media"] as? [Any])?.count ?? (read["files"] as? Int) ?? 0
+  }
+
+  /// Waits for a note to have so many files, as a queued change lands.
+  @MainActor private func expectFiles(_ count: Int, on note: (date: String, id: String), _ what: String,
+                           file: StaticString = #filePath, line: UInt = #line) async throws {
+    var now = -1
+    for _ in 0..<40 {
+      now = try await Self.noteFiles(note, server: server, token: token)
+      if now == count { return }
+      try await Task.sleep(for: .milliseconds(500))
+    }
+    XCTFail("Expected: \(what) (it has \(now))", file: file, line: line)
   }
 
   private static func deleteNote(_ note: (date: String, id: String), server: String, token: String) async throws {
