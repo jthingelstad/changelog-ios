@@ -194,6 +194,12 @@ private struct NotesList: View {
   /// took away (Codex on #50).
   @State private var reads = 0
   @State private var searches = 0
+  /// The cursor each list's next page is being read from. The cursor itself
+  /// stays until a page replaces it, so a page dropped for a newer read, or
+  /// a newer read that fails, leaves it there to try again (Codex on #53).
+  @State private var readingNext: String?
+  @State private var readingPast: String?
+  @State private var readingFound: String?
   @FocusState private var searching: Bool
 
   /// A day's notes On this day shows; its own page has the rest.
@@ -295,9 +301,10 @@ private struct NotesList: View {
           .paperRow(top: 0, bottom: 6)
         }
       }
-      if pastNext != nil {
+      if let pastNext {
         Button("Earlier years") { Task { await morePast() } }
           .buttonStyle(QuietButtonStyle())
+          .disabled(readingPast == pastNext)
           .paperRow(top: 4, bottom: 4)
       }
     }
@@ -372,17 +379,14 @@ private struct NotesList: View {
   }
 
   private func morePast() async {
-    guard let before = pastNext else { return }
+    guard let before = pastNext, readingPast != before else { return }
     let read = reads
-    pastNext = nil
-    do throws(APIError) {
-      let page = try await model.onThisDay(before: before)
-      guard read == reads else { return }
-      past += page.days
-      pastNext = page.next
-    } catch {
-      if read == reads { pastNext = before }
-    }
+    readingPast = before
+    defer { if readingPast == before { readingPast = nil } }
+    // A failure leaves the cursor to try again.
+    guard let page = try? await model.onThisDay(before: before), read == reads else { return }
+    past += page.days
+    pastNext = page.next
   }
 
   /// The box's words, searched for; an empty box is the days again.
@@ -420,17 +424,13 @@ private struct NotesList: View {
   }
 
   private func moreFound() async {
-    guard let asked = search, let after = foundNext else { return }
+    guard let asked = search, let after = foundNext, readingFound != after else { return }
     let mine = searches
-    foundNext = nil
-    do throws(APIError) {
-      let page = try await model.search(asked, after: after)
-      guard search == asked, mine == searches else { return }
-      foundNotes += page.items
-      foundNext = page.next
-    } catch {
-      if search == asked, mine == searches { foundNext = after }
-    }
+    readingFound = after
+    defer { if readingFound == after { readingFound = nil } }
+    guard let page = try? await model.search(asked, after: after), search == asked, mine == searches else { return }
+    foundNotes += page.items
+    foundNext = page.next
   }
 
   private func clear() {
@@ -443,18 +443,14 @@ private struct NotesList: View {
   }
 
   private func more() async {
-    guard let before = next else { return }
-    let read = reads
     // One read for a page, however many rows appear while it comes.
-    next = nil
-    do throws(APIError) {
-      let page = try await model.days(before: before)
-      guard read == reads else { return }
-      days += page.days
-      next = page.next
-    } catch {
-      if read == reads { next = before }
-    }
+    guard let before = next, readingNext != before else { return }
+    let read = reads
+    readingNext = before
+    defer { if readingNext == before { readingNext = nil } }
+    guard let page = try? await model.days(before: before), read == reads else { return }
+    days += page.days
+    next = page.next
   }
 }
 
