@@ -293,6 +293,10 @@ CHANGELOG_DEV_TOKEN=rn_... swift test --package-path ChangelogKit --filter DevSe
 ```
 
 It runs only against localhost, never production, because it writes.
+The printed token can't read notes, and the tests that read (`aReadingToken…`,
+`mapPins…`) return early without it, passing having checked nothing. For
+those, make a token with `notes:all` on the dev server's web Settings, signed
+in as its fictional ada@example.com (the code is at `/dev-mail/`), and pass that.
 `CHANGELOG_DEV_URL` (say `http://localhost:8792`) picks another port, for
 the tests and for a debug build launched with
 `SIMCTL_CHILD_CHANGELOG_DEV_URL`. Start the dev server with `--fake-places`

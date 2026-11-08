@@ -64,11 +64,13 @@ struct MapCanvas: UIViewRepresentable {
       gone += stays.filter { nextStays[$0.key] !== $0.value }.map(\.value)
       stays = nextStays
       var nextNotes: [String: NoteMark] = [:]
+      let dots = StaySpots(canvas.checkIns)
       for spot in canvas.spots {
-        if let mark = notes[spot.id], mark.spot == spot {
+        let beside = dots.near(spot.lat, spot.lon)
+        if let mark = notes[spot.id], mark.spot == spot, mark.beside == beside {
           nextNotes[spot.id] = mark
         } else {
-          let mark = NoteMark(spot)
+          let mark = NoteMark(spot, beside: beside)
           nextNotes[spot.id] = mark
           added.append(mark)
         }
@@ -175,13 +177,51 @@ final class StayMark: NSObject, MKAnnotation {
 final class NoteMark: NSObject, MKAnnotation {
   static let kind = "notes"
   let spot: NoteSpot
+  /// A check-in's dot is at the same spot (a note from Write about this):
+  /// the ring sits beside it, since no zoom would part them.
+  let beside: Bool
   let coordinate: CLLocationCoordinate2D
   let title: String?
 
-  init(_ spot: NoteSpot) {
+  init(_ spot: NoteSpot, beside: Bool) {
     self.spot = spot
+    self.beside = beside
     coordinate = CLLocationCoordinate2D(latitude: spot.lat, longitude: spot.lon)
     title = spot.label
+  }
+}
+
+/// Where the check-ins' dots are, to tell which rings would sit under one.
+/// Within 15 m counts: closer than that, a dot hides a ring at any zoom
+/// worth having.
+struct StaySpots {
+  private static let cell = 0.0003
+  private static let metres = 15.0
+  private var cells: [Cell: [CLLocation]] = [:]
+
+  private struct Cell: Hashable {
+    var lat: Int
+    var lon: Int
+
+    static func of(_ lat: Double, _ lon: Double) -> Cell {
+      Cell(lat: Int((lat / StaySpots.cell).rounded(.down)), lon: Int((lon / StaySpots.cell).rounded(.down)))
+    }
+  }
+
+  init(_ pins: [CheckInPin]) {
+    for pin in pins { cells[.of(pin.lat, pin.lon), default: []].append(CLLocation(latitude: pin.lat, longitude: pin.lon)) }
+  }
+
+  func near(_ lat: Double, _ lon: Double) -> Bool {
+    guard !cells.isEmpty else { return false }
+    let here = CLLocation(latitude: lat, longitude: lon), cell = Cell.of(lat, lon)
+    for dlat in -1...1 {
+      for dlon in -1...1 {
+        let around = Cell(lat: cell.lat + dlat, lon: cell.lon + dlon)
+        if cells[around]?.contains(where: { $0.distance(from: here) <= Self.metres }) == true { return true }
+      }
+    }
+    return false
   }
 }
 
@@ -218,9 +258,10 @@ final class StayDot: MKAnnotationView {
 
   override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
     super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-    frame = CGRect(x: 0, y: 0, width: 32, height: 32)
+    // Small enough that a ring beside it is tapped as itself.
+    frame = CGRect(x: 0, y: 0, width: 28, height: 28)
     dot.width = 2.5
-    dot.frame = CGRect(x: 8, y: 8, width: 16, height: 16)
+    dot.frame = CGRect(x: 6, y: 6, width: 16, height: 16)
     addSubview(dot)
     collisionMode = .none
     displayPriority = .required
@@ -263,6 +304,7 @@ final class NoteRing: MKAnnotationView {
     super.prepareForDisplay()
     clusteringIdentifier = NoteMark.kind
     guard let mark = annotation as? NoteMark else { return }
+    centerOffset = mark.beside ? CGPoint(x: 17, y: -17) : .zero
     let count = mark.spot.notes.count
     accessibilityLabel = "\(count) \(count == 1 ? "note" : "notes") at \(mark.spot.label)"
   }

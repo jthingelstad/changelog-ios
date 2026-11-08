@@ -22,10 +22,14 @@ struct MapScreen: View {
   @FocusState private var typing: Bool
   /// The keys of the notes the words found; nil until they answer.
   @State private var found: Set<String>?
+  /// The words `found` answers.
+  @State private var foundFor: NoteSearch?
   @State private var readingStays = false
   /// Every page of check-ins has come once.
   @State private var staysRead = false
   @State private var readingNotes = false
+  /// Every page of notes has come since reading opened.
+  @State private var notesRead = false
   @State private var finding = false
   @State private var problem: String?
   @State private var chosen: MapChoice?
@@ -46,20 +50,29 @@ struct MapScreen: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar(.visible, for: .navigationBar)
     .task(id: model.checkInChanges) { await readStays() }
-    .task(id: model.readingOpen) { await readNotes() }
+    // Again after a note changes, here or anywhere: an edit, a delete, one sent.
+    .task(id: Reading(open: model.readingOpen, changes: model.changes)) { await readNotes() }
     // The words go a moment after the last key, as on the web's Map.
     .task(id: typed) {
       guard NoteSearch(typed) != filter.search else { return }
       try? await Task.sleep(for: .milliseconds(400))
       if !Task.isCancelled { filter.search = NoteSearch(typed) }
     }
-    // Again as reading opens: locking let what they found go.
-    .task(id: Finding(search: filter.search, open: model.readingOpen)) { await find() }
+    // Again as reading opens (locking let what they found go), and after a change.
+    .task(id: Finding(search: filter.search, reading: Reading(open: model.readingOpen, changes: model.changes))) {
+      await find()
+    }
     .sheet(item: $chosen) { choice in
       switch choice {
       case .checkIn(let pin): CheckInPinSheet(pin: pin)
       case .notes(let spot): NoteSpotSheet(spot: spot)
       }
+    }
+    // A spot's sheet keeps up with its notes, and goes with the last of them.
+    .onChange(of: pins) {
+      guard case .notes(let spot) = chosen else { return }
+      let now = MapFilter.spots(filter.notes(pins, found: found)).first { $0.id == spot.id }
+      if now != spot { chosen = now.map(MapChoice.notes) }
     }
     // Write about this opens Log, which a sheet would stay on top of.
     .onChange(of: AppRoute.shared.newNotes) { chosen = nil }
@@ -74,10 +87,10 @@ struct MapScreen: View {
   }
 
   /// The map moves to what shows when a choice changes, or what it shows first
-  /// arrives; never as a stop is named or deleted.
+  /// arrives; never as a stop is named or a note changes.
   private var frameKey: String {
     [String(filter.checkIns), String(filter.notes), filter.year.map(String.init) ?? "", filter.search?.shown ?? "",
-     String(model.readingOpen), String(stays.isEmpty), String(staysRead), String(pins.isEmpty), String(readingNotes),
+     String(model.readingOpen), String(stays.isEmpty), String(staysRead), String(pins.isEmpty), String(notesRead),
      String(found == nil)].joined(separator: "|")
   }
 
@@ -169,7 +182,7 @@ struct MapScreen: View {
         Text("Reading the map").face(.hint).foregroundStyle(Color.ink2)
       }
       .frame(minHeight: 24)
-    } else if finding {
+    } else if finding && found == nil {
       Text("Looking for those words").face(.hint).foregroundStyle(Color.ink2)
     } else {
       let checkInsOn = model.hasActivity && filter.checkIns && filter.search == nil
@@ -223,6 +236,8 @@ struct MapScreen: View {
     guard model.readingOpen else {
       pins = []
       found = nil
+      foundFor = nil
+      notesRead = false
       return
     }
     readingNotes = true
@@ -238,6 +253,7 @@ struct MapScreen: View {
         after = page.next
       } while after != nil
       pins = read
+      notesRead = true
     } catch {
       guard !Task.isCancelled else { return }
       problem = error.message
@@ -246,10 +262,15 @@ struct MapScreen: View {
 
   /// The notes with the words, found by Release Notes as the Notes tab's
   /// search finds them. A tag needs no read: each pin has its tags. What
-  /// other words found goes at once, never shown under these.
+  /// other words found goes at once, never shown under these; the same
+  /// words found again, after a change, show until the new answer.
   private func find() async {
-    found = nil
-    guard case .words = filter.search, model.readingOpen, let search = filter.search else { return }
+    guard case .words = filter.search, model.readingOpen, let search = filter.search else {
+      found = nil
+      foundFor = nil
+      return
+    }
+    if foundFor != search { found = nil }
     finding = true
     defer { finding = false }
     var keys: Set<String> = []
@@ -262,6 +283,7 @@ struct MapScreen: View {
         after = page.next
       } while after != nil
       found = keys
+      foundFor = search
     } catch {
       guard !Task.isCancelled else { return }
       problem = error.message
@@ -269,10 +291,16 @@ struct MapScreen: View {
   }
 }
 
+/// What the map's notes wait on.
+private struct Reading: Equatable {
+  var open: Bool
+  var changes: Int
+}
+
 /// What a search on the map waits on.
 private struct Finding: Equatable {
   var search: NoteSearch?
-  var open: Bool
+  var reading: Reading
 }
 
 enum MapChoice: Identifiable {
