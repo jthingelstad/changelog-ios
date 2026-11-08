@@ -35,6 +35,9 @@ struct NotePage: View {
                : "Its email had \(attachments) more files, not kept here. They're in the original email.")
             .face(.meta).foregroundStyle(Color.ink3)
         }
+        // The tags its words don't show as #words, from its tags field, as
+        // the web and the email have them under it.
+        TagLinks(tags: note.fieldTags)
         VStack(alignment: .leading, spacing: 4) {
           if let place = note.place { Text(place.label) }
           if note.late == true { Text("Written after the day ended.") }

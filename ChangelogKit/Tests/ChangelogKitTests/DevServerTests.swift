@@ -487,6 +487,73 @@ struct DevServerTests {
     try await client.forgetPlace(id: place.id, idempotencyKey: key())
   }
 
+  /// First-class tags (API 1.21.0) against the real `/v1`: a note's tags
+  /// field by name beside its #words, an edit that keeps or replaces it, a
+  /// stay's tags, and a place's tags with the offer for the stays already
+  /// there, refused for a stale count. Needs a token that may change every
+  /// note for the place; the rest runs with the printed token.
+  @Test func tagsByName() async throws {
+    let client = DevServer.client()
+    func key() -> String { UUID().uuidString.lowercased() }
+    let mark = String(UUID().uuidString.prefix(6)).lowercased()
+    let trip = "Road Trip \(mark)", lake = "🚗 Lake \(mark)"
+
+    // A note: field tags by name, then its #words.
+    let made = try await client.createNote(NoteRequest(text: "On the way #dev\(mark)", tags: [trip]), idempotencyKey: key()).note
+    var note = try await client.note(date: made.date, id: made.id)
+    #expect(note.tagList.map(\.name) == [trip, "dev\(mark)"])
+    #expect(note.fieldTags.map(\.name) == [trip])
+    #expect(note.tagList.first?.key == (try Hashtags.spelling(trip).get().key), "keyed as this phone keys it")
+
+    // An edit without tags keeps the field's; with them, they replace it.
+    let kept = try await client.editNote(date: note.date, id: note.id, text: "Still on the way #dev\(mark)",
+                                         revision: note.revision, idempotencyKey: key())
+    note = try await client.note(date: kept.date, id: kept.id)
+    #expect(note.fieldTags.map(\.name) == [trip])
+    let change = NoteChange(note, words: note.text, tags: [try Hashtags.spelling(lake).get()])
+    guard case .edit(_, _, let text, let revision, let names)? = change.operations.first else {
+      Issue.record("no edit")
+      return
+    }
+    _ = try await client.editNote(date: note.date, id: note.id, text: text, revision: revision, tags: names, idempotencyKey: key())
+    note = try await client.note(date: note.date, id: note.id)
+    #expect(note.fieldTags.map(\.name) == [lake])
+
+    // A stay: the whole list, from the revision read.
+    let arrival = Date.now.addingTimeInterval(-5400)
+    let (lat, lon) = (46.7867, -92.1005)
+    let visit = try #require(CheckInReport.visit(arrival: arrival, departure: arrival.addingTimeInterval(1200), lat: lat, lon: lon, accuracy: 30))
+    let stay = try await client.report(visit, idempotencyKey: key()).checkIn
+    let tagged = try await client.tagCheckIn(id: stay.id, tags: [Hashtags.spelling(trip).get()], revision: stay.revision, idempotencyKey: key())
+    #expect(tagged.tagList.map(\.name) == [trip])
+    await #expect(throws: APIError.self, "an old revision is refused") {
+      _ = try await client.tagCheckIn(id: stay.id, tags: [], revision: stay.revision, idempotencyKey: key())
+    }
+    let found = try await client.checkIns(tag: Hashtags.spelling(trip).get().key)
+    #expect(found.items.contains { $0.answers(to: stay.id) })
+
+    // A place: a tag gained offers the stays there, for the count shown.
+    if try await client.me().token.changesAll {
+      #expect(try await client.allTags().tags.contains { $0.name == lake && $0.notes >= 1 })
+      let place = try await client.remember(name: "Harbor \(mark)", lat: lat, lon: lon, idempotencyKey: key())
+      let named = try await client.setPlaceTags(id: place.id, tags: [Hashtags.spelling(lake).get()], idempotencyKey: key())
+      #expect(named.tags.map(\.name) == [lake])
+      #expect(named.checkIns == 1, "a tag gained says how many are there")
+      do {
+        _ = try await client.tagCheckIns(atPlace: place.id, tags: named.tags, count: 4, idempotencyKey: key())
+        Issue.record("another count was let through")
+      } catch {
+        #expect(error.code == "revision_mismatch" && error.count == 1)
+      }
+      #expect(try await client.tagCheckIns(atPlace: place.id, tags: named.tags, count: 1, idempotencyKey: key()) == 1)
+      let now = try #require(try await client.checkIns(from: stay.day, to: stay.day).items.first { $0.answers(to: stay.id) })
+      #expect(now.tagList.map(\.name) == [trip, lake], "they join the stay's own")
+      try await client.forgetPlace(id: place.id, idempotencyKey: key())
+    }
+    try await client.deleteCheckIn(id: stay.id, idempotencyKey: key())
+    try await client.deleteNote(date: note.date, id: note.id, idempotencyKey: key())
+  }
+
   @Test func errorsDecode() async throws {
     let bad = APIClient(baseURL: DevServer.url, token: "rn_" + String(repeating: "A", count: 43),
                         userAgent: "Changelog/0.1 (dev tests)", session: URLSession(configuration: .ephemeral))

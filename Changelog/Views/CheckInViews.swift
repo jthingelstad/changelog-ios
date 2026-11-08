@@ -197,6 +197,7 @@ struct RememberedPlacesView: View {
       }
       .accessibilityElement(children: .combine)
       if canChange {
+        PlaceTagsView(place: place) { changed in set(place.id) { $0 = changed } }
         Toggle("Ignore this location", isOn: Binding(get: { place.ignored }, set: { on in Task { await ignore(place, on) } }))
           .face(.line)
           .tint(.tangerine)
@@ -327,6 +328,118 @@ struct RememberedPlacesView: View {
   }
 }
 
+/// A remembered place's tags (call 6, Jamie 2026-11-08), saved as each is
+/// added or taken off: each new check-in there gets them. A tag added offers,
+/// once, to tag the check-ins already there too, for the count it shows; one
+/// taken off leaves them as they are. As the web's Settings.
+private struct PlaceTagsView: View {
+  /// Tag the check-ins already here with the tags gained, for this count.
+  struct Asking: Equatable {
+    var tags: [Tag]
+    var count: Int
+    /// The count changed since it was read, so this is the number now.
+    var again = false
+  }
+
+  @Environment(AppModel.self) private var model
+  let place: RememberedPlace
+  let changed: (RememberedPlace) -> Void
+  @State private var asking: Asking?
+  @State private var said: String?
+  @State private var problem: String?
+  @State private var busy = false
+  @State private var saveKey = RequestKey<String>()
+  @State private var tagKey = RequestKey<String>()
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      TagField(tags: place.tags, label: "Tags for \(place.name)",
+               hint: "Each new check-in here gets these. Taking one off leaves the check-ins already here as they are.",
+               offer: model.tagRow, busy: busy,
+               add: { tag in Task { await send(Hashtags.merge(place.tags, [tag])) } },
+               remove: { tag in Task { await send(place.tags.filter { $0.key != tag.key }) } })
+      if let asking {
+        Text(question(asking)).face(.hint).foregroundStyle(Color.ink2)
+        HStack(spacing: 16) {
+          Button("Tag them") { Task { await tagThem(asking) } }
+            .buttonStyle(QuietButtonStyle())
+            .disabled(busy)
+          Button("Not now") { self.asking = nil }
+            .buttonStyle(QuietButtonStyle(color: .ink2))
+            .disabled(busy)
+        }
+      } else if let said {
+        Text(said).face(.hint).foregroundStyle(Color.ink2)
+      }
+      if let problem {
+        Text(problem).face(.hint).foregroundStyle(Color.tangerineInk)
+      }
+    }
+  }
+
+  private func question(_ asking: Asking) -> String {
+    let line = Hashtags.line(asking.tags)
+    if asking.again {
+      let one = asking.count == 1
+      return "The check-ins here changed: there \(one ? "is 1" : "are \(asking.count)") now. Tag \(one ? "it" : "them") with \(line) too?"
+    }
+    return "Tag \(asking.count == 1 ? "its check-in" : "its \(asking.count) check-ins") with \(line) too?"
+  }
+
+  private func send(_ next: [Tag]) async {
+    guard !busy else { return }
+    busy = true
+    defer { busy = false }
+    problem = nil
+    said = nil
+    let before = place.tags
+    let key = saveKey.key(for: "\(place.id)=" + next.map(\.key).joined(separator: " "))
+    do throws(APIError) {
+      let saved = try await model.setTags(place, next, idempotencyKey: key)
+      saveKey.reset()
+      changed(saved)
+      // The tags gained, with any still waiting to be asked about.
+      let gained = next.filter { tag in !before.contains { $0.key == tag.key } }
+      let still = (asking?.tags ?? []).filter { tag in next.contains { $0.key == tag.key } }
+      let tags = Hashtags.merge(still, gained)
+      let count = saved.checkIns ?? asking?.count ?? 0
+      asking = !tags.isEmpty && count > 0 ? Asking(tags: tags, count: count) : nil
+    } catch {
+      problem = error.message
+      if !error.retryable { saveKey.reset() }
+    }
+  }
+
+  /// Tagged only for the count shown. Should it have changed since, Release
+  /// Notes says the count now, and this asks again with that.
+  private func tagThem(_ asked: Asking) async {
+    guard !busy else { return }
+    busy = true
+    defer { busy = false }
+    problem = nil
+    let key = tagKey.key(for: "\(place.id) count=\(asked.count) " + asked.tags.map(\.key).joined(separator: " "))
+    do throws(APIError) {
+      let tagged = try await model.tagCheckIns(at: place, with: asked.tags, count: asked.count, idempotencyKey: key)
+      tagKey.reset()
+      asking = nil
+      said = tagged > 0 ? "Tagged \(RememberedPlacesView.checkIns(tagged)) at \(place.name)."
+        : "The check-ins at \(place.name) had \(asked.tags.count == 1 ? "that tag" : "those tags") already."
+    } catch {
+      if !error.retryable { tagKey.reset() }
+      if error.code == "revision_mismatch", let now = error.count {
+        if now == 0 {
+          asking = nil
+          said = "There are no check-ins at \(place.name) now."
+        } else {
+          asking = Asking(tags: asked.tags, count: now, again: true)
+        }
+      } else {
+        problem = error.message
+      }
+    }
+  }
+}
+
 /// One check-in: when and where it was, its name, the small map, Write about
 /// this and Delete. A row has no spot, so this reads the stay as it opens, and
 /// says so plainly if it has gone since. It opens with reading locked too: a
@@ -342,7 +455,9 @@ struct CheckInPage: View {
   @State private var naming = false
   @State private var confirmDelete = false
   @State private var deleteKey = RequestKey<String>()
+  @State private var tagKey = RequestKey<String>()
   @State private var busy = false
+  @State private var tagging = false
 
   var body: some View {
     List {
@@ -384,6 +499,10 @@ struct CheckInPage: View {
     if let meta = meta(stay) {
       Text(meta).face(.meta).foregroundStyle(Color.ink3)
     }
+    TagField(tags: stay.tagList, hint: "Tags group it with notes and Upcoming dates, like Road Trip.",
+             offer: model.tagRow, busy: tagging,
+             add: { tag in Task { await retag(stay, Hashtags.merge(stay.tagList, [tag])) } },
+             remove: { tag in Task { await retag(stay, stay.tagList.filter { $0.key != tag.key }) } })
     if let problem {
       Text(problem).face(.hint).foregroundStyle(Color.tangerineInk)
     }
@@ -433,6 +552,28 @@ struct CheckInPage: View {
       gone = stay == nil
     } catch {
       problem = error.message
+    }
+  }
+
+  /// Its tags, the whole list, saved as each is added or taken off. Should it
+  /// have changed since it was read, it is read again and says so.
+  private func retag(_ stay: CheckIn, _ tags: [Tag]) async {
+    guard !tagging else { return }
+    tagging = true
+    defer { tagging = false }
+    problem = nil
+    let key = tagKey.key(for: "\(stay.id)@\(stay.revision)=" + tags.map(\.key).joined(separator: " "))
+    do throws(APIError) {
+      self.stay = try await model.tag(stay, with: tags, idempotencyKey: key)
+      tagKey.reset()
+    } catch {
+      if !error.retryable { tagKey.reset() }
+      if error.code == "revision_mismatch" {
+        await read()
+        problem = "This check-in changed since it opened. Here it is as it is now: add the tag again."
+      } else {
+        problem = error.message
+      }
     }
   }
 

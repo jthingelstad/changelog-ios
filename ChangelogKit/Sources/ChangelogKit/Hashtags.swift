@@ -345,6 +345,16 @@ public enum Hashtags {
     return out
   }
 
+  /// Many lists as one, each key once with its first name, however many.
+  public static func mergeAll(_ lists: [[Tag]]) -> [Tag] {
+    var seen = Set<String>()
+    var out: [Tag] = []
+    for list in lists {
+      for tag in list where seen.insert(tag.key).inserted { out.append(tag) }
+    }
+    return out
+  }
+
   /// The tags an answer gives, its keys beside their names.
   public static func named(_ keys: [String]?, _ names: [String]?) -> [Tag] {
     let names = names ?? []

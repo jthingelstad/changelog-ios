@@ -68,8 +68,8 @@ struct SettingsView: View {
 
           Section {
             NavigationLink("Pinned tags") { PinnedTagsView() }
-            if let sticky = model.sticky {
-              Button("Stop adding #\(sticky) to every note") { model.sticky = nil }
+            if let sticky = model.stickyTag {
+              Button("Stop adding \(sticky.name) to every note") { model.sticky = nil }
             }
           } header: {
             SectionHead("Tags")
@@ -133,15 +133,20 @@ struct SettingsView: View {
   }
 }
 
+/// The pins, by name, the same on every device (API 1.21.0): at most 12,
+/// first in the tag row. Each goes in as a tags field takes a tag.
 struct PinnedTagsView: View {
   @Environment(AppModel.self) private var model
-  @State private var pinned: [String] = []
+  @State private var pinned: [Tag] = []
   @State private var adding = ""
+  @State private var problem: String?
+
+  static let most = 12
 
   var body: some View {
     Form {
       Section {
-        ForEach(pinned, id: \.self) { Text("#\($0)").foregroundStyle(Color.cobalt) }
+        ForEach(pinned) { Text(verbatim: $0.name).foregroundStyle(Color.cobalt) }
           .onDelete { pinned.remove(atOffsets: $0) }
           .onMove { pinned.move(fromOffsets: $0, toOffset: $1) }
         HStack {
@@ -149,10 +154,12 @@ struct PinnedTagsView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .onSubmit(add)
-          Button("Add", action: add).disabled(Hashtags.normalize(adding) == nil || pinned.count >= 12)
+            .onChange(of: adding) { _, _ in problem = nil }
+          Button("Add", action: add)
+            .disabled(adding.trimmingCharacters(in: .whitespaces).isEmpty || pinned.count >= Self.most)
         }
       } footer: {
-        SectionNote("Up to 12. They come first in the tag row.")
+        SectionNote(problem ?? "Up to \(Self.most). They come first in the tag row.", problem: problem != nil)
       }
       .paperRows()
     }
@@ -161,15 +168,23 @@ struct PinnedTagsView: View {
     // Settings hides its bar; this screen needs Back and Edit.
     .toolbar(.visible, for: .navigationBar)
     .toolbar { EditButton() }
-    .onAppear { pinned = model.tags?.pinned ?? [] }
+    .onAppear { pinned = model.tags?.pinnedTags ?? [] }
     .onDisappear {
-      if pinned != (model.tags?.pinned ?? []) { Task { await model.setPinned(pinned) } }
+      let before = model.tags?.pinnedTags ?? []
+      if pinned.map(\.key) != before.map(\.key) || pinned.map(\.name) != before.map(\.name) {
+        Task { await model.setPinned(pinned) }
+      }
     }
   }
 
   private func add() {
-    guard let tag = Hashtags.normalize(adding), !pinned.contains(tag), pinned.count < 12 else { return }
-    pinned.append(tag)
-    adding = ""
+    guard pinned.count < Self.most else { return }
+    switch Hashtags.adding(adding, to: pinned) {
+    case .failure(let why):
+      problem = why.said
+    case .success(let done):
+      pinned = done.tags
+      adding = ""
+    }
   }
 }

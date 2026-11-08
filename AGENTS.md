@@ -16,7 +16,10 @@ there first, never work around it here.
   check-in calls and the words a stay is said in),
   `Media` (uploads, the types Release Notes keeps, the storage form),
   `Hashtags` (a port of Release Notes' `packages/domain/tags.ts`; keep them
-  in step), `TokenStore` (the Keychain), `SignIn` (signing in with
+  in step: `Tests/ChangelogKitTests/tag-vectors.json` is the server's
+  `contracts/tag-vectors.json` copied as it is, and `TagVectorTests` checks
+  every name, refusal and text in it, so copy it again whenever the server's
+  changes), `TokenStore` (the Keychain), `SignIn` (signing in with
   Release Notes: OAuth with PKCE for the app's own scheme, registered
   afresh each time, the code spent once for an ordinary API token; no
   refresh token), `Shares` (the App Group and the extension's hand-off to
@@ -197,13 +200,17 @@ there first, never work around it here.
   stay on the web" (Jamie, 2026-11-05). It reads days, notes and their files,
   searches every note as the web does (all the words, or one `#tag` alone for
   that tag's notes) and shows On this day under Today, a day's first three
-  notes with the rest on its page; a list of tags and releases come next. The
+  notes with the rest on its page. Tags, from Notes, lists every tag with
+  what carries it, and a tag's page has its notes, Upcoming dates and
+  check-ins; releases come next. The
   map, opened from Activity, shows check-ins and notes with a place of their own
   (Jamie, 2026-11-08: "map is its own thing… when you go to map, you're really
   then just saying, I want to see notes and I want to see check-ins"). Each turns
-  on and off; a calendar year, a search (words, or one `#tag` alone) and Trails,
-  each kind joined in the order it happened, narrow it. A search keeps notes
-  alone, as on the web's Map. Notes are dots and check-ins rings, as on the web
+  on and off; a calendar year, a search (words, or one `#tag` alone), the Tag
+  menu (for a tag with a space or an emoji, which can't be typed as one
+  `#tag`) and Trails, each kind joined in the order it happened, narrow it.
+  Words keep notes alone, as on the web's Map; a tag keeps the notes and the
+  check-ins with it (call 8). Notes are dots and check-ins rings, as on the web
   (Jamie, 2026-11-08: "Approved: make the iPhone Map draw notes as dots and
   check-ins as rings, matching the web"). Badges and the mail log stay on the web. A new sign-in asks for `notes:all`
   (Jamie, 2026-10-30), which anyone may untick on the consent page; a token
@@ -225,6 +232,20 @@ there first, never work around it here.
   words, and Fix opens only on this token's own note. Turning it on or off asks
   first. Activity's rows open their notes only while reading is open, and
   close with it; the rows themselves never carry a note's words.
+- Tags are first-class, as Release Notes keeps them (Jamie, 2026-11-08:
+  "Approved: build first-class tags in Release Notes as proposed, with calls
+  1 to 8 as recommended"; the server's `docs/TAGS.md` has the calls). A tag is
+  a name shown as typed ("Road Trip", "🚗 Lake") and a key that matches every
+  spelling of it; each note, date, stay and place keeps its own spelling. Tags
+  go in a field of chips (`TagField`), never parsed from words with spaces:
+  typed #words still make tags, and taking off a #word's chip takes the word
+  out of the note (call 1). The field refuses a name over 50 characters, a
+  21st tag, a comma and a line break, saying why (call 4); the sticky tag goes
+  in the field by name. Upcoming dates take several (call 5). A remembered
+  place's tags go on each new check-in there; adding one offers once to tag
+  the check-ins already there, for the count shown, and taking one off leaves
+  them (call 6). The Map's tag keeps notes and check-ins (call 8). Renaming
+  and merging tags are not part of it.
 - iOS 26 and later, iPhone only, Swift 6 strict concurrency.
 - No task groups (`withTaskGroup` and its kin). Built with Swift 6.4
   (Xcode 27.1) and optimized, as TestFlight builds are, the one in

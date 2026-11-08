@@ -411,9 +411,10 @@ final class ChangelogUITests: XCTestCase {
     expect(search, "reading open, the map searches", in: app, timeout: 15)
     search.tap()
     search.typeText("#\(mark)\n")
-    let one = NSPredicate(format: "label == %@", "1 note tagged #\(mark).")
+    // A tag keeps the check-ins with it too (call 8); this stop has none.
+    let one = NSPredicate(format: "label == %@", "0 check-ins and 1 note tagged #\(mark).")
     expect(app.staticTexts.matching(one).firstMatch, "the tag keeps its one note", in: app, timeout: 20)
-    XCTAssertTrue(stop.waitForNonExistence(timeout: 5), "a search hides check-ins")
+    XCTAssertTrue(stop.waitForNonExistence(timeout: 5), "a tag hides the check-ins without it")
     let dot = dots.firstMatch
     expect(dot, "the note is a dot", in: app, timeout: 20)
     control("trails").tap()
@@ -434,7 +435,7 @@ final class ChangelogUITests: XCTestCase {
       : app.buttons.matching(identifier: "Delete").element(boundBy: app.buttons.matching(identifier: "Delete").count - 1)
     confirm.tap()
     XCTAssertTrue(dot.waitForNonExistence(timeout: 20), "its dot goes, with the sheet")
-    let none = NSPredicate(format: "label == %@", "No notes tagged #\(mark).")
+    let none = NSPredicate(format: "label == %@", "No check-ins or notes tagged #\(mark).")
     expect(app.staticTexts.matching(none).firstMatch, "and the line says so", in: app, timeout: 10)
   }
 

@@ -48,14 +48,19 @@ struct LogView: View {
           if let notice = model.momentNotice {
             Label(notice, systemImage: "info.circle").face(.meta).foregroundStyle(Color.ink3)
           }
+          // Its tags as chips, from the field and its #words, and a box for
+          // one more, as the web's form has them; then the row.
+          TagField(tags: model.draftChips, hint: "Tags can have spaces and emoji, like Road Trip. A #word in the note is a tag too.",
+                   offer: model.tagRow, add: model.addTag, remove: model.removeTag)
+            .padding(.top, 8)
           TagRowView()
           if model.day != nil { DayMenu() }
-          if model.placeLabel != nil || model.sticky != nil {
+          if model.placeLabel != nil || model.stickyTag != nil {
             HStack {
               PlaceMenu()
               Spacer()
-              if let sticky = model.sticky {
-                Label("#\(sticky) on every note", systemImage: "pin.fill")
+              if let sticky = model.stickyTag {
+                Label("\(sticky.name) on every note", systemImage: "pin.fill")
                   .face(.meta)
                   .foregroundStyle(Color.ink3)
               }
@@ -288,7 +293,7 @@ struct WaitingRow: View {
     case .delete(let date, _): "Delete a note from \(date)"
     case .attach(let attach): "Add \(Self.count(attach.files)) to a note from \(attach.date)"
     case .removeFile(let date, _, _): "Take a file off a note from \(date)"
-    case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.map { "#\($0)" }.joined(separator: " ")
+    case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.joined(separator: ", ")
     case .post(let post):
       post.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.count(post.files) : post.text
     // Never the spot.
@@ -422,6 +427,8 @@ struct EditNoteView: View {
   @State private var thumbnails: [UUID: CGImage] = [:]
   @State private var confirming = false
   @State private var kept: EditFilesKept?
+  /// Its tags field as edited: the tags its words don't carry. Nil until read.
+  @State private var fieldTags: [Tag]?
 
   /// Locked, the words of a note from elsewhere stay closed: what it says now,
   /// and a refused edit's own, which are that note's too.
@@ -468,9 +475,25 @@ struct EditNoteView: View {
             } footer: {
               if let change, change.words != nil, let refusal = change.refusal { SectionNote(refusal) }
             }
+            if note != nil, refused == nil, let fieldTags {
+              Section {
+                // Its #words are chips too: taking one off takes the word out
+                // of the note (call 1).
+                TagField(tags: Hashtags.chips(text, field: fieldTags), offer: model.tagRow,
+                         add: { tag in self.fieldTags = Hashtags.merge(fieldTags, [tag]) },
+                         remove: { tag in
+                           self.fieldTags = fieldTags.filter { $0.key != tag.key }
+                           text = Hashtags.removing(tag.key, from: text)
+                         })
+              } header: {
+                SectionHead("Tags")
+              } footer: {
+                if let change, change.words == nil, change.tags != nil, let refusal = change.refusal { SectionNote(refusal) }
+              }
+            }
             if let note, refused == nil, model.canAddFiles {
               EditFiles(note: note, kept: kept, removing: $removing, adding: $adding, thumbnails: $thumbnails,
-                        importing: $importing, refusal: change?.words == nil ? change?.refusal : nil)
+                        importing: $importing, refusal: change?.words == nil && change?.tags == nil ? change?.refusal : nil)
             }
           } else if failure == nil {
             ProgressView()
@@ -528,7 +551,11 @@ struct EditNoteView: View {
 
   /// The edit as it stands, from the note read.
   private var change: NoteChange? {
-    note.map { NoteChange($0, words: text, adding: adding, removing: removing) }
+    note.map { note in
+      // The field's own: a tag typed as a #word since goes with the words.
+      let tags = fieldTags.map { Hashtags.fieldOnly(text, tags: $0) }
+      return NoteChange(note, words: text, adding: adding, removing: removing, tags: tags)
+    }
   }
 
   private var canSave: Bool {
@@ -566,7 +593,10 @@ struct EditNoteView: View {
         return
       }
       note = read
-      if refused == nil { text = read.text }
+      if refused == nil {
+        text = read.text
+        fieldTags = read.fieldTags
+      }
     } catch {
       failure = error
     }

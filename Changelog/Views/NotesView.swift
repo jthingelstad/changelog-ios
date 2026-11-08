@@ -32,6 +32,9 @@ struct NotesView: View {
       .toolbar(.hidden, for: .navigationBar)
       .navigationDestination(for: NoteDetail.self) { NotePage(note: $0) }
       .navigationDestination(for: DayRoute.self) { DayPage(date: $0.date) }
+      .navigationDestination(for: TagRoute.self) { TagPage(route: $0) }
+      .navigationDestination(for: TagsRoute.self) { _ in TagsPage() }
+      .navigationDestination(for: ActivityStop.self) { CheckInPage(day: $0.day, id: $0.id) }
     }
     .safeAreaInset(edge: .top) {
       if let notice = model.readingNotice {
@@ -215,6 +218,11 @@ private struct NotesList: View {
         if let search {
           results(for: search)
         } else {
+          // Every tag, as the web's Search lists them under its box.
+          NavigationLink(value: TagsRoute()) {
+            Label("Tags", systemImage: "number").face(.action).foregroundStyle(Color.cobalt)
+          }
+          .paperRow(top: 10, bottom: 0)
           everyDay
         }
         Color.clear.frame(height: 24).paperRow()

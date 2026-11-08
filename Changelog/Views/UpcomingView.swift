@@ -246,8 +246,8 @@ struct UpcomingRow: View {
       Text(entry.line)
         .face(.note)
         .foregroundStyle(Color.ink)
-      if let tag = entry.fields.tag {
-        Text("#\(tag)").face(.meta).foregroundStyle(Color.ink3)
+      if !entry.fields.tags.isEmpty {
+        Text("Tags: \(Hashtags.line(entry.fields.tags))").face(.meta).foregroundStyle(Color.ink3)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -362,11 +362,12 @@ struct UpcomingEditor: View {
           }
 
           Section {
-            TextField("Tag", text: $draft.tag, prompt: Text("Like family"))
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
+            TagField(tags: draft.tags, offer: model.tagRow,
+                     add: { draft.tags.append($0) }, remove: { tag in draft.tags.removeAll { $0.key == tag.key } })
+          } header: {
+            SectionHead("Tags")
           } footer: {
-            SectionNote("One tag, to group it with other dates.")
+            SectionNote("Tags group it with other dates, notes and check-ins, like family or Road Trip.")
           }
 
           Section {

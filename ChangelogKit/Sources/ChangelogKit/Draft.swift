@@ -31,7 +31,7 @@ public struct Draft: Codable, Sendable, Equatable {
   /// there, rather than putting the same words back in the box to be sent
   /// twice.
   public struct Handover: Codable, Sendable, Equatable {
-    /// The words as queued, with the sticky tag.
+    /// The words as queued.
     public var text: String
     public var writtenAt: String
 

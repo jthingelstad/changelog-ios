@@ -19,6 +19,9 @@ struct MapScreen: View {
   @State private var pins: [NotePin] = []
   @State private var filter = MapFilter()
   @State private var typed = ""
+  /// The tag chosen from the Tag menu, by name: one with a space or an emoji
+  /// can't be typed as a #tag. Typing lets it go.
+  @State private var tagPicked: Tag?
   @FocusState private var typing: Bool
   /// The keys of the notes the words found; nil until they answer.
   @State private var found: Set<String>?
@@ -56,7 +59,8 @@ struct MapScreen: View {
     .task(id: Reading(open: model.readingOpen, changes: model.changes, retries: retries)) { await readNotes() }
     // The words go a moment after the last key, as on the web's Map.
     .task(id: typed) {
-      guard NoteSearch(typed) != filter.search else { return }
+      guard NoteSearch(typed) != filter.search, tagPicked == nil || !typed.isEmpty else { return }
+      tagPicked = nil
       try? await Task.sleep(for: .milliseconds(400))
       if !Task.isCancelled { filter.search = NoteSearch(typed) }
     }
@@ -89,9 +93,10 @@ struct MapScreen: View {
     .onChange(of: model.readingOpen) { _, open in
       guard !open else { return }
       if case .notes = chosen { chosen = nil }
-      // Its box is hidden while locked, and a search hides check-ins: let it go.
+      // Its box is hidden while locked, and words hide check-ins: let them go.
+      // A tag from the menu keeps its check-ins.
       typed = ""
-      filter.search = nil
+      if tagPicked == nil { filter.search = nil }
       typing = false
     }
   }
@@ -108,8 +113,8 @@ struct MapScreen: View {
     VStack(alignment: .leading, spacing: 0) {
       if model.readingOpen {
         SearchBox(typed: $typed, focused: $typing, showing: filter.search != nil,
-                  find: { filter.search = NoteSearch(typed) },
-                  clear: { typed = ""; filter.search = nil; typing = false })
+                  find: { tagPicked = nil; filter.search = NoteSearch(typed) },
+                  clear: { typed = ""; tagPicked = nil; filter.search = nil; typing = false })
           .padding(.top, 4)
       }
       ScrollView(.horizontal, showsIndicators: false) {
@@ -122,6 +127,8 @@ struct MapScreen: View {
           }
           yearMenu
           pick("Trails", on: filter.trails) { filter.trails.toggle() }
+          // Last, so Trails stays where it was once a tag is on the map.
+          tagMenu
         }
       }
       .accessibilityElement(children: .contain)
@@ -176,6 +183,59 @@ struct MapScreen: View {
     .accessibilityIdentifier("map.year")
   }
 
+  /// The tags on what the map can show, each once by name (call 8: a tag
+  /// keeps the notes and the check-ins with it).
+  private var mapTags: [Tag] {
+    MapFilter.tags(model.hasActivity ? stays : [], model.readingOpen ? pins : [])
+  }
+
+  /// The Tag menu, beside the year's. Hidden until something has a tag.
+  @ViewBuilder private var tagMenu: some View {
+    let tags = mapTags
+    // A tag chosen stays on the menu while nothing has it.
+    let listed = tagPicked.map { picked in tags.contains { $0.key == picked.key } ? tags : [picked] + tags } ?? tags
+    if !listed.isEmpty {
+      let on = tagPicked != nil
+      Menu {
+        Picker("Tag", selection: Binding(get: { tagPicked?.key }, set: { key in pickTag(listed.first { $0.key == key }) })) {
+          Text("Every tag").tag(String?.none)
+          ForEach(listed) { tag in
+            Text(verbatim: tag.name).tag(String?.some(tag.key))
+          }
+        }
+      } label: {
+        HStack(spacing: 4) {
+          Text(verbatim: tagPicked?.name ?? "Every tag")
+            .underline(on, color: .tangerine)
+          Image(systemName: "chevron.down").imageScale(.small).accessibilityHidden(true)
+        }
+        .face(on ? .tagOn : .tag)
+        .foregroundStyle(on ? Color.ink : Color.cobalt)
+        .frame(minHeight: 44)
+        .contentShape(.rect)
+      }
+      .accessibilityLabel("Tag")
+      .accessibilityValue(tagPicked?.name ?? "Every tag")
+      .accessibilityIdentifier("map.tag")
+    }
+  }
+
+  /// A tag from the menu searches by its key and empties the box; Every tag
+  /// lets it go.
+  private func pickTag(_ tag: Tag?) {
+    tagPicked = tag
+    typed = ""
+    typing = false
+    filter.search = tag.map { .tag($0.key) }
+  }
+
+  /// The tag searched for: by name when picked from the menu, and as typed
+  /// (its #) when typed, so the line stays the same as what it finds changes.
+  private var searchedName: String? {
+    guard case .tag(let key) = filter.search, let tagPicked, tagPicked.key == key else { return nil }
+    return tagPicked.name
+  }
+
   @ViewBuilder private func status(stays: Int, notes: Int) -> some View {
     if let problem {
       HStack(spacing: 12) {
@@ -195,9 +255,9 @@ struct MapScreen: View {
     } else if finding && found == nil {
       Text("Looking for those words").face(.hint).foregroundStyle(Color.ink2)
     } else {
-      let checkInsOn = model.hasActivity && filter.checkIns && filter.search == nil
+      let checkInsOn = model.hasActivity && filter.keepsCheckIns
       let notesOn = model.readingOpen && filter.notes
-      Text(filter.summary(stays: checkInsOn ? stays : nil, notes: notesOn ? notes : nil))
+      Text(filter.summary(stays: checkInsOn ? stays : nil, notes: notesOn ? notes : nil, tagName: searchedName))
         .face(.hint)
         .foregroundStyle(Color.ink2)
         .accessibilityAddTraits(.updatesFrequently)
@@ -364,6 +424,10 @@ private struct NoteSpotSheet: View {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
       }
       .navigationDestination(for: ActivityNote.self) { ActivityNotePage(route: $0) }
+      // A note's tags open their pages, and those their notes and check-ins.
+      .navigationDestination(for: TagRoute.self) { TagPage(route: $0) }
+      .navigationDestination(for: NoteDetail.self) { NotePage(note: $0) }
+      .navigationDestination(for: ActivityStop.self) { CheckInPage(day: $0.day, id: $0.id) }
     }
     .presentationDetents([.medium, .large], selection: $detent)
     .onChange(of: path.isEmpty) { _, empty in

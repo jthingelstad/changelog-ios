@@ -42,9 +42,14 @@ memo and a transcript.
    note under Today, swipe Changelog away in the app switcher and open it
    again: it opens, with the note's words back under Today (builds 52 and
    53 closed on opening here, 2026-10-30).
-3. **Tags.** Tap a pinned tag to add it. Touch and hold one: it goes on
-   every note until Settings, "Stop adding #… to every note". Settings,
-   Pinned tags: add one; it shows on the web too.
+3. **Tags.** Tap a pinned tag to add it as a chip. Type "Road Trip" in Add a
+   tag, then Return: a chip with the space. A #word typed in the note is a
+   chip too; take its chip off and the word goes from the note. A 51-letter
+   tag or a comma says why it can't be one. Touch and hold a pinned tag: it
+   goes on every note until Settings, "Stop adding … to every note".
+   Settings, Pinned tags: add "🚗 Lake"; it shows on the web too. Notes,
+   Tags: every tag, and one opens its notes, Upcoming dates and check-ins.
+   Edit a note: its tags are chips, and Save keeps a changed list.
 4. **Photos.** "Add photos" (two or three) and "Take a photo" on one
    note, then Commit. The web note has every photo.
 5. **A voice memo.** The microphone, ten seconds, stop, Commit. It plays
@@ -170,7 +175,10 @@ memo and a transcript.
     Delete a stop from there and its ring goes. Notes (Face ID if locked): a dot
     for each spot with notes, dots gathering into a count as you zoom out, and
     a dot opens its notes, as on the web's Map. A year, a #tag and some words
-    each narrow it, and words or a tag hide the check-ins. Trails joins the
+    each narrow it: words hide the check-ins, and a tag, typed or from the Tag
+    menu, keeps the check-ins with it. Tag a check-in on its page, and a
+    remembered place in Settings: adding a tag there asks once to tag its
+    check-ins too, and Tag them says how many. Trails joins the
     check-ins with a solid line and the notes with a dotted one, oldest first.
     Lock reading: the notes and the search go.
 
