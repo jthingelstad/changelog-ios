@@ -456,8 +456,8 @@ private struct NotesList: View {
 
 /// The box at the top of Notes, as the web's search: words, "quoted phrases",
 /// or one #tag alone for that tag's notes. A rule under it, tangerine while
-/// typing, as Log's box has.
-private struct SearchBox: View {
+/// typing, as Log's box has. The map has it too.
+struct SearchBox: View {
   @Binding var typed: String
   var focused: FocusState<Bool>.Binding
   let showing: Bool

@@ -338,6 +338,35 @@ struct DevServerTests {
     try await client.deleteNote(date: made.date, id: made.id, idempotencyKey: UUID().uuidString.lowercased())
   }
 
+  /// The map's pins (API 1.19.0): each says when its note was written, and
+  /// words or a tag keep the pins of the notes a search finds.
+  @Test func mapPinsFindWordsAndTags() async throws {
+    let client = DevServer.client()
+    guard try await client.me().token.readsAll else { return }
+    let mark = "pin\(UUID().uuidString.prefix(6).lowercased())"
+    let place = try await client.here(Spot(lat: 46.79, lon: -92.1, accuracyM: 30)).place
+    let lake = try await client.createNote(NoteRequest(text: "By the \(mark) shore #\(mark)tag", place: place),
+                                           idempotencyKey: UUID().uuidString.lowercased()).note
+    let other = try await client.createNote(NoteRequest(text: "Elsewhere on the lake", place: place),
+                                            idempotencyKey: UUID().uuidString.lowercased()).note
+    var every: [NotePin] = []
+    var after: String?
+    repeat {
+      let page = try await client.mapPins(after: after)
+      every += page.pins
+      after = page.next
+    } while after != nil
+    let made = every.filter { [lake.id, other.id].contains($0.id) }
+    #expect(made.count == 2)
+    #expect(made.allSatisfy { $0.writtenAt != nil })
+    #expect(try await client.mapPins(.words(mark)).pins.map(\.id) == [lake.id])
+    #expect(try await client.mapPins(.tag("\(mark)tag")).pins.map(\.id) == [lake.id])
+    #expect(try await client.mapPins(.words("\(mark) nowhere")).pins.isEmpty)
+    for note in [lake, other] {
+      try await client.deleteNote(date: note.date, id: note.id, idempotencyKey: UUID().uuidString.lowercased())
+    }
+  }
+
   /// A stop through the queue as a phone reports it: an arrival, then its
   /// leaving under another key, one stay. Then its name and its deleting.
   @Test func aVisitReportedTwiceIsOneStayNamedThenDeleted() async throws {

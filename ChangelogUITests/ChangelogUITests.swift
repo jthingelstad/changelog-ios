@@ -305,9 +305,13 @@ final class ChangelogUITests: XCTestCase {
     hideKeyboard(app)
 
     app.tabBars.buttons["Activity"].tap()
-    let open = app.buttons["Map of check-ins"]
+    let open = app.buttons["Map"]
     expect(open, "Activity opens the map", in: app, timeout: 15)
     open.tap()
+    // Check-ins alone, so the map frames them: notes far off would zoom it out
+    // until the stops' dots sit on one another.
+    let notes = app.descendants(matching: .any)["map.notes"]
+    if notes.waitForExistence(timeout: 10), notes.value as? String == "1" { notes.tap() }
     let pin = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Workshop'")).firstMatch
     expect(pin, "a place's stops are a pin", in: app, timeout: 20)
     keep(app, "The map of check-ins")
@@ -320,9 +324,16 @@ final class ChangelogUITests: XCTestCase {
     hour.tap()
     expect(app.buttons["Write about this"], "a stop opens its page", in: app, timeout: 15)
     keep(app, "A stop from the map")
-    app.navigationBars["Check-in"].buttons.firstMatch.tap()
+    // Deleted from there, it leaves the place's stops; the other stays.
+    app.buttons["Delete"].firstMatch.tap()
+    expect(app.staticTexts["Delete this check-in?"], "deleting a stop asks first", in: app)
+    let confirm = app.sheets.buttons["Delete"].exists ? app.sheets.buttons["Delete"]
+      : app.buttons.matching(identifier: "Delete").element(boundBy: app.buttons.matching(identifier: "Delete").count - 1)
+    confirm.tap()
     let close = app.buttons["Close"]
-    expect(close, "back to the place's stops", in: app)
+    expect(close, "back to the place's stops", in: app, timeout: 15)
+    XCTAssertTrue(hour.waitForNonExistence(timeout: 15), "the deleted stop leaves the list")
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '90 min'")).firstMatch.exists, "the other stays")
     close.tap()
     XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the sheet closes")
 
@@ -336,6 +347,95 @@ final class ChangelogUITests: XCTestCase {
     keep(app, "Check in from the control")
     try await Self.deleteCheckIns(server: server, token: owner)
     try await Self.forgetPlaces(server: server, token: owner)
+  }
+
+  /// Notes on the map (Jamie, 2026-11-08): a note with a place of its own is
+  /// a ring that opens it, beside a check-in's dot at the same spot; a #tag
+  /// keeps the notes that have it, and hides check-ins; Trails and the year
+  /// are there to choose; and a note deleted from the map leaves it.
+  @MainActor func testNotesOnTheMap() async throws {
+    let scopes = ["notes:write", "media:write", "upcoming", "activity", "notes:all"]
+    let owner = try await Self.tokenOnThisAccount(scopes, server: server)
+    try await Self.deleteCheckIns(server: server, token: owner)
+    let mark = "map\(UUID().uuidString.prefix(6).lowercased())"
+    let lat = 47.3 + Double.random(in: 0..<0.2), lon = -91.5 - Double.random(in: 0..<0.2)
+    let here = try JSONSerialization.jsonObject(
+      with: try await Self.send("POST", "/v1/places/here", ["lat": lat, "lon": lon, "accuracy_m": 30], server: server, token: owner))
+    let place = try XCTUnwrap((here as? [String: Any])?["place"] as? [String: Any])
+    _ = try await Self.send("POST", "/v1/notes", ["text": "Skipped stones \(mark) #\(mark)", "place": place],
+                            server: server, token: owner)
+    // A stop at the very spot, as Write about this makes one.
+    let stamp = ISO8601DateFormatter()
+    _ = try await Self.send("POST", "/v1/check-ins",
+                            ["arrived": stamp.string(from: .now.addingTimeInterval(-3 * 3600)),
+                             "left": stamp.string(from: .now.addingTimeInterval(-2 * 3600)),
+                             "lat": lat, "lon": lon, "source": "visit"], server: server, token: owner)
+    let server = self.server
+    addTeardownBlock { try await Self.deleteCheckIns(server: server, token: owner) }
+
+    let app = launch(as: owner, more: ["CHANGELOG_LOCK_ANSWER": "yes"])
+    hideKeyboard(app)
+    app.tabBars.buttons["Activity"].tap()
+    let open = app.buttons["Map"]
+    expect(open, "Activity opens the map", in: app, timeout: 15)
+    open.tap()
+    // A switch's trait makes each a switch to XCUITest, its value "1" when on.
+    let control = { (name: String) in app.descendants(matching: .any)["map." + name] }
+    let isOn = { (name: String) in control(name).value as? String == "1" }
+    let notes = control("notes")
+    expect(notes, "the map has a Notes switch", in: app, timeout: 15)
+    // Locked, Notes asks first; open, the notes are already on.
+    if !isOn("notes") { notes.tap() }
+    XCTAssertTrue(isOn("notes"), "Notes is on")
+    XCTAssertTrue(control("check-ins").exists && control("trails").exists && control("year").exists,
+                  "and Check-ins, Trails and the year")
+
+    // The ring at the stop's spot sits beside its dot, and opens as itself.
+    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH ', 1 check-in'")).firstMatch
+    expect(dot, "the stop is a dot", in: app, timeout: 20)
+    let rings = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '1 note at'"))
+    expect(rings.firstMatch, "notes are rings", in: app, timeout: 20)
+    let beside = try XCTUnwrap(rings.allElementsBoundByIndex.first { ring in
+      abs(ring.frame.midX - dot.frame.midX) < 30 && abs(ring.frame.midY - dot.frame.midY) < 30
+    }, "a ring beside the dot")
+    XCTAssertGreaterThan(beside.frame.midX, dot.frame.midX, "beside it, not under it")
+    keep(app, "A note at a stop")
+    beside.tap()
+    let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", mark)).firstMatch
+    expect(row, "the ring opens its note, not the stop", in: app, timeout: 15)
+    let close = app.buttons["Close"]
+    close.tap()
+    XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the sheet closes")
+
+    let search = app.textFields["search"]
+    expect(search, "reading open, the map searches", in: app, timeout: 15)
+    search.tap()
+    search.typeText("#\(mark)\n")
+    let one = NSPredicate(format: "label == %@", "1 note tagged #\(mark).")
+    expect(app.staticTexts.matching(one).firstMatch, "the tag keeps its one note", in: app, timeout: 20)
+    XCTAssertTrue(dot.waitForNonExistence(timeout: 5), "a search hides check-ins")
+    let ring = rings.firstMatch
+    expect(ring, "the note is a ring", in: app, timeout: 20)
+    control("trails").tap()
+    XCTAssertTrue(isOn("trails"), "Trails turns on")
+    keep(app, "Notes on the map")
+
+    // Deleted from the map, it leaves it.
+    ring.tap()
+    expect(row, "the ring lists its note", in: app, timeout: 15)
+    keep(app, "A spot's notes")
+    row.tap()
+    let change = app.buttons["Change"]
+    expect(change, "the note opens whole", in: app, timeout: 15)
+    change.tap()
+    app.buttons["Delete"].firstMatch.tap()
+    expect(app.staticTexts["Delete this note?"], "deleting asks first", in: app)
+    let confirm = app.sheets.buttons["Delete"].exists ? app.sheets.buttons["Delete"]
+      : app.buttons.matching(identifier: "Delete").element(boundBy: app.buttons.matching(identifier: "Delete").count - 1)
+    confirm.tap()
+    XCTAssertTrue(ring.waitForNonExistence(timeout: 20), "its ring goes, with the sheet")
+    let none = NSPredicate(format: "label == %@", "No notes tagged #\(mark).")
+    expect(app.staticTexts.matching(none).firstMatch, "and the line says so", in: app, timeout: 10)
   }
 
   /// Check-ins from the switch on: a visit iOS reports, one row and one stay;

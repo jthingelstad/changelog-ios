@@ -53,6 +53,20 @@ extension APIClient {
     return try await send("GET", "v1/on-this-day", query: query)
   }
 
+  /// A page of the notes with a place of their own, oldest first, as the
+  /// web's Map shows them; `next` goes on through `after`. A search keeps
+  /// the notes it finds (API 1.19.0), words or a tag as `search` reads them.
+  public func mapPins(_ search: NoteSearch? = nil, after: String? = nil) async throws(APIError) -> MapPinList {
+    var query: [URLQueryItem] = []
+    switch search {
+    case .words(let words): query.append(URLQueryItem(name: "q", value: words))
+    case .tag(let tag): query.append(URLQueryItem(name: "tag", value: tag))
+    case nil: break
+    }
+    if let after { query.append(URLQueryItem(name: "after", value: after)) }
+    return try await send("GET", "v1/map/pins", query: query)
+  }
+
   /// A fresh address for one of a note's files, or for its small copy.
   public func fileAddress(date: String, id: String, n: Int, thumb: Bool = false) async throws(APIError) -> FileAddress {
     try await send("GET", "v1/notes/\(date)/\(id)/media/\(n)", query: thumb ? [URLQueryItem(name: "size", value: "thumb")] : [])

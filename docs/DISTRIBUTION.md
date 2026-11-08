@@ -78,7 +78,7 @@ details' notes, and each build that carries check-ins goes out with it:
 > To try it: sign in, then Settings, Check-ins, "Notice where I stop". A simulator
 > or a short review won't see a visit, since iOS decides when to report one, so
 > "Check in now" on Log or Activity shows what a stop looks like: its row in
-> Activity, its page, and "Map of check-ins" in Activity.
+> Activity, its page, and Map in Activity.
 
 ### The steps, once Jamie says go
 
