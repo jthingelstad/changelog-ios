@@ -411,6 +411,9 @@ struct EditNoteView: View {
   @State private var failure: APIError?
   @State private var text: String
   @State private var saving = false
+  /// Photos, a camera shot or a recording still coming in: Save waits, so
+  /// the change goes with every file picked (Codex on #51).
+  @State private var importing = 0
   @State private var lockedOut = false
   /// The files an edit takes off, by number, and the new ones it puts on,
   /// kept in the queue's folder until it is saved or cancelled.
@@ -467,7 +470,7 @@ struct EditNoteView: View {
             }
             if let note, refused == nil, model.canAddFiles {
               EditFiles(note: note, removing: $removing, adding: $adding, thumbnails: $thumbnails,
-                        refusal: change?.words == nil ? change?.refusal : nil)
+                        importing: $importing, refusal: change?.words == nil ? change?.refusal : nil)
             }
           } else if failure == nil {
             ProgressView()
@@ -529,7 +532,7 @@ struct EditNoteView: View {
   }
 
   private var canSave: Bool {
-    guard note != nil, !saving else { return false }
+    guard note != nil, !saving, importing == 0 else { return false }
     // A refused edit saves its words from the newest revision, as ever.
     if refused != nil { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     guard let change else { return false }
@@ -608,6 +611,8 @@ private struct EditFiles: View {
   @Binding var removing: Set<Int>
   @Binding var adding: [QueuedFile]
   @Binding var thumbnails: [UUID: CGImage]
+  /// How many imports are still coming in.
+  @Binding var importing: Int
   /// Why Release Notes would refuse the files as they stand.
   let refusal: String?
   @State private var picks: [PhotosPickerItem] = []
@@ -689,25 +694,40 @@ private struct EditFiles: View {
       .onChange(of: picks) { _, items in
         guard !items.isEmpty else { return }
         picks = []
+        importing += 1
         Task {
           for item in items { await keepPhoto(try? await item.loadTransferable(type: Data.self)) }
+          importing -= 1
         }
       }
       .fullScreenCover(isPresented: $camera) {
         CameraView { data in
           camera = false
-          if let data { Task { await keepPhoto(data) } }
+          guard let data else { return }
+          importing += 1
+          Task {
+            await keepPhoto(data)
+            importing -= 1
+          }
         }
         .ignoresSafeArea()
       }
       .sheet(isPresented: $recording) {
-        RecorderView { data in Task { await keepRecording(data) } }
+        RecorderView { data in
+          importing += 1
+          Task {
+            await keepRecording(data)
+            importing -= 1
+          }
+        }
           .presentationDetents([.medium]).presentationBackground(Color.paper)
       }
     } header: {
       SectionHead("Files")
     } footer: {
-      if let line = problem ?? refusal {
+      if importing > 0 {
+        SectionNote("Getting the new files ready…")
+      } else if let line = problem ?? refusal {
         SectionNote(line)
       } else if !removing.isEmpty {
         SectionNote("A file taken off goes when you save, with its transcript or description.")
