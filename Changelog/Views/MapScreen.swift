@@ -32,6 +32,8 @@ struct MapScreen: View {
   @State private var notesRead = false
   @State private var finding = false
   @State private var problem: String?
+  /// Try again counts up, and every read starts again through its own task.
+  @State private var retries = 0
   @State private var chosen: MapChoice?
 
   var body: some View {
@@ -49,9 +51,9 @@ struct MapScreen: View {
     .navigationTitle("Map")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar(.visible, for: .navigationBar)
-    .task(id: model.checkInChanges) { await readStays() }
+    .task(id: [model.checkInChanges, retries]) { await readStays() }
     // Again after a note changes, here or anywhere: an edit, a delete, one sent.
-    .task(id: Reading(open: model.readingOpen, changes: model.changes)) { await readNotes() }
+    .task(id: Reading(open: model.readingOpen, changes: model.changes, retries: retries)) { await readNotes() }
     // The words go a moment after the last key, as on the web's Map.
     .task(id: typed) {
       guard NoteSearch(typed) != filter.search else { return }
@@ -59,7 +61,7 @@ struct MapScreen: View {
       if !Task.isCancelled { filter.search = NoteSearch(typed) }
     }
     // Again as reading opens (locking let what they found go), and after a change.
-    .task(id: Finding(search: filter.search, reading: Reading(open: model.readingOpen, changes: model.changes))) {
+    .task(id: Finding(search: filter.search, reading: Reading(open: model.readingOpen, changes: model.changes, retries: retries))) {
       await find()
     }
     .sheet(item: $chosen) { choice in
@@ -180,7 +182,7 @@ struct MapScreen: View {
         Text(problem).face(.hint).foregroundStyle(Color.tangerineInk)
         Button("Try again") {
           self.problem = nil
-          Task { await readStays(); await readNotes(); await find() }
+          retries += 1
         }
           .buttonStyle(QuietButtonStyle())
       }
@@ -276,11 +278,13 @@ struct MapScreen: View {
     guard case .words = filter.search, model.readingOpen, let search = filter.search else {
       found = nil
       foundFor = nil
+      finding = false
       return
     }
     if foundFor != search { found = nil }
     finding = true
-    defer { finding = false }
+    // A search overtaken leaves this to the one that took its place.
+    defer { if !Task.isCancelled { finding = false } }
     var keys: Set<String> = []
     var after: String?
     do {
@@ -290,6 +294,8 @@ struct MapScreen: View {
         keys.formUnion(page.pins.map(\.key))
         after = page.next
       } while after != nil
+      // Only what these words found, never an answer to words since changed.
+      guard !Task.isCancelled, filter.search == search else { return }
       found = keys
       foundFor = search
     } catch {
@@ -303,6 +309,7 @@ struct MapScreen: View {
 private struct Reading: Equatable {
   var open: Bool
   var changes: Int
+  var retries: Int
 }
 
 /// What a search on the map waits on.
