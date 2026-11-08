@@ -469,8 +469,15 @@ final class ChangelogUITests: XCTestCase {
     expect(filter, "Activity can show just check-ins", in: app, timeout: 15)
     filter.tap()
     let row = app.buttons.matching(stops).firstMatch
-    // At the hour it began, so below whatever else has happened since.
-    for _ in 0..<8 where !row.waitForExistence(timeout: 4) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    // At the hour it began, so below whatever else has happened since: on a
+    // dev server busy with earlier runs, a page or more down.
+    let older = app.buttons["Older"]
+    let scrollTo = { (stop: XCUIElement) in
+      for _ in 0..<12 where !stop.waitForExistence(timeout: 4) {
+        if older.exists && older.isHittable { older.tap() } else { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+      }
+    }
+    scrollTo(row)
     expect(row, "the stop is a row in Activity", in: app, timeout: 15)
     XCTAssertEqual(app.buttons.matching(stops).count, 1, "an arrival and its leaving are one row")
     XCTAssertTrue(row.label.contains("50 min"), "the row says how long: \(row.label)")
@@ -535,7 +542,7 @@ final class ChangelogUITests: XCTestCase {
     app.tabBars.buttons["Activity"].tap()
     app.navigationBars.buttons.firstMatch.tap()
     let tapped = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Checked in at Workshop'")).firstMatch
-    for _ in 0..<8 where !tapped.waitForExistence(timeout: 4) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    scrollTo(tapped)
     expect(tapped, "the stop is still a row", in: app, timeout: 15)
     XCTAssertEqual(app.buttons.matching(stops).count, 1, "a tap at the same place merges")
 
