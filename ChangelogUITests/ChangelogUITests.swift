@@ -741,15 +741,16 @@ final class ChangelogUITests: XCTestCase {
     expect(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Photo' AND value == 'Showing'")).firstMatch,
            "the note's photo shows", in: app, timeout: 15)
     keep(app, "A note with files")
-    // A recording comes down and opens in Quick Look.
-    app.buttons["Voice memo"].tap()
-    let closePreview = app.buttons["QLOverlayDoneButtonAccessibilityIdentifier"]
-    expect(closePreview, "the voice memo opens in Quick Look", in: app, timeout: 15)
-    // Its name up means it has loaded; a tap on the close button before that is lost.
-    expect(app.buttons["Voice memo, Actions Menu"], "Quick Look names the voice memo", in: app, timeout: 15)
-    keep(app, "A voice memo in Quick Look")
-    closePreview.tap()
-    XCTAssertTrue(closePreview.waitForNonExistence(timeout: 10), "Quick Look closes")
+    // A recording plays in place: fetched on Play, with its length, and Play
+    // back once it ends (the dev server's is a second of quiet).
+    let play = app.buttons["Play Voice memo"]
+    expect(play, "the voice memo offers Play", in: app, timeout: 15)
+    play.tap()
+    let line = app.sliders["Voice memo"]
+    expect(line, "the voice memo plays in place", in: app, timeout: 15)
+    keep(app, "A voice memo playing")
+    XCTAssertTrue((line.value as? String)?.hasSuffix("of 0:01") == true, "its length shows: \(String(describing: line.value))")
+    expect(play, "it ends, and Play is back", in: app, timeout: 15)
     app.navigationBars.buttons.firstMatch.tap()
     app.navigationBars.buttons.firstMatch.tap()
 

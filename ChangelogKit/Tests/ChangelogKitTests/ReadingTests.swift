@@ -77,6 +77,18 @@ struct ReadingTests {
     #expect(note.parts?.last == .other)
   }
 
+  /// A recording whose words are still being written is worth reading
+  /// again; once its transcript is in, or with none coming, it isn't.
+  @Test func knowsWhenARecordingsWordsAreComing() throws {
+    func note(_ media: String) throws -> NoteDetail {
+      try APIClient.decoder.decode(NoteDetail.self, from: Data(#"{"id":"v-1","date":"2026-11-08","text":"","revision":"r","written_at":null,"files":1,"media":[\#(media)]}"#.utf8))
+    }
+    #expect(try note(#"{"n":1,"kind":"audio","type":"audio/mp4","size":5,"writing":true}"#).wordsComing)
+    #expect(try !note(#"{"n":1,"kind":"audio","type":"audio/mp4","size":5,"writing":true,"transcript":"Words"}"#).wordsComing)
+    #expect(try !note(#"{"n":1,"kind":"audio","type":"audio/mp4","size":5}"#).wordsComing)
+    #expect(try !note(#"{"n":1,"kind":"image","type":"image/png","size":5,"writing":true}"#).wordsComing)
+  }
+
   /// What the app reads back today, from a server before 1.14.0, still reads.
   @Test func readsANoteFromBeforeTheWholeNote() async throws {
     StubProtocol.set("old.test", .init(status: 200, body: #"{"id":"t-1","date":"2026-10-28","text":"x","revision":"r","written_at":null,"files":0}"#))

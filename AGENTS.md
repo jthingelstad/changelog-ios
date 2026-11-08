@@ -209,7 +209,10 @@ there first, never work around it here.
   Group, a widget, a notification or what Siri says. The JSON comes `no-store`.
   Files come through an ephemeral session; a file open in Quick Look sits in
   `tmp/previews/` until the preview closes, the lock closes or the app starts.
-  `forget()` clears all of it.
+  A voice memo plays in place instead, from memory (`AVAudioPlayer(data:)`),
+  fetched on Play and let go when its page closes or reading locks. While a
+  recording's words are still being written, its page reads the note again
+  every 10 seconds for up to 5 minutes. `forget()` clears all of it.
 - The Face ID lock is on reading, never on capture: Log, Share and Siri write
   whether it is locked or not, off until turned on. Locked, Today reads only
   this token's notes, so Log shows what it always did, a waiting edit shows no

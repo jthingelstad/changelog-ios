@@ -169,6 +169,12 @@ public struct NoteDetail: Codable, Sendable, Hashable, Identifiable {
 
   public var isRich: Bool { markup == "rich" }
 
+  /// A recording's words are still being written, so a read soon may bring
+  /// its transcript.
+  public var wordsComing: Bool {
+    (media ?? []).contains { $0.kind == "audio" && $0.writing == true && $0.transcript == nil }
+  }
+
   /// The words without their marks, for a line in a list.
   public var plainWords: String {
     isRich ? Rich.words(Rich.blocks(parts ?? [.text(text)])) : text

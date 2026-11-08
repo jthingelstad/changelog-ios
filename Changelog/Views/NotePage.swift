@@ -1,3 +1,4 @@
+import AVFoundation
 import ChangelogKit
 import QuickLook
 import SwiftUI
@@ -84,6 +85,16 @@ struct NotePage: View {
     // Read fresh on opening, and again once a change has gone: a list's copy
     // may be behind, and an edit needs the newest revision.
     .task(id: model.changes) { await read() }
+    // A recording's words still being written: read again every 10 seconds
+    // while the page is open, for up to 5 minutes.
+    .task(id: note.wordsComing) {
+      guard note.wordsComing else { return }
+      for _ in 0..<30 {
+        guard (try? await Task.sleep(for: .seconds(10))) != nil, model.readingOpen else { return }
+        await read()
+        if !note.wordsComing { return }
+      }
+    }
   }
 
   private func read() async {
@@ -272,8 +283,9 @@ struct NoteThumb: View {
   }
 }
 
-/// One of a note's files on its page. A tap fetches the whole file and opens
-/// it in Quick Look, on this phone only for as long as it is open.
+/// One of a note's files on its page. A voice memo plays in place; a tap on
+/// any other fetches the whole file and opens it in Quick Look, on this phone
+/// only for as long as it is open.
 private struct NoteFileView: View {
   @Environment(AppModel.self) private var model
   let file: NoteFileEntry
@@ -284,16 +296,20 @@ private struct NoteFileView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Button { open() } label: {
-        if file.kind == "image" {
-          NoteThumb(file: file, note: note).aspectRatio(aspect, contentMode: .fit).frame(maxWidth: .infinity)
-        } else {
-          Label(title, systemImage: file.kind == "audio" ? "waveform" : "doc").face(.action).foregroundStyle(Color.cobalt)
+      if file.kind == "audio" {
+        VoiceMemoPlayer(file: file, note: note, title: title)
+      } else {
+        Button { open() } label: {
+          if file.kind == "image" {
+            NoteThumb(file: file, note: note).aspectRatio(aspect, contentMode: .fit).frame(maxWidth: .infinity)
+          } else {
+            Label(title, systemImage: "doc").face(.action).foregroundStyle(Color.cobalt)
+          }
         }
+        .buttonStyle(.plain)
+        .disabled(download != nil)
+        .overlay { if download != nil { ProgressView() } }
       }
-      .buttonStyle(.plain)
-      .disabled(download != nil)
-      .overlay { if download != nil { ProgressView() } }
       if failed {
         Text("This file couldn't be fetched. Try again in a moment.").face(.meta).foregroundStyle(Color.tangerineInk)
       }
@@ -337,5 +353,135 @@ private struct NoteFileView: View {
       failed = previewing == nil
       download = nil
     }
+  }
+}
+
+/// A voice memo played on its page: fetched when Play is first tapped, held
+/// in memory only and never written to the phone, and let go when the page
+/// closes or reading locks.
+private struct VoiceMemoPlayer: View {
+  @Environment(AppModel.self) private var model
+  let file: NoteFileEntry
+  let note: NoteDetail
+  let title: String
+  @State private var player: AVAudioPlayer?
+  @State private var fetch: Task<Void, Never>?
+  @State private var playing = false
+  @State private var position: TimeInterval = 0
+  @State private var scrubbing = false
+  @State private var failed = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 12) {
+        Button { toggle() } label: {
+          Image(systemName: playing ? "pause.circle.fill" : "play.circle.fill")
+            .font(.system(size: 36))
+            .foregroundStyle(Color.cobalt)
+            .frame(width: 44, height: 44)
+            .opacity(fetch == nil ? 1 : 0)
+            .overlay { if fetch != nil { ProgressView() } }
+        }
+        .buttonStyle(.plain)
+        .disabled(fetch != nil)
+        .accessibilityLabel(playing ? "Pause \(title)" : "Play \(title)")
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title).face(.action).foregroundStyle(Color.ink)
+          if let player {
+            Slider(value: $position, in: 0...max(player.duration, 0.1)) { editing in
+              scrubbing = editing
+              if !editing { player.currentTime = position }
+            }
+            .tint(Color.cobalt)
+            .accessibilityLabel(title)
+            .accessibilityValue("\(Self.clock(position)) of \(Self.clock(player.duration))")
+            HStack {
+              Text(Self.clock(position))
+              Spacer()
+              Text(Self.clock(player.duration))
+            }
+            .face(.meta)
+            .monospacedDigit()
+            .foregroundStyle(Color.ink3)
+            .accessibilityHidden(true)
+          }
+        }
+      }
+      if failed {
+        Text("This voice memo couldn't be played. Try again in a moment.").face(.meta).foregroundStyle(Color.tangerineInk)
+      }
+    }
+    // The line follows the sound while it plays, and goes back to the start
+    // once it ends.
+    .task(id: playing) {
+      while playing, !Task.isCancelled {
+        guard let player, player.isPlaying else {
+          playing = false
+          position = 0
+          Self.quiet()
+          return
+        }
+        if !scrubbing { position = player.currentTime }
+        try? await Task.sleep(for: .milliseconds(200))
+      }
+    }
+    .onDisappear { stop() }
+    .onChange(of: model.readingOpen) { _, open in
+      if !open { stop() }
+    }
+  }
+
+  private func toggle() {
+    if let player {
+      if playing {
+        player.pause()
+        playing = false
+      } else {
+        start(player)
+      }
+      return
+    }
+    failed = false
+    fetch = Task {
+      let data = await model.fileData(file, of: note, thumb: false)
+      defer { fetch = nil }
+      // The page closed, or reading locked, while it came: nothing is kept.
+      guard !Task.isCancelled, model.readingOpen else { return }
+      guard let data, let made = try? AVAudioPlayer(data: data) else {
+        failed = true
+        return
+      }
+      made.prepareToPlay()
+      player = made
+      start(made)
+    }
+  }
+
+  private func start(_ player: AVAudioPlayer) {
+    let session = AVAudioSession.sharedInstance()
+    try? session.setCategory(.playback, mode: .spokenAudio)
+    try? session.setActive(true)
+    player.currentTime = position < player.duration ? position : 0
+    playing = player.play()
+    failed = !playing
+  }
+
+  private func stop() {
+    fetch?.cancel()
+    fetch = nil
+    player?.stop()
+    player = nil
+    if playing { Self.quiet() }
+    playing = false
+    position = 0
+  }
+
+  /// Other apps' sound back, as the recorder leaves it.
+  private static func quiet() {
+    Task.detached { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
+  }
+
+  static func clock(_ seconds: TimeInterval) -> String {
+    Duration.seconds(seconds.rounded(.down)).formatted(.time(pattern: .minuteSecond))
   }
 }
