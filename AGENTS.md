@@ -175,8 +175,8 @@ there first, never work around it here.
   start the app to deliver one, with no window, before the phone's first
   unlock, when defaults read empty: never stop monitoring because of that, hold
   in memory what can't be queued yet, and only drop it once off really means off.
-  Rows, a check-in's page and the map of them open with reading locked (Jamie's
-  call); capture is never locked. The privacy page says this, and the written
+  Rows, a check-in's page and the map open with reading locked (Jamie's
+  call): check-ins show there, notes only once reading is open; capture is never locked. The privacy page says this, and the written
   reason for Always that Beta App Review reads is in `docs/DISTRIBUTION.md`.
 - The visits test's file (`VisitsTest`) stays read-only, for the owner to read,
   share and delete, until Jamie decides what happens to it. Nothing writes to
@@ -197,9 +197,13 @@ there first, never work around it here.
   stay on the web" (Jamie, 2026-11-05). It reads days, notes and their files,
   searches every note as the web does (all the words, or one `#tag` alone for
   that tag's notes) and shows On this day under Today, a day's first three
-  notes with the rest on its page; a list of tags and releases come next, the one map is of check-ins
-  (Jamie's word, 2026-11-06, phase 4 of `docs/CHECK-INS.md` in Release Notes), a
-  map of notes only on Jamie's word, badges and the mail log stay on the web. A new sign-in asks for `notes:all`
+  notes with the rest on its page; a list of tags and releases come next. The
+  map, opened from Activity, shows check-ins and notes with a place of their own
+  (Jamie, 2026-11-08: "map is its own thing… when you go to map, you're really
+  then just saying, I want to see notes and I want to see check-ins"). Each turns
+  on and off; a calendar year, a search (words, or one `#tag` alone) and Trails,
+  each kind joined in the order it happened, narrow it. A search keeps notes
+  alone, as on the web's Map. Badges and the mail log stay on the web. A new sign-in asks for `notes:all`
   (Jamie, 2026-10-30), which anyone may untick on the consent page; a token
   from before it, or one with it unticked, still captures, and reads back only
   the notes it wrote, by id, for Log's Today (`TodayWords`). The Notes tab's

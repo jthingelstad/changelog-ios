@@ -1590,6 +1590,12 @@ final class AppModel {
     try await reading { (client) async throws(APIError) in try await client.checkIns(before: before) }
   }
 
+  /// A page of the notes with a place of their own, for the map, or of the
+  /// notes a search finds (API 1.19.0).
+  func mapPins(_ search: NoteSearch?, after: String?) async throws(APIError) -> MapPinList {
+    try await reading { (client) async throws(APIError) in try await client.mapPins(search, after: after) }
+  }
+
   /// A stay by a row's day and any of its ids. The row has no spot, and `/v1`
   /// reads stays by day; the day before too, for a row about a stop that has
   /// since merged with one that began before midnight. Nil once it has gone.

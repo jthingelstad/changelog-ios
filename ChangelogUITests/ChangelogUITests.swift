@@ -305,7 +305,7 @@ final class ChangelogUITests: XCTestCase {
     hideKeyboard(app)
 
     app.tabBars.buttons["Activity"].tap()
-    let open = app.buttons["Map of check-ins"]
+    let open = app.buttons["Map"]
     expect(open, "Activity opens the map", in: app, timeout: 15)
     open.tap()
     let pin = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Workshop'")).firstMatch
@@ -336,6 +336,63 @@ final class ChangelogUITests: XCTestCase {
     keep(app, "Check in from the control")
     try await Self.deleteCheckIns(server: server, token: owner)
     try await Self.forgetPlaces(server: server, token: owner)
+  }
+
+  /// Notes on the map (Jamie, 2026-11-08): a note with a place of its own is
+  /// a ring that opens it; a #tag keeps the notes that have it, and hides
+  /// check-ins; Trails and the year are there to choose.
+  @MainActor func testNotesOnTheMap() async throws {
+    let scopes = ["notes:write", "media:write", "upcoming", "activity", "notes:all"]
+    let owner = try await Self.tokenOnThisAccount(scopes, server: server)
+    let mark = "map\(UUID().uuidString.prefix(6).lowercased())"
+    let lat = 47.3 + Double.random(in: 0..<0.2), lon = -91.5 - Double.random(in: 0..<0.2)
+    let here = try JSONSerialization.jsonObject(
+      with: try await Self.send("POST", "/v1/places/here", ["lat": lat, "lon": lon, "accuracy_m": 30], server: server, token: owner))
+    let place = try XCTUnwrap((here as? [String: Any])?["place"] as? [String: Any])
+    let words = "Skipped stones \(mark) #\(mark)"
+    let receipt = try JSONSerialization.jsonObject(
+      with: try await Self.send("POST", "/v1/notes", ["text": words, "place": place], server: server, token: owner))
+    let made = try XCTUnwrap((receipt as? [String: Any])?["note"] as? [String: Any])
+    let note = (date: try XCTUnwrap(made["date"] as? String), id: try XCTUnwrap(made["id"] as? String))
+    let server = self.server
+    addTeardownBlock { try await Self.deleteNote(note, server: server, token: owner) }
+
+    let app = launch(as: owner, more: ["CHANGELOG_LOCK_ANSWER": "yes"])
+    hideKeyboard(app)
+    app.tabBars.buttons["Activity"].tap()
+    let open = app.buttons["Map"]
+    expect(open, "Activity opens the map", in: app, timeout: 15)
+    open.tap()
+    // A switch's trait makes each a switch to XCUITest, its value "1" when on.
+    let control = { (name: String) in app.descendants(matching: .any)["map." + name] }
+    let isOn = { (name: String) in control(name).value as? String == "1" }
+    let notes = control("notes")
+    expect(notes, "the map has a Notes switch", in: app, timeout: 15)
+    // Locked, Notes asks first; open, the notes are already on.
+    if !isOn("notes") { notes.tap() }
+    XCTAssertTrue(isOn("notes"), "Notes is on")
+    XCTAssertTrue(control("check-ins").exists && control("trails").exists && control("year").exists,
+                  "and Check-ins, Trails and the year")
+    let search = app.textFields["search"]
+    expect(search, "reading open, the map searches", in: app, timeout: 15)
+    search.tap()
+    search.typeText("#\(mark)\n")
+    let status = app.staticTexts["map.status"]
+    let one = NSPredicate(format: "label == %@", "1 note tagged #\(mark).")
+    expect(app.staticTexts.matching(one).firstMatch, "the tag keeps its one note", in: app, timeout: 20)
+    XCTAssertTrue(status.exists)
+    let ring = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '1 note at'")).firstMatch
+    expect(ring, "the note is a ring", in: app, timeout: 20)
+    control("trails").tap()
+    XCTAssertTrue(isOn("trails"), "Trails turns on")
+    keep(app, "Notes on the map")
+    ring.tap()
+    let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", mark)).firstMatch
+    expect(row, "the ring lists its note", in: app, timeout: 15)
+    keep(app, "A spot's notes")
+    let close = app.buttons["Close"]
+    close.tap()
+    XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the sheet closes")
   }
 
   /// Check-ins from the switch on: a visit iOS reports, one row and one stay;

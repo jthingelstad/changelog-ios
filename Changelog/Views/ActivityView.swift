@@ -68,8 +68,8 @@ struct ActivityView: View {
           .padding(.top, 8)
           HStack(alignment: .top, spacing: 20) {
             CheckInNowButton()
-            if model.hasActivity {
-              Button("Map of check-ins") { path.append(CheckInMapRoute()) }
+            if model.hasActivity || model.readsNotes {
+              Button("Map") { path.append(MapRoute()) }
                 .buttonStyle(QuietButtonStyle())
             }
           }
@@ -123,7 +123,7 @@ struct ActivityView: View {
       .onChange(of: model.checkInChanges) { Task { await load() } }
       .overlay(alignment: .bottom) { Toast() }
       .navigationDestination(for: ActivityStop.self) { CheckInPage(day: $0.day, id: $0.id) }
-      .navigationDestination(for: CheckInMapRoute.self) { _ in CheckInMapView() }
+      .navigationDestination(for: MapRoute.self) { _ in MapScreen() }
       .navigationDestination(for: ActivityNote.self) { ActivityNotePage(route: $0) }
       .navigationDestination(for: DayRoute.self) { DayPage(date: $0.date) }
       // A day's own rows open their notes.
@@ -173,14 +173,15 @@ struct ActivityStop: Hashable {
   let id: String
 }
 
-private struct ActivityNote: Hashable {
+/// A note by its day and id, as an activity row or a ring on the map knows it.
+struct ActivityNote: Hashable {
   let date: String
   let id: String
 }
 
 /// A note an activity row points at. The row has its id and day, not the note,
 /// so it reads it here, and says so plainly if it has gone since.
-private struct ActivityNotePage: View {
+struct ActivityNotePage: View {
   @Environment(AppModel.self) private var model
   let route: ActivityNote
   @State private var note: NoteDetail?
