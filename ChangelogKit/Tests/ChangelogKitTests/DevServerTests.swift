@@ -375,9 +375,9 @@ struct DevServerTests {
     let arriving = try #require(CheckInReport.visit(arrival: arrival, departure: .distantFuture, lat: 44.9778, lon: -93.2650, accuracy: 120))
     let leaving = try #require(CheckInReport.visit(arrival: arrival, departure: .now.addingTimeInterval(-600), lat: 44.9778, lon: -93.2650, accuracy: 60))
 
-    let first = try await client.report(arriving, idempotencyKey: UUID().uuidString)
+    let first = try await client.report(arriving, idempotencyKey: UUID().uuidString).checkIn
     #expect(first.left == nil && first.source == "visit")
-    let second = try await client.report(leaving, idempotencyKey: UUID().uuidString)
+    let second = try await client.report(leaving, idempotencyKey: UUID().uuidString).checkIn
     #expect(second.id == first.id, "the same stay")
     #expect(second.left != nil)
 
@@ -428,6 +428,63 @@ struct DevServerTests {
         _ = try await client.remember(name: "Workshop", lat: 44.9778, lon: -93.2650, idempotencyKey: UUID().uuidString)
       }
     }
+  }
+
+  /// Ignore this location (API 1.20.0): no stop there is kept, the ones there
+  /// hide and come back, and Delete existing check-ins here goes only for the
+  /// count shown. Needs a token that may change every note.
+  @Test func anIgnoredPlaceKeepsNothingAndHidesWhatIsThere() async throws {
+    let client = DevServer.client()
+    guard try await client.me().token.changesAll else { return }
+    func key() -> String { UUID().uuidString.lowercased() }
+    // A spot of its own, well away from the other tests' stops.
+    let (lat, lon) = (47.0207, -91.6707)
+    let arrival = Date.now.addingTimeInterval(-7200)
+    let visit = try #require(CheckInReport.visit(arrival: arrival, departure: arrival.addingTimeInterval(1800), lat: lat, lon: lon, accuracy: 30))
+    let first = try await client.report(visit, idempotencyKey: key())
+    #expect(first.kept, "kept before the place is ignored")
+    let stay = first.checkIn
+    let place = try await client.remember(name: "Cabin \(UUID().uuidString.prefix(6))", lat: lat, lon: lon, idempotencyKey: key())
+    #expect(!place.ignored)
+    #expect(try await client.rememberedPlace(id: place.id).checkIns == 1)
+
+    let ignored = try await client.setPlaceIgnored(id: place.id, ignored: true, idempotencyKey: key())
+    #expect(ignored.ignored && ignored.name == place.name)
+    #expect(try await client.rememberedPlaces().first { $0.id == place.id }?.ignored == true, "still listed, ignored")
+    #expect(try await !client.checkIns(from: stay.day, to: stay.day).items.contains { $0.answers(to: stay.id) }, "hidden")
+    let log = try await client.activity(kinds: ["checkin"], limit: 50).items
+    #expect(log.contains { $0.kind == "checkin.ignored" && $0.place == place.id })
+    #expect(!log.contains { $0.kind == "checkin" && $0.checkin == stay.id }, "a hidden stay has no row")
+
+    // A tap there through the queue: done, nothing kept, never sent again.
+    let outbox = Outbox(file: nil)
+    try await outbox.enqueue(.checkIn(.tap(at: .now, spot: Spot(lat: lat, lon: lon, accuracyM: 10))))
+    let report = await outbox.flush { (item) async throws(APIError) -> OutboxResult in try await client.perform(item) }
+    #expect(report.stopped == nil && report.refused.isEmpty)
+    #expect(report.sent.map(\.result) == [.notKept(at: place.name)])
+    #expect(await outbox.waiting.isEmpty)
+    #expect(try await client.rememberedPlace(id: place.id).checkIns == 1, "the tap added nothing; the hidden one counts")
+
+    // Unignored, it shows again.
+    let back = try await client.setPlaceIgnored(id: place.id, ignored: false, idempotencyKey: key())
+    #expect(!back.ignored)
+    #expect(try await client.checkIns(from: stay.day, to: stay.day).items.contains { $0.answers(to: stay.id) }, "back")
+
+    // Deleted only for the count shown, hidden ones too; the place stays.
+    _ = try await client.setPlaceIgnored(id: place.id, ignored: true, idempotencyKey: key())
+    do {
+      _ = try await client.deleteCheckIns(atPlace: place.id, count: 5, idempotencyKey: key())
+      Issue.record("another count was let through")
+    } catch {
+      #expect(error.code == "revision_mismatch" && error.count == 1)
+    }
+    #expect(try await client.deleteCheckIns(atPlace: place.id, count: 1, idempotencyKey: key()) == 1)
+    #expect(try await client.rememberedPlace(id: place.id).checkIns == 0)
+    #expect(try await client.rememberedPlaces().contains { $0.id == place.id }, "the place stays")
+    let deleted = try await client.activity(kinds: ["checkin"], limit: 50).items
+    #expect(deleted.contains { $0.kind == "checkin.deleted" && $0.place == place.id && $0.count == 1 })
+    #expect(deleted.first { $0.kind == "checkin.deleted" && $0.place == place.id }?.checkInMore == "1 check-in went.")
+    try await client.forgetPlace(id: place.id, idempotencyKey: key())
   }
 
   @Test func errorsDecode() async throws {

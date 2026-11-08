@@ -79,7 +79,39 @@ public struct CheckInList: Codable, Sendable, Equatable {
   public var next: String?
 }
 
-/// A place the account remembers: a name and the spots it holds.
+/// What reporting a stop answers (`POST /v1/check-ins`): the stay, and whether
+/// it was kept (API 1.20.0). A stop at a place the owner ignores isn't: nothing
+/// was stored, and `checkIn` only shows what it would have been, with an id that
+/// names nothing, so it is never kept or opened. A server before 1.20.0 keeps
+/// every one and doesn't say.
+public struct CheckInReceipt: Decodable, Sendable, Equatable {
+  public var checkIn: CheckIn
+  public var kept: Bool
+
+  public init(checkIn: CheckIn, kept: Bool = true) {
+    self.checkIn = checkIn
+    self.kept = kept
+  }
+
+  private enum CodingKeys: String, CodingKey { case checkIn, kept }
+
+  public init(from decoder: Decoder) throws {
+    let keys = try decoder.container(keyedBy: CodingKeys.self)
+    checkIn = try keys.decode(CheckIn.self, forKey: .checkIn)
+    kept = try keys.decodeIfPresent(Bool.self, forKey: .kept) ?? true
+  }
+
+  /// The ignored place's name, when the token was told it (one that can't read
+  /// the log or every note isn't); nil for a stop that was kept.
+  public var ignoredAt: String? {
+    guard !kept, checkIn.namedBy == "place", !checkIn.label.isEmpty else { return nil }
+    return checkIn.label
+  }
+}
+
+/// A place the account remembers: a name and the spots it holds. Ignored
+/// (API 1.20.0, "Ignore this location"), no new stop there is kept, and the
+/// stays already there are hidden, not deleted, until it is unignored.
 public struct RememberedPlace: Codable, Sendable, Equatable, Identifiable {
   public struct Corner: Codable, Sendable, Equatable {
     public var lat: Double
@@ -90,6 +122,32 @@ public struct RememberedPlace: Codable, Sendable, Equatable, Identifiable {
   public var name: String
   public var spots: [Corner]
   public var revision: Int
+  /// A server before 1.20.0 leaves it out: never ignored.
+  public var ignored: Bool
+  /// How many stays are there, hidden ones too. Only a read of the one place
+  /// (`GET /v1/check-ins/places/{id}`) says.
+  public var checkIns: Int?
+
+  public init(id: String, name: String, spots: [Corner], revision: Int, ignored: Bool = false, checkIns: Int? = nil) {
+    self.id = id
+    self.name = name
+    self.spots = spots
+    self.revision = revision
+    self.ignored = ignored
+    self.checkIns = checkIns
+  }
+
+  private enum CodingKeys: String, CodingKey { case id, name, spots, revision, ignored, checkIns }
+
+  public init(from decoder: Decoder) throws {
+    let keys = try decoder.container(keyedBy: CodingKeys.self)
+    id = try keys.decode(String.self, forKey: .id)
+    name = try keys.decode(String.self, forKey: .name)
+    spots = try keys.decode([Corner].self, forKey: .spots)
+    revision = try keys.decode(Int.self, forKey: .revision)
+    ignored = try keys.decodeIfPresent(Bool.self, forKey: .ignored) ?? false
+    checkIns = try keys.decodeIfPresent(Int.self, forKey: .checkIns)
+  }
 }
 
 public extension APIClient {
@@ -98,10 +156,10 @@ public extension APIClient {
   private struct PlacesAnswer: Decodable { var places: [RememberedPlace] }
   private struct Deleted: Decodable { var deleted: Int }
 
-  /// Sends one stop. Needs `notes:write`, as adding a note does.
-  func report(_ report: CheckInReport, idempotencyKey: String) async throws(APIError) -> CheckIn {
-    let answer: CheckInAnswer = try await send("POST", "v1/check-ins", body: report, idempotencyKey: idempotencyKey)
-    return answer.checkIn
+  /// Sends one stop. Needs `notes:write`, as adding a note does. A stop at an
+  /// ignored place answers 200 with `kept` false: done, and nothing stored.
+  func report(_ report: CheckInReport, idempotencyKey: String) async throws(APIError) -> CheckInReceipt {
+    try await send("POST", "v1/check-ins", body: report, idempotencyKey: idempotencyKey)
   }
 
   /// Stays newest first, within the account's days `from` through `to`.
@@ -158,6 +216,35 @@ public extension APIClient {
   func forgetPlace(id: String, idempotencyKey: String) async throws(APIError) {
     let _: Empty = try await send("DELETE", "v1/check-ins/places/\(id)", idempotencyKey: idempotencyKey, expect: 204)
   }
+
+  /// One place, with `checkIns`: how many stays are there, hidden ones too, which
+  /// Delete existing check-ins here asks with. Needs `activity` (API 1.20.0).
+  func rememberedPlace(id: String) async throws(APIError) -> RememberedPlace {
+    let answer: PlaceAnswer = try await send("GET", "v1/check-ins/places/\(id)")
+    return answer.place
+  }
+
+  /// Ignore this location, or stop: ignored, no new stop there is kept, and the
+  /// ones already there are hidden until it is unignored. Nothing is deleted.
+  /// Needs `notes:all` (API 1.20.0).
+  func setPlaceIgnored(id: String, ignored: Bool, idempotencyKey: String) async throws(APIError) -> RememberedPlace {
+    struct Body: Encodable { var ignored: Bool }
+    let answer: PlaceAnswer = try await send("PATCH", "v1/check-ins/places/\(id)", body: Body(ignored: ignored),
+                                             idempotencyKey: idempotencyKey)
+    return answer.place
+  }
+
+  /// Delete existing check-ins here: every stay at the place, hidden ones too,
+  /// for the count the owner was shown, and answers how many went. A different
+  /// count now is refused, `revision_mismatch` with that count in
+  /// `APIError.count`, and nothing goes: show the new number and ask again. The
+  /// place stays, ignored or not. Needs `notes:all` (API 1.20.0).
+  func deleteCheckIns(atPlace id: String, count: Int, idempotencyKey: String) async throws(APIError) -> Int {
+    let answer: Deleted = try await send("DELETE", "v1/check-ins/places/\(id)/check-ins",
+                                         query: [URLQueryItem(name: "count", value: String(count))],
+                                         idempotencyKey: idempotencyKey)
+    return answer.deleted
+  }
 }
 
 /// `name` is always sent: null is how a stay's own name comes off.
@@ -183,6 +270,12 @@ public enum CheckInWords {
   public static func stopName(_ label: String?) -> String {
     guard let label, !label.isEmpty, label != unnamed else { return "an unnamed stop" }
     return label
+  }
+
+  /// What a tap says at a place the owner ignores, instead of a check-in:
+  /// nothing was kept, and why. The place by name when the token was told it.
+  public static func notKept(at place: String?) -> String {
+    "Not checked in. You ignore \(place ?? "this place"), so no check-ins are kept there."
   }
 
   /// "70 min", and past two hours "3 hr 5 min".

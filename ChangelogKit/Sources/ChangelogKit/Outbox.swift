@@ -333,6 +333,10 @@ public enum OutboxResult: Sendable, Equatable {
   case deleted
   case pinned(Tags)
   case checkedIn(CheckIn)
+  /// A stop at a place the owner ignores (API 1.20.0): done, never sent again,
+  /// and nothing stored. Only the place's name, when the token was told it: the
+  /// stay it answered with names nothing, so it is never kept.
+  case notKept(at: String?)
   /// Done (a 2xx), in an answer this build couldn't read.
   case done
 }
@@ -840,7 +844,8 @@ public extension APIClient {
     case .post(let post):
       return .filed(try await createNote(post.request, idempotencyKey: key))
     case .checkIn(let stop):
-      return .checkedIn(try await report(stop, idempotencyKey: key))
+      let receipt = try await report(stop, idempotencyKey: key)
+      return receipt.kept ? .checkedIn(receipt.checkIn) : .notKept(at: receipt.ignoredAt)
     case .attach(let attach):
       return .edited(try await addFiles(date: attach.date, id: attach.id, uploads: attach.uploads, idempotencyKey: key).note)
     case .removeFile(let date, let id, let n):

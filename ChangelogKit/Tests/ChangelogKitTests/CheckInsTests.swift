@@ -169,6 +169,158 @@ import Testing
     #expect(item.source == nil && item.channel != nil)
   }
 
+  // MARK: Ignored places (API 1.20.0)
+
+  static let stayJSON = """
+    {"id":"c-1","at":"2026-11-08T15:00:00Z","day":"2026-11-08","arrived":"2026-11-08T15:00:00Z","left":null,"lat":44.97,"lon":-93.26,"source":"tap","revision":1,"label":"Home","named_by":"place","place":"p-1"}
+    """
+
+  @Test func aPlaceFromBefore1_20IsNotIgnored() throws {
+    let old = try APIClient.decoder.decode(RememberedPlace.self, from: Data("""
+      {"id":"p-1","name":"Home","spots":[{"lat":44.97,"lon":-93.26}],"revision":2}
+      """.utf8))
+    #expect(!old.ignored && old.checkIns == nil && old.spots.count == 1)
+    let ignored = try APIClient.decoder.decode(RememberedPlace.self, from: Data("""
+      {"id":"p-1","name":"Home","spots":[{"lat":44.97,"lon":-93.26}],"revision":3,"ignored":true}
+      """.utf8))
+    #expect(ignored.ignored)
+  }
+
+  @Test func onePlaceReadSaysHowManyCheckInsAreThere() async throws {
+    StubProtocol.set("place-count.test", .init(status: 200, body: """
+      {"place":{"id":"p-1","name":"Home","spots":[{"lat":44.97,"lon":-93.26}],"revision":3,"ignored":true,"check_ins":7}}
+      """))
+    let place = try await stubbedClient("place-count.test").rememberedPlace(id: "p-1")
+    #expect(place.checkIns == 7 && place.ignored)
+    let request = try #require(StubProtocol.requests("place-count.test").first)
+    #expect(request.httpMethod == "GET" && request.url?.path == "/v1/check-ins/places/p-1")
+  }
+
+  @Test func ignoringAPlaceSendsOnlyIgnored() async throws {
+    StubProtocol.set("ignore.test", .init(status: 200, body: """
+      {"place":{"id":"p-1","name":"Home","spots":[{"lat":44.97,"lon":-93.26}],"revision":4,"ignored":true}}
+      """))
+    let place = try await stubbedClient("ignore.test").setPlaceIgnored(id: "p-1", ignored: true, idempotencyKey: "k-1")
+    #expect(place.ignored && place.revision == 4)
+    let request = try #require(StubProtocol.requests("ignore.test").first)
+    #expect(request.httpMethod == "PATCH" && request.url?.path == "/v1/check-ins/places/p-1")
+    #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == "k-1")
+    let body = try JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: Bool]
+    #expect(body == ["ignored": true])
+  }
+
+  @Test func aReportFromBefore1_20WasKept() throws {
+    let old = try APIClient.decoder.decode(CheckInReceipt.self, from: Data(#"{"check_in":\#(Self.stayJSON)}"#.utf8))
+    #expect(old.kept && old.ignoredAt == nil && old.checkIn.id == "c-1")
+    let kept = try APIClient.decoder.decode(CheckInReceipt.self, from: Data(#"{"check_in":\#(Self.stayJSON),"kept":true}"#.utf8))
+    #expect(kept.kept)
+  }
+
+  @Test func aReportAtAnIgnoredPlaceWasNotKept() throws {
+    let receipt = try APIClient.decoder.decode(CheckInReceipt.self, from: Data(#"{"check_in":\#(Self.stayJSON),"kept":false}"#.utf8))
+    #expect(!receipt.kept && receipt.ignoredAt == "Home")
+    // A token that isn't told the place's name.
+    let unnamed = Self.stayJSON.replacingOccurrences(of: #""label":"Home","named_by":"place","place":"p-1""#,
+                                                     with: #""label":"Unnamed stop","named_by":"none""#)
+    let quiet = try APIClient.decoder.decode(CheckInReceipt.self, from: Data(#"{"check_in":\#(unnamed),"kept":false}"#.utf8))
+    #expect(!quiet.kept && quiet.ignoredAt == nil)
+  }
+
+  /// Not kept is done: it leaves the queue, never to be sent again, and
+  /// carries no stay, whose id names nothing.
+  @Test func aTapAtAnIgnoredPlaceIsDoneAndCarriesNoStay() async throws {
+    StubProtocol.set("not-kept.test", .init(status: 200, body: #"{"check_in":\#(Self.stayJSON),"kept":false}"#))
+    let client = stubbedClient("not-kept.test"), outbox = Outbox(file: nil)
+    try await outbox.enqueue(.checkIn(.tap(at: Self.arrival, spot: Spot(lat: 44.97, lon: -93.26, accuracyM: 12))))
+    let report = await outbox.flush { (item) async throws(APIError) -> OutboxResult in try await client.perform(item) }
+    #expect(report.stopped == nil && report.refused.isEmpty)
+    #expect(report.sent.map(\.result) == [.notKept(at: "Home")])
+    #expect(await outbox.waiting.isEmpty)
+    #expect(StubProtocol.requests("not-kept.test").count == 1, "sent once")
+    #expect(CheckInWords.notKept(at: "Home") == "Not checked in. You ignore Home, so no check-ins are kept there.")
+    #expect(CheckInWords.notKept(at: nil) == "Not checked in. You ignore this place, so no check-ins are kept there.")
+  }
+
+  @Test func aTapKeptIsACheckIn() async throws {
+    StubProtocol.set("kept.test", .init(status: 201, body: #"{"check_in":\#(Self.stayJSON),"kept":true}"#))
+    let item = OutboxItem(id: UUID(), operation: .checkIn(.tap(at: Self.arrival, spot: Spot(lat: 44.97, lon: -93.26, accuracyM: 12))),
+                          queuedAt: Self.arrival, attempts: 0)
+    guard case .checkedIn(let stay) = try await stubbedClient("kept.test").perform(item) else { Issue.record("not checked in"); return }
+    #expect(stay.id == "c-1")
+  }
+
+  @Test func deletingAPlacesCheckInsSendsTheCountShown() async throws {
+    StubProtocol.set("delete-here.test", .init(status: 200, body: #"{"deleted":3}"#))
+    let gone = try await stubbedClient("delete-here.test").deleteCheckIns(atPlace: "p-1", count: 3, idempotencyKey: "k-2")
+    #expect(gone == 3)
+    let request = try #require(StubProtocol.requests("delete-here.test").first)
+    #expect(request.httpMethod == "DELETE" && request.url?.path == "/v1/check-ins/places/p-1/check-ins")
+    #expect(request.url?.query == "count=3")
+    #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == "k-2")
+  }
+
+  @Test func anotherCountIsRefusedWithTheCountNow() async throws {
+    StubProtocol.set("delete-count.test", .init(status: 409, body: """
+      {"error":{"code":"revision_mismatch","message":"The check-ins there changed since you counted them. GET /v1/check-ins/places/{id} again for the count.","count":5}}
+      """))
+    do {
+      _ = try await stubbedClient("delete-count.test").deleteCheckIns(atPlace: "p-1", count: 3, idempotencyKey: "k-3")
+      Issue.record("expected a refusal")
+    } catch {
+      #expect(error.status == 409 && error.code == "revision_mismatch")
+      #expect(error.count == 5)
+      #expect(!error.retryable)
+    }
+  }
+
+  /// A check-in's revision is a number: its refusal still reads whole.
+  @Test func aCheckInsNumberRevisionStillReads() async throws {
+    StubProtocol.set("stay-revision.test", .init(status: 409, body: """
+      {"error":{"code":"revision_mismatch","message":"That check-in changed since you read it. Read it again.","revision":3}}
+      """))
+    do {
+      _ = try await stubbedClient("stay-revision.test").nameCheckIn(id: "c-1", name: "Workshop", revision: 2, idempotencyKey: "k-4")
+      Issue.record("expected a refusal")
+    } catch {
+      #expect(error.code == "revision_mismatch" && error.revision == "3")
+      #expect(error.message == "That check-in changed since you read it. Read it again.")
+    }
+  }
+
+  @Test func ignoringAndUnignoringReadAsTheWebHasThem() throws {
+    let ignored = try Self.row(#"{"id":"e4","kind":"checkin.ignored","at":"2026-11-08T15:05:00Z","place":"p-1","via":"web"}"#)
+    #expect(ignored.place == "p-1" && ignored.opens == nil)
+    #expect(ignored.checkInHeadline == "Ignored a remembered place")
+    #expect(ignored.checkInMore == "Its check-ins are hidden, and no new ones are kept there.")
+    let back = try Self.row(#"{"id":"e5","kind":"checkin.unignored","at":"2026-11-08T15:05:00Z","place":"p-1","via":"web"}"#)
+    #expect(back.checkInHeadline == "Stopped ignoring a remembered place")
+    #expect(back.checkInMore == "Its check-ins show again.")
+  }
+
+  @Test func deletingAtAPlaceSaysHowManyWent() throws {
+    let some = try Self.row(#"{"id":"e6","kind":"checkin.deleted","at":"2026-11-08T15:05:00Z","place":"p-1","count":3}"#)
+    #expect(some.checkInHeadline == "Deleted the check-ins at a remembered place")
+    #expect(some.checkInMore == "3 check-ins went.")
+    let one = try Self.row(#"{"id":"e7","kind":"checkin.deleted","at":"2026-11-08T15:05:00Z","place":"p-1","count":1}"#)
+    #expect(one.checkInMore == "1 check-in went.")
+    let day = try Self.row(#"{"id":"e8","kind":"checkin.deleted","at":"2026-11-08T15:05:00Z","day":"2026-11-08","count":1}"#)
+    #expect(day.checkInHeadline == "Deleted a check-in" && day.checkInMore == nil)
+    let all = try Self.row(#"{"id":"e9","kind":"checkin.deleted","at":"2026-11-08T15:05:00Z","all":true,"count":4}"#)
+    #expect(all.checkInHeadline == "Deleted all your check-ins, 4" && all.checkInMore == nil)
+  }
+
+  /// A change or a kind this build doesn't know is never worded as another.
+  @Test func anUnknownChangeIsNeverForgetting() throws {
+    let forgot = try Self.row(#"{"id":"e10","kind":"checkin.place","at":"2026-11-08T15:05:00Z","place":"p-1","change":"forgotten"}"#)
+    #expect(forgot.checkInHeadline == "Forgot a remembered place")
+    let later = try Self.row(#"{"id":"e11","kind":"checkin.place","at":"2026-11-08T15:05:00Z","place":"p-1","change":"merged"}"#)
+    #expect(later.checkInHeadline == "Changed a remembered place")
+    let kind = try Self.row(#"{"id":"e12","kind":"checkin.moved","at":"2026-11-08T15:05:00Z"}"#)
+    #expect(kind.checkInHeadline == "Changed your check-ins" && kind.checkInMore == nil)
+    let note = try Self.row(#"{"id":"e13","kind":"note.added","at":"2026-11-08T15:05:00Z","day":"2026-11-08","note":"n-1"}"#)
+    #expect(note.checkInHeadline == nil)
+  }
+
   // MARK: The map
 
   static func stay(_ id: String, _ label: String, lat: Double, lon: Double = -93.26, place: String? = nil) -> CheckIn {

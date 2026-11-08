@@ -944,12 +944,13 @@ final class AppModel {
       changes += 1
       await loadToday()
     }
-    // Asked for by a tap, so it says so; a visit iOS reported never does.
+    // Asked for by a tap, so it says so; a visit iOS reported never does. At a
+    // place the owner ignores nothing was kept, and it says that instead.
     if let tap = report.sent.last(where: \.item.isTap) {
-      if case .checkedIn(let stay) = tap.result {
-        toast = "Checked in at \(CheckInWords.stopName(stay.label))."
-      } else {
-        toast = "Checked in."
+      switch tap.result {
+      case .checkedIn(let stay): toast = "Checked in at \(CheckInWords.stopName(stay.label))."
+      case .notKept(let place): toast = CheckInWords.notKept(at: place)
+      default: toast = "Checked in."
       }
     }
     if let stopped = report.stopped { handle(stopped, from: client) }
@@ -1676,7 +1677,41 @@ final class AppModel {
     try await reading { (client) async throws(APIError) in
       try await client.forgetPlace(id: place.id, idempotencyKey: idempotencyKey)
     }
+    // Forgetting an ignored place brings back the check-ins it hid.
+    if place.ignored {
+      changes += 1
+      await loadToday()
+    }
     checkInChanges += 1
+  }
+
+  /// One place, with how many check-ins are there, hidden ones too.
+  func rememberedPlace(_ id: String) async throws(APIError) -> RememberedPlace {
+    try await reading { (client) async throws(APIError) in try await client.rememberedPlace(id: id) }
+  }
+
+  /// Ignore this location, or stop: the check-ins there hide or show again,
+  /// in Activity, Today and the map. At once, as the place's other changes are.
+  func setIgnored(_ place: RememberedPlace, _ ignored: Bool, idempotencyKey: String) async throws(APIError) -> RememberedPlace {
+    let changed = try await reading { (client) async throws(APIError) in
+      try await client.setPlaceIgnored(id: place.id, ignored: ignored, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+    changes += 1
+    await loadToday()
+    return changed
+  }
+
+  /// Delete existing check-ins here, for the count the owner was shown;
+  /// answers how many went. The place stays.
+  func deleteCheckIns(at place: RememberedPlace, count: Int, idempotencyKey: String) async throws(APIError) -> Int {
+    let deleted = try await reading { (client) async throws(APIError) in
+      try await client.deleteCheckIns(atPlace: place.id, count: count, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+    changes += 1
+    await loadToday()
+    return deleted
   }
 
   /// The names for a stay's spot, asked for only when wanted: each is a lookup

@@ -446,8 +446,9 @@ final class ChangelogUITests: XCTestCase {
   @MainActor func testCheckIns() async throws {
     let scopes = ["notes:write", "media:write", "upcoming", "activity", "notes:all"]
     let owner = try await Self.tokenOnThisAccount(scopes, server: server)
-    try await Self.deleteCheckIns(server: server, token: owner)
+    // Places first: one left ignored would hide its check-ins from the delete.
     try await Self.forgetPlaces(server: server, token: owner)
+    try await Self.deleteCheckIns(server: server, token: owner)
     let app = launch(as: owner, more: ["CHANGELOG_VISIT": "1"])
     let stops = NSPredicate(format: "label BEGINSWITH 'Checked in at'")
     hideKeyboard(app)
@@ -468,8 +469,15 @@ final class ChangelogUITests: XCTestCase {
     expect(filter, "Activity can show just check-ins", in: app, timeout: 15)
     filter.tap()
     let row = app.buttons.matching(stops).firstMatch
-    // At the hour it began, so below whatever else has happened since.
-    for _ in 0..<8 where !row.waitForExistence(timeout: 4) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    // At the hour it began, so below whatever else has happened since: on a
+    // dev server busy with earlier runs, a page or more down.
+    let older = app.buttons["Older"]
+    let scrollTo = { (stop: XCUIElement) in
+      for _ in 0..<12 where !stop.waitForExistence(timeout: 4) {
+        if older.exists && older.isHittable { older.tap() } else { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+      }
+    }
+    scrollTo(row)
     expect(row, "the stop is a row in Activity", in: app, timeout: 15)
     XCTAssertEqual(app.buttons.matching(stops).count, 1, "an arrival and its leaving are one row")
     XCTAssertTrue(row.label.contains("50 min"), "the row says how long: \(row.label)")
@@ -534,7 +542,7 @@ final class ChangelogUITests: XCTestCase {
     app.tabBars.buttons["Activity"].tap()
     app.navigationBars.buttons.firstMatch.tap()
     let tapped = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Checked in at Workshop'")).firstMatch
-    for _ in 0..<8 where !tapped.waitForExistence(timeout: 4) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    scrollTo(tapped)
     expect(tapped, "the stop is still a row", in: app, timeout: 15)
     XCTAssertEqual(app.buttons.matching(stops).count, 1, "a tap at the same place merges")
 
@@ -577,6 +585,79 @@ final class ChangelogUITests: XCTestCase {
     expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Deleted '")).firstMatch, "they went", in: app, timeout: 15)
     toggle.switches.firstMatch.tap()
     XCTAssertEqual(toggle.value as? String, "0", "off again, so the next test finds it as it was")
+  }
+
+  /// Ignore this location (Jamie, 2026-11-08): a remembered place's switch, a
+  /// tap there that says it wasn't kept, and Delete existing check-ins here,
+  /// which asks with the count, hidden ones too. The place stays listed.
+  @MainActor func testIgnoredPlace() async throws {
+    let scopes = ["notes:write", "media:write", "upcoming", "activity", "notes:all"]
+    let owner = try await Self.tokenOnThisAccount(scopes, server: server)
+    try await Self.forgetPlaces(server: server, token: owner)
+    try await Self.deleteCheckIns(server: server, token: owner)
+    // Failed or not, no place is left ignored where the next test checks in.
+    let server = server
+    addTeardownBlock { try await Self.forgetPlaces(server: server, token: owner) }
+    // A stop kept where the simulator is, then a place remembered there.
+    let name = "Studio \(UUID().uuidString.prefix(4))"
+    let iso = ISO8601DateFormatter()
+    try await Self.send("POST", "/v1/check-ins", [
+      "arrived": iso.string(from: .now.addingTimeInterval(-3600)), "left": iso.string(from: .now.addingTimeInterval(-1800)),
+      "lat": 44.9778, "lon": -93.2650, "accuracy_m": 30, "source": "visit", "time_zone": "America/Chicago",
+    ], server: server, token: owner)
+    try await Self.send("POST", "/v1/check-ins/places", ["name": name, "lat": 44.9778, "lon": -93.2650], server: server, token: owner)
+    let app = launch(as: owner)
+    hideKeyboard(app)
+
+    app.tabBars.buttons["Settings"].tap()
+    let places = app.buttons["Remembered places"]
+    for _ in 0..<12 where !(places.exists && places.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    places.tap()
+    expect(app.staticTexts[name], "Settings lists the place", in: app, timeout: 15)
+    let ignore = app.switches["Ignore this location"]
+    expect(ignore, "a remembered place can be ignored", in: app)
+    XCTAssertEqual(ignore.value as? String, "0", "not ignored until asked")
+    expect(app.staticTexts["Stop keeping check-ins here, and hide the ones already here. Nothing is deleted."],
+           "it says what ignoring does", in: app)
+    ignore.switches.firstMatch.tap()
+    expect(app.staticTexts["No new check-ins are kept here, and the ones already here are hidden. Uncheck it to bring them back."],
+           "and what it has done", in: app, timeout: 15)
+    XCTAssertEqual(ignore.value as? String, "1", "it turns on")
+    expect(app.staticTexts[name], "the place stays listed", in: app)
+    keep(app, "An ignored place")
+
+    // Check in now there: nothing kept, said plainly.
+    app.tabBars.buttons["Log"].tap()
+    let now = app.buttons["Check in now"]
+    expect(now, "Log has Check in now", in: app)
+    now.tap()
+    let said = app.staticTexts["toast"]
+    expect(said, "a tap says what happened", in: app, timeout: 30)
+    XCTAssertEqual(said.label, "Not checked in. You ignore \(name), so no check-ins are kept there.")
+    keep(app, "Not kept at an ignored place")
+    XCTAssertTrue(said.waitForNonExistence(timeout: 10))
+
+    // Delete existing check-ins here: asked with the count, the hidden one too.
+    hideKeyboard(app)
+    app.tabBars.buttons["Settings"].tap()
+    let delete = app.buttons["Delete existing check-ins here"]
+    expect(delete, "a place's check-ins can be deleted", in: app, timeout: 15)
+    delete.tap()
+    expect(app.staticTexts["Delete 1 check-in at \(name)?"], "it asks with the count", in: app, timeout: 15)
+    keep(app, "Delete existing check-ins here")
+    let sheet = app.sheets.buttons["Delete"]
+    (sheet.exists ? sheet : app.buttons.matching(identifier: "Delete").firstMatch).tap()
+    expect(app.staticTexts["Deleted 1 check-in at \(name)."], "it went", in: app, timeout: 15)
+    expect(app.staticTexts[name], "the place stays", in: app)
+    delete.tap()
+    expect(app.staticTexts["There are no check-ins at \(name)."], "and none are left", in: app, timeout: 15)
+    app.alerts.buttons["OK"].tap()
+
+    // Unignored, as it was.
+    ignore.switches.firstMatch.tap()
+    expect(app.staticTexts["Stop keeping check-ins here, and hide the ones already here. Nothing is deleted."],
+           "unignored", in: app, timeout: 15)
+    XCTAssertEqual(ignore.value as? String, "0")
   }
 
   /// Check in now needs no switch: a tap from Log, said so, with its own row.

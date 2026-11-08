@@ -96,16 +96,32 @@ struct CheckInSection: View {
   }
 }
 
-/// The places the account remembers, to rename and forget. Changing them needs
-/// a token that may change every note; anyone who can see them can read them.
+/// The places the account remembers, to rename, ignore and forget, with the
+/// check-ins at each to delete. Changing them needs a token that may change
+/// every note; anyone who can see them can read them. An ignored place stays
+/// listed, as it is: only its check-ins hide.
 struct RememberedPlacesView: View {
+  /// Delete existing check-ins here, asked with the count read just before.
+  struct Deleting: Identifiable {
+    var place: RememberedPlace
+    var count: Int
+    /// The count changed since it was read, so this is the number now.
+    var changed = false
+    var id: String { place.id }
+  }
+
   @Environment(AppModel.self) private var model
   @State private var places: [RememberedPlace]?
   @State private var problem: String?
+  @State private var deleted: String?
   @State private var renaming: RememberedPlace?
   @State private var newName = ""
   @State private var forgetting: RememberedPlace?
+  @State private var deleting: Deleting?
+  @State private var nothingAt: String?
+  @State private var busy = false
   @State private var saveKey = RequestKey<String>()
+  @State private var deleteKey = RequestKey<String>()
 
   private var canChange: Bool { model.me?.token.changesAll == true }
 
@@ -115,6 +131,9 @@ struct RememberedPlacesView: View {
         if let problem {
           Text(problem).face(.hint).foregroundStyle(Color.tangerineInk)
         }
+        if let deleted {
+          Text(deleted).face(.hint).foregroundStyle(Color.ink2)
+        }
         if let places {
           if places.isEmpty {
             Text("None yet. Open a check-in in Activity, name it, and turn on Remember this place.")
@@ -122,24 +141,11 @@ struct RememberedPlacesView: View {
               .foregroundStyle(Color.ink2)
           }
           ForEach(places) { place in
-            VStack(alignment: .leading, spacing: 2) {
-              Text(place.name).face(.line).foregroundStyle(Color.ink)
-              Text(place.spots.count == 1 ? "1 spot" : "\(place.spots.count) spots").face(.meta).foregroundStyle(Color.ink3)
-            }
-            .accessibilityElement(children: .combine)
-            .swipeActions {
-              if canChange {
-                Button("Forget", role: .destructive) { forgetting = place }
-                Button("Rename") {
-                  newName = place.name
-                  renaming = place
-                }
-              }
-            }
+            row(place)
           }
           if !places.isEmpty {
             Text(canChange ? "Swipe a place to rename or forget it. Every stop there changes with it, past ones too."
-                 : "To rename or forget a place from here, sign in with a token that may read and change all your notes.")
+                 : "To rename, ignore or forget a place from here, sign in with a token that may read and change all your notes.")
               .face(.meta)
               .foregroundStyle(Color.ink3)
           }
@@ -165,10 +171,57 @@ struct RememberedPlacesView: View {
                         isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
                         titleVisibility: .visible, presenting: forgetting) { place in
       Button("Forget", role: .destructive) { Task { await forget(place) } }
-    } message: { _ in
-      Text("Its stops go back to the names they had.")
+    } message: { place in
+      Text("Its stops go back to the names they had." + (place.ignored ? " The check-ins hidden there show again." : ""))
+    }
+    .confirmationDialog(deleting.map { "Delete \(Self.checkIns($0.count)) at \($0.place.name)?" } ?? "",
+                        isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                        titleVisibility: .visible, presenting: deleting) { asked in
+      Button("Delete", role: .destructive) { Task { await deleteHere(asked) } }
+    } message: { asked in
+      Text((asked.changed ? "The check-ins there changed since they were counted. " : "")
+           + "They can’t be brought back. \(asked.place.name) stays remembered.")
+    }
+    .alert(nothingAt ?? "", isPresented: Binding(get: { nothingAt != nil }, set: { if !$0 { nothingAt = nil } })) {
+      Button("OK", role: .cancel) {}
     }
   }
+
+  @ViewBuilder private func row(_ place: RememberedPlace) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(place.name).face(.line).foregroundStyle(Color.ink)
+        Text((place.spots.count == 1 ? "1 spot" : "\(place.spots.count) spots") + (place.ignored ? ", ignored" : ""))
+          .face(.meta)
+          .foregroundStyle(Color.ink3)
+      }
+      .accessibilityElement(children: .combine)
+      if canChange {
+        Toggle("Ignore this location", isOn: Binding(get: { place.ignored }, set: { on in Task { await ignore(place, on) } }))
+          .face(.line)
+          .tint(.tangerine)
+          .disabled(busy)
+        Text(place.ignored ? "No new check-ins are kept here, and the ones already here are hidden. Uncheck it to bring them back."
+             : "Stop keeping check-ins here, and hide the ones already here. Nothing is deleted.")
+          .face(.hint)
+          .foregroundStyle(Color.ink2)
+        Button("Delete existing check-ins here") { Task { await count(place) } }
+          .buttonStyle(QuietButtonStyle(color: .tangerineInk))
+          .disabled(busy)
+      }
+    }
+    .swipeActions {
+      if canChange {
+        Button("Forget", role: .destructive) { forgetting = place }
+        Button("Rename") {
+          newName = place.name
+          renaming = place
+        }
+      }
+    }
+  }
+
+  static func checkIns(_ count: Int) -> String { count == 1 ? "1 check-in" : "\(count) check-ins" }
 
   private func load() async {
     do throws(APIError) {
@@ -200,6 +253,76 @@ struct RememberedPlacesView: View {
     } catch {
       problem = error.message
       if !error.retryable { saveKey.reset() }
+    }
+  }
+
+  /// The switch moves at once, and back if Release Notes refuses.
+  private func ignore(_ place: RememberedPlace, _ on: Bool) async {
+    guard !busy, place.ignored != on else { return }
+    busy = true
+    defer { busy = false }
+    problem = nil
+    deleted = nil
+    set(place.id) { $0.ignored = on }
+    let key = saveKey.key(for: "\(place.id) ignored=\(on)")
+    do throws(APIError) {
+      let changed = try await model.setIgnored(place, on, idempotencyKey: key)
+      saveKey.reset()
+      set(place.id) { $0 = changed }
+    } catch {
+      set(place.id) { $0.ignored = place.ignored }
+      problem = error.message
+      if !error.retryable { saveKey.reset() }
+    }
+  }
+
+  private func set(_ id: String, _ change: (inout RememberedPlace) -> Void) {
+    guard let i = places?.firstIndex(where: { $0.id == id }) else { return }
+    change(&places![i])
+  }
+
+  /// Delete existing check-ins here: counted first, hidden ones too, and the
+  /// count shown before anything goes.
+  private func count(_ place: RememberedPlace) async {
+    busy = true
+    defer { busy = false }
+    problem = nil
+    deleted = nil
+    do throws(APIError) {
+      let read = try await model.rememberedPlace(place.id)
+      ask(read, count: read.checkIns ?? 0)
+    } catch {
+      problem = error.message
+    }
+  }
+
+  private func ask(_ place: RememberedPlace, count: Int, changed: Bool = false) {
+    if count == 0 {
+      nothingAt = "There are no check-ins at \(place.name)."
+    } else {
+      deleting = Deleting(place: place, count: count, changed: changed)
+    }
+  }
+
+  /// Gone only for the count shown. Should it have changed since, Release
+  /// Notes says the count now, and this asks again with that.
+  private func deleteHere(_ asked: Deleting) async {
+    busy = true
+    defer { busy = false }
+    problem = nil
+    let key = deleteKey.key(for: "\(asked.place.id) count=\(asked.count)")
+    do throws(APIError) {
+      let gone = try await model.deleteCheckIns(at: asked.place, count: asked.count, idempotencyKey: key)
+      deleteKey.reset()
+      deleted = "Deleted \(Self.checkIns(gone)) at \(asked.place.name)."
+      await load()
+    } catch {
+      if !error.retryable { deleteKey.reset() }
+      if error.code == "revision_mismatch", let now = error.count {
+        ask(asked.place, count: now, changed: true)
+      } else {
+        problem = error.message
+      }
     }
   }
 }

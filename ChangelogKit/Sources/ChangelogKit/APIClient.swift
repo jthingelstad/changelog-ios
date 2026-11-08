@@ -12,6 +12,9 @@ public struct APIError: Error, Sendable, Equatable {
   /// The note's current revision, with `revision_mismatch`.
   public var revision: String?
   public var retryAfter: TimeInterval?
+  /// How many check-ins a remembered place has now, with the
+  /// `revision_mismatch` that deleting them for another count answers.
+  public var count: Int?
 
   /// The token no longer works: sign out and ask for a new one.
   public var signedOut: Bool { status == 401 }
@@ -172,7 +175,7 @@ public struct APIClient: Sendable {
     var error: APIError
     if let body = try? decoder.decode(ErrorBody.self, from: data) {
       error = APIError(status: http.statusCode, code: body.error.code, message: body.error.message,
-                       field: body.error.field, revision: body.error.revision, retryAfter: retryAfter)
+                       field: body.error.field, revision: body.error.revision, retryAfter: retryAfter, count: body.error.count)
     } else {
       error = APIError(status: http.statusCode, code: http.statusCode >= 500 ? "unavailable" : "http_\(http.statusCode)",
                        message: HTTPURLResponse.localizedString(forStatusCode: http.statusCode), retryAfter: retryAfter)
