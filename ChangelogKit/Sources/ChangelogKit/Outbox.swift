@@ -172,16 +172,23 @@ public struct NoteChange: Sendable, Equatable {
 
   /// The writes, in an order Release Notes takes at every step: the words
   /// first, files off before files on so the note stays within its files,
-  /// and for a note with no words, its last file off only once the new ones
-  /// are on.
+  /// and for a note with no words, its last file off only once a new one
+  /// is on.
   public var operations: [OutboxOperation] {
     var out: [OutboxOperation] = []
     if let words { out.append(.edit(date: date, id: id, text: words, revision: revision)) }
     var off = removing.sorted().map { OutboxOperation.removeFile(date: date, id: id, n: $0) }
     let last = !adding.isEmpty && Self.blank(words ?? wordsNow) && removing.count >= filesNow ? off.popLast() : nil
     out += off
-    if !adding.isEmpty { out.append(.attach(NoteAttach(date: date, id: id, files: adding))) }
-    if let last { out.append(last) }
+    if let last {
+      // One new file on beside the last old one, that off, then the rest
+      // on: a full set swapped never holds more than the note may (Codex on #51).
+      out.append(.attach(NoteAttach(date: date, id: id, files: [adding[0]])))
+      out.append(last)
+      if adding.count > 1 { out.append(.attach(NoteAttach(date: date, id: id, files: Array(adding.dropFirst())))) }
+    } else if !adding.isEmpty {
+      out.append(.attach(NoteAttach(date: date, id: id, files: adding)))
+    }
     return out
   }
 
@@ -210,6 +217,12 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   /// token, still signed in, reads `/v1/me` (`Outbox.stamp`), or one written
   /// with no account known.
   public var account: String? = nil
+  /// Shared by writes that go together (one Save in Edit: the words, then
+  /// files off, then files on). Each goes only once those before it in the
+  /// queue have gone: a refusal (the note changed elsewhere, say) holds the
+  /// rest until it is fixed, across relaunches, and discarding it discards
+  /// them too, since the owner asked for them as one change (Codex on #51).
+  public var group: UUID? = nil
 
   public var idempotencyKey: String { id.uuidString.lowercased() }
 
@@ -430,7 +443,10 @@ public actor Outbox {
   /// once they are on disk.
   @discardableResult
   public func enqueue(_ operations: [OutboxOperation], account: String? = nil) throws(OutboxNotKept) -> [OutboxItem] {
-    let added = operations.map { OutboxItem(id: UUID(), operation: $0, queuedAt: .now, attempts: 0, refusal: nil, account: account) }
+    let group = operations.count > 1 ? UUID() : nil
+    let added = operations.map {
+      OutboxItem(id: UUID(), operation: $0, queuedAt: .now, attempts: 0, refusal: nil, account: account, group: group)
+    }
     items += added
     do { try save() } catch {
       let ids = Set(added.map(\.id))
@@ -472,13 +488,24 @@ public actor Outbox {
     items.contains { $0.id == id } || adopted[id.uuidString] != nil
   }
 
-  /// Discarding a write the owner gave up on. Should the file not take the
-  /// change, it comes back after a relaunch to be discarded again.
+  /// Discarding a write the owner gave up on, and what goes after it in
+  /// the same change (`OutboxItem.group`), which never goes without it.
+  /// Should the file not take the change, they come back after a relaunch
+  /// to be discarded again.
   public func discard(_ id: UUID) {
-    let gone = items.first { $0.id == id }?.files ?? []
-    items.removeAll { $0.id == id }
+    guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+    let ids = Set([id] + (items[i].group.map { group in items[(i + 1)...].filter { $0.group == group }.map(\.id) } ?? []))
+    let gone = items.filter { ids.contains($0.id) }.flatMap(\.files)
+    items.removeAll { ids.contains($0.id) }
     try? save()
     removeFiles(gone)
+  }
+
+  /// Whether the item at `i` waits for one before it in the same change,
+  /// still to go or refused.
+  private func waitsOnEarlier(_ i: Int) -> Bool {
+    guard let group = items[i].group else { return false }
+    return items[..<i].contains { $0.group == group }
   }
 
   /// Where a queued file's bytes are.
@@ -621,11 +648,14 @@ public actor Outbox {
     // The day's uploads used: notes with files still to post wait, and the
     // rest go on in order. An edit or a delete is always of a note already
     // filed (read back from Release Notes), and pins stand alone, so nothing
-    // that goes on can depend on a note held here.
+    // that goes on can depend on a note held here; the later steps of one
+    // change wait on its earlier ones (`OutboxItem.group`).
     var filesHeld: APIError?
-    sending: while var item = items.first(where: {
-      $0.refusal == nil && !tried.contains($0.id) && !(filesHeld != nil && $0.needsUploads) && !$0.isHeld(for: recipient)
-    }) {
+    sending: while var item = items.indices.first(where: { i in
+      let item = items[i]
+      return item.refusal == nil && !tried.contains(item.id) && !(filesHeld != nil && item.needsUploads)
+        && !item.isHeld(for: recipient) && !waitsOnEarlier(i)
+    }).map({ items[$0] }) {
       tried.insert(item.id)
       // Set once the write itself is asked for: a 2xx then means it was done.
       var asked = false
@@ -701,7 +731,9 @@ public actor Outbox {
     // behind it for the same reason, a note with files on a day the uploads
     // are used for that.
     for i in items.indices where items[i].refusal == nil && !items[i].isHeld(for: recipient) {
-      if filesHeld != nil, items[i].needsUploads {
+      if waitsOnEarlier(i) {
+        items[i].held = Self.afterChange
+      } else if filesHeld != nil, items[i].needsUploads {
         items[i].held = Self.filesHeld
       } else if let stopped = report.stopped {
         items[i].held = Self.held(stopped)
@@ -734,6 +766,8 @@ public actor Outbox {
   }
 
   static let filesHeld = "Waiting for today’s file limit to reset"
+
+  static let afterChange = "Goes after the change above it"
 
   static let notKept = "This phone couldn't save a note to send. Free up some space and it will try again."
 
