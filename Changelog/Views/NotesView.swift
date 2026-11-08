@@ -332,31 +332,35 @@ private struct NotesList: View {
     return model.version.map { "No changes yet in \($0)." } ?? "Nothing yet today."
   }
 
-  /// Everything shown, read again: the days and On this day, or what's being
-  /// searched for.
+  /// Everything shown, read again: the days, On this day and what's being
+  /// searched for, side by side, so neither optional read holds up the days.
+  /// The days are read during a search too, so Clear never shows them as they
+  /// were before a note changed.
   private func first() async {
-    if let search {
-      await find(search)
-      return
+    let searched = Task { if let search { await find(search) } }
+    let pastRead = Task { try? await model.onThisDay(before: nil) }
+    let daysRead = Task { () -> Result<DayList, APIError> in
+      do throws(APIError) { return .success(try await model.days(before: nil)) } catch { return .failure(error) }
     }
-    await readPast()
-    do throws(APIError) {
-      let page = try await model.days(before: nil)
+    // Cancelled: a newer read (another change, a pull) has the page.
+    switch await daysRead.value {
+    case .success(let page) where !Task.isCancelled:
       days = page.days
       next = page.next
       problem = nil
-    } catch {
+    case .failure(let error) where !Task.isCancelled:
       // What was read stays; the first read failing says so.
       if days.isEmpty { problem = error.message }
+    default:
+      break
     }
-  }
-
-  /// On this day never holds the page up, and a failure leaves what was there.
-  private func readPast() async {
-    guard let page = try? await model.onThisDay(before: nil) else { return }
-    past = page.days
-    pastFrom = page.date
-    pastNext = page.next
+    // On this day never holds the page up, and a failure leaves what was there.
+    if let page = await pastRead.value, !Task.isCancelled {
+      past = page.days
+      pastFrom = page.date
+      pastNext = page.next
+    }
+    await searched.value
   }
 
   private func morePast() async {
