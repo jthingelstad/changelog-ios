@@ -253,6 +253,9 @@ struct ActivityRow: View {
       if let words {
         Text(verbatim: words).face(.note).foregroundStyle(Color.ink).lineLimit(6).padding(.top, 2)
       }
+      if let more = item.checkInMore {
+        Text(more).face(.hint).foregroundStyle(Color.ink2)
+      }
       if let detail = item.detail {
         Text(detail).face(.meta).foregroundStyle(Color.ink3)
       }
@@ -296,19 +299,7 @@ extension ActivityItem {
     case "pause.set": return "Email paused"
     case "pause.ended": return "Pause ended"
     case "place.set", "place.removed": return "Place for the day changed"
-    case "checkin": return "Checked in at \(CheckInWords.stopName(label))"
-    case "checkin.named": return "Named a check-in"
-    case "checkin.deleted":
-      guard all == true else { return "Deleted a check-in" }
-      return count.map { "Deleted all your check-ins, \($0)" } ?? "Deleted all your check-ins"
-    case "checkin.place":
-      switch change {
-      case "added": return "Remembered a place"
-      case "spot": return "Added a spot to a remembered place"
-      case "renamed": return "Renamed a remembered place"
-      default: return "Forgot a remembered place"
-      }
-    default: return kind.replacingOccurrences(of: ".", with: " ").capitalized
+    default: return checkInHeadline ?? kind.replacingOccurrences(of: ".", with: " ").capitalized
     }
   }
 

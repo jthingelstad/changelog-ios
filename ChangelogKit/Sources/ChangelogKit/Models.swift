@@ -474,6 +474,10 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
   public var count: Int? = nil
   /// A `checkin.place` row: `added`, `spot`, `renamed` or `forgotten`.
   public var change: String? = nil
+  /// A `checkin.place`, `checkin.ignored` or `checkin.unignored` row, or a
+  /// `checkin.deleted` of the check-ins at one place (API 1.20.0): the
+  /// remembered place's id, never its name.
+  public var place: String? = nil
 
   public var family: String { String(kind.split(separator: ".").first ?? Substring(kind)) }
 
@@ -513,6 +517,43 @@ public struct ActivityItem: Codable, Sendable, Equatable, Identifiable {
   /// A check-in's times, in the zone it happened in.
   public var stayLine: String? {
     CheckInWords.stay(arrived: arrived, left: left, source: source, timeZone: timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)
+  }
+
+  /// A check-in row's headline, in the web's words; nil for another family. A
+  /// kind or a change this build doesn't know reads as a change, never as
+  /// something else.
+  public var checkInHeadline: String? {
+    guard family == "checkin" else { return nil }
+    switch kind {
+    case "checkin": return "Checked in at \(CheckInWords.stopName(label))"
+    case "checkin.named": return "Named a check-in"
+    case "checkin.deleted":
+      if all == true { return count.map { "Deleted all your check-ins, \($0)" } ?? "Deleted all your check-ins" }
+      return place == nil ? "Deleted a check-in" : "Deleted the check-ins at a remembered place"
+    case "checkin.ignored": return "Ignored a remembered place"
+    case "checkin.unignored": return "Stopped ignoring a remembered place"
+    case "checkin.place":
+      switch change {
+      case "added": return "Remembered a place"
+      case "spot": return "Added a spot to a remembered place"
+      case "renamed": return "Renamed a remembered place"
+      case "forgotten": return "Forgot a remembered place"
+      default: return "Changed a remembered place"
+      }
+    default: return "Changed your check-ins"
+    }
+  }
+
+  /// The line the web has under a check-in row's headline: what ignoring a
+  /// place does, or how many check-ins went from one.
+  public var checkInMore: String? {
+    switch kind {
+    case "checkin.ignored": "Its check-ins are hidden, and no new ones are kept there."
+    case "checkin.unignored": "Its check-ins show again."
+    case "checkin.deleted" where all != true && place != nil:
+      count.map { $0 == 1 ? "1 check-in went." : "\($0) check-ins went." }
+    default: nil
+    }
   }
 
   /// What this row can open. A check-in opens for anyone who can see the row;
@@ -571,7 +612,23 @@ struct ErrorBody: Codable, Sendable {
     var code: String
     var message: String
     var field: String?
+    /// A note's revision is a string, a check-in's a number: either reads, so
+    /// the refusal's own words always come through.
     var revision: String?
+    /// A remembered place's check-ins now, refusing a delete for another count.
+    var count: Int?
+
+    private enum CodingKeys: String, CodingKey { case code, message, field, revision, count }
+
+    init(from decoder: Decoder) throws {
+      let keys = try decoder.container(keyedBy: CodingKeys.self)
+      code = try keys.decode(String.self, forKey: .code)
+      message = try keys.decode(String.self, forKey: .message)
+      field = try? keys.decodeIfPresent(String.self, forKey: .field)
+      revision = (try? keys.decodeIfPresent(String.self, forKey: .revision))
+        ?? (try? keys.decodeIfPresent(Int.self, forKey: .revision)).flatMap { $0.map(String.init) }
+      count = try? keys.decodeIfPresent(Int.self, forKey: .count)
+    }
   }
   var error: Detail
 }
