@@ -370,6 +370,10 @@ private struct VoiceMemoPlayer: View {
   @State private var position: TimeInterval = 0
   @State private var scrubbing = false
   @State private var failed = false
+  /// The audio session is this player's, from Play until it pauses, ends,
+  /// fails or goes, when other apps' sound is told it can come back.
+  @State private var audible = false
+  @State private var quieting: Task<Void, Never>?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -418,7 +422,7 @@ private struct VoiceMemoPlayer: View {
         guard let player, player.isPlaying else {
           playing = false
           position = 0
-          Self.quiet()
+          release()
           return
         }
         if !scrubbing { position = player.currentTime }
@@ -436,8 +440,9 @@ private struct VoiceMemoPlayer: View {
       if playing {
         player.pause()
         playing = false
+        release()
       } else {
-        start(player)
+        Task { await start(player) }
       }
       return
     }
@@ -453,17 +458,22 @@ private struct VoiceMemoPlayer: View {
       }
       made.prepareToPlay()
       player = made
-      start(made)
+      await start(made)
     }
   }
 
-  private func start(_ player: AVAudioPlayer) {
+  private func start(_ player: AVAudioPlayer) async {
+    // A release still under way finishes first, or it would stop this play.
+    await quieting?.value
+    guard self.player === player, !playing else { return }
     let session = AVAudioSession.sharedInstance()
     try? session.setCategory(.playback, mode: .spokenAudio)
     try? session.setActive(true)
+    audible = true
     player.currentTime = position < player.duration ? position : 0
     playing = player.play()
     failed = !playing
+    if !playing { release() }
   }
 
   private func stop() {
@@ -471,14 +481,17 @@ private struct VoiceMemoPlayer: View {
     fetch = nil
     player?.stop()
     player = nil
-    if playing { Self.quiet() }
+    release()
     playing = false
     position = 0
   }
 
-  /// Other apps' sound back, as the recorder leaves it.
-  private static func quiet() {
-    Task.detached { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
+  /// Other apps' sound back, as the recorder leaves it, once the session
+  /// is this player's.
+  private func release() {
+    guard audible else { return }
+    audible = false
+    quieting = Task.detached { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
   }
 
   static func clock(_ seconds: TimeInterval) -> String {
