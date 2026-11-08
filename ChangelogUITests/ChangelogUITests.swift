@@ -324,9 +324,16 @@ final class ChangelogUITests: XCTestCase {
     hour.tap()
     expect(app.buttons["Write about this"], "a stop opens its page", in: app, timeout: 15)
     keep(app, "A stop from the map")
-    app.navigationBars["Check-in"].buttons.firstMatch.tap()
+    // Deleted from there, it leaves the place's stops; the other stays.
+    app.buttons["Delete"].firstMatch.tap()
+    expect(app.staticTexts["Delete this check-in?"], "deleting a stop asks first", in: app)
+    let confirm = app.sheets.buttons["Delete"].exists ? app.sheets.buttons["Delete"]
+      : app.buttons.matching(identifier: "Delete").element(boundBy: app.buttons.matching(identifier: "Delete").count - 1)
+    confirm.tap()
     let close = app.buttons["Close"]
-    expect(close, "back to the place's stops", in: app)
+    expect(close, "back to the place's stops", in: app, timeout: 15)
+    XCTAssertTrue(hour.waitForNonExistence(timeout: 15), "the deleted stop leaves the list")
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '90 min'")).firstMatch.exists, "the other stays")
     close.tap()
     XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the sheet closes")
 

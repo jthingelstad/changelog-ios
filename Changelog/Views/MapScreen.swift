@@ -68,6 +68,14 @@ struct MapScreen: View {
       case .notes(let spot): NoteSpotSheet(spot: spot)
       }
     }
+    // A place's sheet keeps up with its stops as they are named or deleted,
+    // and goes with the last of them.
+    .onChange(of: stays) {
+      guard case .checkIn(let pin) = chosen else { return }
+      let ids = Set(pin.stays.map(\.id))
+      let now = CheckInMap.pins(filter.stays(stays)).first { $0.stays.contains { ids.contains($0.id) } }
+      if now != pin { chosen = now.map(MapChoice.checkIn) }
+    }
     // A spot's sheet keeps up with its notes, and goes with the last of them.
     .onChange(of: pins) {
       guard case .notes(let spot) = chosen else { return }
