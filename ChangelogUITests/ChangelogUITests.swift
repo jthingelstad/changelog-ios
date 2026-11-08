@@ -309,7 +309,7 @@ final class ChangelogUITests: XCTestCase {
     expect(open, "Activity opens the map", in: app, timeout: 15)
     open.tap()
     // Check-ins alone, so the map frames them: notes far off would zoom it out
-    // until the stops' dots sit on one another.
+    // until the stops' rings sit on one another.
     let notes = app.descendants(matching: .any)["map.notes"]
     if notes.waitForExistence(timeout: 10), notes.value as? String == "1" { notes.tap() }
     let pin = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Workshop'")).firstMatch
@@ -350,7 +350,7 @@ final class ChangelogUITests: XCTestCase {
   }
 
   /// Notes on the map (Jamie, 2026-11-08): a note with a place of its own is
-  /// a ring that opens it, beside a check-in's dot at the same spot; a #tag
+  /// a dot that opens it, beside a check-in's ring at the same spot; a #tag
   /// keeps the notes that have it, and hides check-ins; Trails and the year
   /// are there to choose; and a note deleted from the map leaves it.
   @MainActor func testNotesOnTheMap() async throws {
@@ -390,19 +390,19 @@ final class ChangelogUITests: XCTestCase {
     XCTAssertTrue(control("check-ins").exists && control("trails").exists && control("year").exists,
                   "and Check-ins, Trails and the year")
 
-    // The ring at the stop's spot sits beside its dot, and opens as itself.
-    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH ', 1 check-in'")).firstMatch
-    expect(dot, "the stop is a dot", in: app, timeout: 20)
-    let rings = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '1 note at'"))
-    expect(rings.firstMatch, "notes are rings", in: app, timeout: 20)
-    let beside = try XCTUnwrap(rings.allElementsBoundByIndex.first { ring in
-      abs(ring.frame.midX - dot.frame.midX) < 30 && abs(ring.frame.midY - dot.frame.midY) < 30
-    }, "a ring beside the dot")
-    XCTAssertGreaterThan(beside.frame.midX, dot.frame.midX, "beside it, not under it")
+    // The dot at the stop's spot sits beside its ring, and opens as itself.
+    let stop = app.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH ', 1 check-in'")).firstMatch
+    expect(stop, "the stop is a ring", in: app, timeout: 20)
+    let dots = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '1 note at'"))
+    expect(dots.firstMatch, "notes are dots", in: app, timeout: 20)
+    let beside = try XCTUnwrap(dots.allElementsBoundByIndex.first { dot in
+      abs(dot.frame.midX - stop.frame.midX) < 30 && abs(dot.frame.midY - stop.frame.midY) < 30
+    }, "a dot beside the ring")
+    XCTAssertGreaterThan(beside.frame.midX, stop.frame.midX, "beside it, not under it")
     keep(app, "A note at a stop")
     beside.tap()
     let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", mark)).firstMatch
-    expect(row, "the ring opens its note, not the stop", in: app, timeout: 15)
+    expect(row, "the dot opens its note, not the stop", in: app, timeout: 15)
     let close = app.buttons["Close"]
     close.tap()
     XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the sheet closes")
@@ -413,16 +413,16 @@ final class ChangelogUITests: XCTestCase {
     search.typeText("#\(mark)\n")
     let one = NSPredicate(format: "label == %@", "1 note tagged #\(mark).")
     expect(app.staticTexts.matching(one).firstMatch, "the tag keeps its one note", in: app, timeout: 20)
-    XCTAssertTrue(dot.waitForNonExistence(timeout: 5), "a search hides check-ins")
-    let ring = rings.firstMatch
-    expect(ring, "the note is a ring", in: app, timeout: 20)
+    XCTAssertTrue(stop.waitForNonExistence(timeout: 5), "a search hides check-ins")
+    let dot = dots.firstMatch
+    expect(dot, "the note is a dot", in: app, timeout: 20)
     control("trails").tap()
     XCTAssertTrue(isOn("trails"), "Trails turns on")
     keep(app, "Notes on the map")
 
     // Deleted from the map, it leaves it.
-    ring.tap()
-    expect(row, "the ring lists its note", in: app, timeout: 15)
+    dot.tap()
+    expect(row, "the dot lists its note", in: app, timeout: 15)
     keep(app, "A spot's notes")
     row.tap()
     let change = app.buttons["Change"]
@@ -433,7 +433,7 @@ final class ChangelogUITests: XCTestCase {
     let confirm = app.sheets.buttons["Delete"].exists ? app.sheets.buttons["Delete"]
       : app.buttons.matching(identifier: "Delete").element(boundBy: app.buttons.matching(identifier: "Delete").count - 1)
     confirm.tap()
-    XCTAssertTrue(ring.waitForNonExistence(timeout: 20), "its ring goes, with the sheet")
+    XCTAssertTrue(dot.waitForNonExistence(timeout: 20), "its dot goes, with the sheet")
     let none = NSPredicate(format: "label == %@", "No notes tagged #\(mark).")
     expect(app.staticTexts.matching(none).firstMatch, "and the line says so", in: app, timeout: 10)
   }

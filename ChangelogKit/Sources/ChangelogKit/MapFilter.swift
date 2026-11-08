@@ -49,7 +49,7 @@ public struct MapPinList: Codable, Sendable, Equatable {
   public var next: String?
 }
 
-/// The notes at one spot, newest first: one ring on the map.
+/// The notes at one spot, newest first: one dot on the map.
 public struct NoteSpot: Identifiable, Sendable, Equatable {
   public var notes: [NotePin]
 
@@ -147,7 +147,7 @@ public struct MapFilter: Sendable, Equatable, Hashable {
     }
   }
 
-  /// Notes at one spot share a ring, newest first.
+  /// Notes at one spot share a dot, newest first.
   public static func spots(_ pins: [NotePin]) -> [NoteSpot] {
     var spots: [NoteSpot] = []
     var at: [MapPoint: Int] = [:]

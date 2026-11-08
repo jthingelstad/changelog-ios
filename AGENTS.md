@@ -203,7 +203,9 @@ there first, never work around it here.
   then just saying, I want to see notes and I want to see check-ins"). Each turns
   on and off; a calendar year, a search (words, or one `#tag` alone) and Trails,
   each kind joined in the order it happened, narrow it. A search keeps notes
-  alone, as on the web's Map. Badges and the mail log stay on the web. A new sign-in asks for `notes:all`
+  alone, as on the web's Map. Notes are dots and check-ins rings, as on the web
+  (Jamie, 2026-11-08: "Approved: make the iPhone Map draw notes as dots and
+  check-ins as rings, matching the web"). Badges and the mail log stay on the web. A new sign-in asks for `notes:all`
   (Jamie, 2026-10-30), which anyone may untick on the consent page; a token
   from before it, or one with it unticked, still captures, and reads back only
   the notes it wrote, by id, for Log's Today (`TodayWords`). The Notes tab's

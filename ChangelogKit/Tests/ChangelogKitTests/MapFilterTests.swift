@@ -64,7 +64,7 @@ struct MapFilterTests {
     #expect(MapFilter(search: .tag("lake")).stays(stays).isEmpty)
   }
 
-  @Test func notesAtOneSpotShareARingNewestFirst() {
+  @Test func notesAtOneSpotShareADotNewestFirst() {
     let spots = MapFilter.spots([Self.pin("a", "2026-01-01", lat: 46.7),
                                  Self.pin("b", "2026-01-02", lat: 46.8),
                                  Self.pin("c", "2026-01-03", lat: 46.7)])

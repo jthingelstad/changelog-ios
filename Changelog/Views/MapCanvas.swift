@@ -4,11 +4,11 @@ import SwiftUI
 
 /// The map itself, as MapKit draws it in UIKit: SwiftUI's `Map` can't gather
 /// marks as you zoom out, and an archive can hold thousands of notes with a
-/// place. A check-in is a cobalt dot ringed in paper, notes a cobalt ring, as
-/// the Android app draws them. Rings gather into a ring with a count, only
-/// ever with rings; dots never gather or hide, so a stop and the notes
-/// written there both show. Trails are lines in cobalt: solid joining the
-/// check-ins, dotted joining the notes.
+/// place. Notes are a cobalt dot ringed in paper and a check-in a cobalt ring,
+/// as the web's Map draws them (Jamie, 2026-11-08). Dots gather into a larger
+/// dot with a count, only ever with dots; rings never gather or hide, so a
+/// stop and the notes written there both show. Trails are lines in cobalt:
+/// solid joining the check-ins, dotted joining the notes.
 struct MapCanvas: UIViewRepresentable {
   var checkIns: [CheckInPin]
   var spots: [NoteSpot]
@@ -24,9 +24,9 @@ struct MapCanvas: UIViewRepresentable {
     let map = MKMapView()
     map.delegate = context.coordinator
     map.showsUserLocation = false
-    map.register(StayDot.self, forAnnotationViewWithReuseIdentifier: StayDot.reuse)
-    map.register(NoteRing.self, forAnnotationViewWithReuseIdentifier: NoteRing.reuse)
-    map.register(NoteRings.self, forAnnotationViewWithReuseIdentifier: NoteRings.reuse)
+    map.register(StayRing.self, forAnnotationViewWithReuseIdentifier: StayRing.reuse)
+    map.register(NoteDot.self, forAnnotationViewWithReuseIdentifier: NoteDot.reuse)
+    map.register(NoteDots.self, forAnnotationViewWithReuseIdentifier: NoteDots.reuse)
     // The lines' colour is set as each is drawn: draw them again in the other appearance.
     let coordinator = context.coordinator
     map.registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (map: MKMapView, _: UITraitCollection) in
@@ -64,9 +64,9 @@ struct MapCanvas: UIViewRepresentable {
       gone += stays.filter { nextStays[$0.key] !== $0.value }.map(\.value)
       stays = nextStays
       var nextNotes: [String: NoteMark] = [:]
-      let dots = StaySpots(canvas.checkIns)
+      let stops = StaySpots(canvas.checkIns)
       for spot in canvas.spots {
-        let beside = dots.near(spot.lat, spot.lon)
+        let beside = stops.near(spot.lat, spot.lon)
         if let mark = notes[spot.id], mark.spot == spot, mark.beside == beside {
           nextNotes[spot.id] = mark
         } else {
@@ -125,9 +125,9 @@ struct MapCanvas: UIViewRepresentable {
 
     func mapView(_ map: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {
       switch annotation {
-      case is MKClusterAnnotation: map.dequeueReusableAnnotationView(withIdentifier: NoteRings.reuse, for: annotation)
-      case is StayMark: map.dequeueReusableAnnotationView(withIdentifier: StayDot.reuse, for: annotation)
-      case is NoteMark: map.dequeueReusableAnnotationView(withIdentifier: NoteRing.reuse, for: annotation)
+      case is MKClusterAnnotation: map.dequeueReusableAnnotationView(withIdentifier: NoteDots.reuse, for: annotation)
+      case is StayMark: map.dequeueReusableAnnotationView(withIdentifier: StayRing.reuse, for: annotation)
+      case is NoteMark: map.dequeueReusableAnnotationView(withIdentifier: NoteDot.reuse, for: annotation)
       default: nil
       }
     }
@@ -135,7 +135,7 @@ struct MapCanvas: UIViewRepresentable {
     func mapView(_ map: MKMapView, didSelect annotation: any MKAnnotation) {
       map.deselectAnnotation(annotation, animated: false)
       switch annotation {
-      case let rings as MKClusterAnnotation: map.showAnnotations(rings.memberAnnotations, animated: true)
+      case let dots as MKClusterAnnotation: map.showAnnotations(dots.memberAnnotations, animated: true)
       case let mark as StayMark: choose(.checkIn(mark.pin))
       case let mark as NoteMark: choose(.notes(mark.spot))
       default: break
@@ -177,8 +177,8 @@ final class StayMark: NSObject, MKAnnotation {
 final class NoteMark: NSObject, MKAnnotation {
   static let kind = "notes"
   let spot: NoteSpot
-  /// A check-in's dot is at the same spot (a note from Write about this):
-  /// the ring sits beside it, since no zoom would part them.
+  /// A check-in's ring is at the same spot (a note from Write about this):
+  /// the dot sits beside it, since no zoom would part them.
   let beside: Bool
   let coordinate: CLLocationCoordinate2D
   let title: String?
@@ -191,8 +191,8 @@ final class NoteMark: NSObject, MKAnnotation {
   }
 }
 
-/// Where the check-ins' dots are, to tell which rings would sit under one.
-/// Within 15 m counts: closer than that, a dot hides a ring at any zoom
+/// Where the check-ins' rings are, to tell which dots would sit under one.
+/// Within 15 m counts: closer than that, a ring hides a dot at any zoom
 /// worth having.
 struct StaySpots {
   private static let cell = 0.0003
@@ -225,8 +225,8 @@ struct StaySpots {
   }
 }
 
-/// A circle of one colour with a smaller one of another inside: a dot ringed
-/// in paper, or a ring. Each is a view with the app's own colours, so both
+/// A circle of one colour with a smaller one of another inside: a ring, or a
+/// dot ringed in paper. Each is a view with the app's own colours, so both
 /// follow the phone's appearance.
 private final class Rings: UIView {
   private let inner = UIView()
@@ -250,19 +250,19 @@ private final class Rings: UIView {
   }
 }
 
-/// A check-in: a cobalt dot ringed in paper, over the notes. It never gathers
-/// or hides, so a stop shows wherever notes are.
-final class StayDot: MKAnnotationView {
+/// A check-in: a cobalt ring, over the notes. It never gathers or hides, so a
+/// stop shows wherever notes are.
+final class StayRing: MKAnnotationView {
   static let reuse = "stay"
-  private let dot = Rings(outer: .paper, inner: .cobalt)
+  private let ring = Rings(outer: .cobalt, inner: .paper)
 
   override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
     super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-    // Small enough that a ring beside it is tapped as itself.
+    // Small enough that a dot beside it is tapped as itself.
     frame = CGRect(x: 0, y: 0, width: 28, height: 28)
-    dot.width = 2.5
-    dot.frame = CGRect(x: 6, y: 6, width: 16, height: 16)
-    addSubview(dot)
+    ring.width = 3
+    ring.frame = CGRect(x: 6, y: 6, width: 16, height: 16)
+    addSubview(ring)
     collisionMode = .none
     displayPriority = .required
     zPriority = .max
@@ -280,16 +280,18 @@ final class StayDot: MKAnnotationView {
   }
 }
 
-/// Notes at one spot: a cobalt ring, gathering with other rings as you zoom out.
-final class NoteRing: MKAnnotationView {
-  static let reuse = "ring"
-  private let ring = Rings(outer: .cobalt, inner: .paper)
+/// Notes at one spot: a cobalt dot ringed in paper, gathering with other dots
+/// as you zoom out.
+final class NoteDot: MKAnnotationView {
+  static let reuse = "note"
+  private let dot = Rings(outer: .paper, inner: .cobalt)
 
   override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
     super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
     frame = CGRect(x: 0, y: 0, width: 32, height: 32)
-    ring.frame = CGRect(x: 8, y: 8, width: 16, height: 16)
-    addSubview(ring)
+    dot.width = 2.5
+    dot.frame = CGRect(x: 8, y: 8, width: 16, height: 16)
+    addSubview(dot)
     clusteringIdentifier = NoteMark.kind
     collisionMode = .circle
     displayPriority = .defaultHigh
@@ -310,17 +312,18 @@ final class NoteRing: MKAnnotationView {
   }
 }
 
-/// Rings gathered as you zoom out: a larger ring with how many notes, in
-/// cobalt. Tapping it moves in to them.
-final class NoteRings: MKAnnotationView {
-  static let reuse = "rings"
-  private let ring = Rings(outer: .cobalt, inner: .paper)
+/// Dots gathered as you zoom out: a larger cobalt dot ringed in paper, with
+/// how many notes in paper, as the web's groups. Tapping it moves in to them.
+final class NoteDots: MKAnnotationView {
+  static let reuse = "notes"
+  private let dot = Rings(outer: .paper, inner: .cobalt)
   private let count = UILabel()
 
   override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
     super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-    addSubview(ring)
-    count.textColor = UIColor(Color.cobalt)
+    dot.width = 2
+    addSubview(dot)
+    count.textColor = UIColor(Color.paper)
     count.textAlignment = .center
     count.font = .systemFont(ofSize: 13, weight: .bold)
     count.adjustsFontSizeToFitWidth = true
@@ -342,7 +345,7 @@ final class NoteRings: MKAnnotationView {
     } ?? 0
     let side: CGFloat = notes < 10 ? 30 : notes < 100 ? 36 : 44
     frame = CGRect(x: 0, y: 0, width: side, height: side)
-    ring.frame = bounds
+    dot.frame = bounds
     count.frame = bounds.insetBy(dx: 5, dy: 5)
     count.text = notes.formatted()
     accessibilityLabel = "\(notes.formatted()) notes nearby"
