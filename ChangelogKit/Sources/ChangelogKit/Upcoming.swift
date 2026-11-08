@@ -35,24 +35,60 @@ public struct UpcomingFields: Codable, Sendable, Equatable {
   /// A trip's destination (an event's place, if it has one), as text the
   /// city search knows: "Zürich", "Paris, Texas".
   public var place: String?
-  /// One word, like `family`, without the `#`.
-  public var tag: String?
+  /// Its tags, the whole list (API 1.21.0; call 5): read as `tags` and
+  /// `tag_names`, or one `tag` from a server before, and sent by name.
+  public var tags: [Tag]
   /// Days before to remind: up to six, at least one.
   public var reminders: [Int]
   /// Remind in the morning email, and so in apps.
   public var email: Bool
 
   public init(kind: UpcomingKind, title: String, date: String, year: Int? = nil, endDate: String? = nil,
-              place: String? = nil, tag: String? = nil, reminders: [Int]? = nil, email: Bool = true) {
+              place: String? = nil, tags: [Tag] = [], reminders: [Int]? = nil, email: Bool = true) {
     self.kind = kind
     self.title = title
     self.date = date
     self.year = year
     self.endDate = endDate
     self.place = place
-    self.tag = tag
+    self.tags = tags
     self.reminders = reminders ?? kind.defaultReminders
     self.email = email
+  }
+
+  enum CodingKeys: String, CodingKey { case kind, title, date, year, endDate, place, tag, tags, tagNames, reminders, email }
+
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    kind = try c.decode(UpcomingKind.self, forKey: .kind)
+    title = try c.decode(String.self, forKey: .title)
+    date = try c.decode(String.self, forKey: .date)
+    year = try c.decodeIfPresent(Int.self, forKey: .year)
+    endDate = try c.decodeIfPresent(String.self, forKey: .endDate)
+    place = try c.decodeIfPresent(String.self, forKey: .place)
+    if let keys = try c.decodeIfPresent([String].self, forKey: .tags) {
+      tags = Hashtags.named(keys, try c.decodeIfPresent([String].self, forKey: .tagNames))
+    } else if let one = try c.decodeIfPresent(String.self, forKey: .tag), !one.isEmpty {
+      tags = [Tag(key: one, name: one)]
+    } else {
+      tags = []
+    }
+    reminders = try c.decodeIfPresent([Int].self, forKey: .reminders) ?? kind.defaultReminders
+    email = try c.decodeIfPresent(Bool.self, forKey: .email) ?? true
+  }
+
+  /// The tags go by name, the whole list; never the deprecated `tag`.
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(kind, forKey: .kind)
+    try c.encode(title, forKey: .title)
+    try c.encode(date, forKey: .date)
+    try c.encodeIfPresent(year, forKey: .year)
+    try c.encodeIfPresent(endDate, forKey: .endDate)
+    try c.encodeIfPresent(place, forKey: .place)
+    try c.encode(tags.map(\.name), forKey: .tags)
+    try c.encode(reminders, forKey: .reminders)
+    try c.encode(email, forKey: .email)
   }
 }
 

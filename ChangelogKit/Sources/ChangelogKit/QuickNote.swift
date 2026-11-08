@@ -62,12 +62,17 @@ public enum QuickNote {
     }
   }
 
-  /// The words as the app would send them: trimmed, with the sticky tag the
-  /// app mirrors into the App Group.
-  public static func words(_ text: String, sticky: String? = AppGroup.defaults?.string(forKey: "sticky")) -> String {
-    let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let sticky else { return words }
-    return Hashtags.adding(sticky, to: words)
+  /// The words as the app would send them: trimmed.
+  public static func words(_ text: String) -> String {
+    text.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// The tags it goes with, by name: the sticky tag the app mirrors into the
+  /// App Group, which goes in the tags field, not the words, since a name can
+  /// have spaces ("Road Trip"; API 1.21.0). Nil for none.
+  public static func tags(sticky: String? = AppGroup.defaults?.string(forKey: "sticky")) -> [String]? {
+    guard let sticky, case .success(let tag) = Hashtags.spelling(sticky) else { return nil }
+    return [tag.name]
   }
 
   /// A client with the token and server the app left in the App Group, or

@@ -97,13 +97,18 @@ public struct NoteRequest: Codable, Sendable, Equatable {
   public var writtenAt: String?
   public var uploads: [UploadRef]?
   public var place: DevicePlace?
+  /// Tags by name (API 1.21.0): "Road Trip", "🚗 Lake". The hashtags in
+  /// `text` are tags too, after these.
+  public var tags: [String]?
 
-  public init(text: String?, date: String? = nil, writtenAt: String? = nil, uploads: [UploadRef]? = nil, place: DevicePlace? = nil) {
+  public init(text: String?, date: String? = nil, writtenAt: String? = nil, uploads: [UploadRef]? = nil, place: DevicePlace? = nil,
+              tags: [String]? = nil) {
     self.text = text
     self.date = date
     self.writtenAt = writtenAt
     self.uploads = uploads
     self.place = place
+    self.tags = tags?.isEmpty == true ? nil : tags
   }
 }
 
@@ -147,7 +152,9 @@ public struct NoteDetail: Codable, Sendable, Hashable, Identifiable {
   public var source: String? = nil
   /// Whether this token wrote it.
   public var mine: Bool? = nil
+  /// Its tags' keys, and their names beside them (API 1.21.0).
   public var tags: [String]? = nil
+  public var tagNames: [String]? = nil
   /// `rich` when `text` holds rich-text marks; nil for plain words.
   public var markup: String? = nil
   /// Its words cut up to show them. A rich note's carry the marks as typed.
@@ -168,6 +175,22 @@ public struct NoteDetail: Codable, Sendable, Hashable, Identifiable {
   public var attachments: Int? = nil
 
   public var isRich: Bool { markup == "rich" }
+
+  /// Its tags by name: from its tags field and its #words, as kept. A server
+  /// before 1.21.0 names them by their keys, or by the words' #words.
+  public var tagList: [Tag] {
+    guard let tags else { return Hashtags.textTags(text) }
+    let typed = (tagNames?.count ?? 0) < tags.count ? Hashtags.textTags(text) : []
+    let names = tagNames ?? []
+    return Hashtags.merge(tags.enumerated().map { i, key in
+      let name = i < names.count && !names[i].isEmpty ? names[i] : typed.first { $0.key == key }?.name ?? key
+      return Tag(key: key, name: name)
+    })
+  }
+
+  /// The tags its words don't show as #words: the ones its tags field gave
+  /// it, said under it.
+  public var fieldTags: [Tag] { Hashtags.fieldOnly(text, tags: tagList) }
 
   /// A recording's words are still being written, so a read soon may bring
   /// its transcript.
@@ -401,7 +424,7 @@ public enum NoteSearch: Sendable, Equatable, Hashable {
     let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return nil }
     let spans = Hashtags.spans(text)
-    if spans.count == 1, let only = spans.first, only.start == 0, only.end == text.count {
+    if spans.count == 1, let only = spans.first, only.start == 0, only.end == text.unicodeScalars.count {
       self = .tag(only.tag)
     } else {
       self = .words(text)
@@ -423,16 +446,79 @@ public struct NotePlaceRead: Codable, Sendable, Equatable {
 }
 
 /// `GET /v1/tags`: the pinned list, then the most used in the last 30 days.
+/// Since API 1.21.0 the pins are kept by name, and each tag has its name.
 public struct Tags: Codable, Sendable, Equatable {
   public var pinned: [String]
+  public var pinnedNames: [String]? = nil
   public var recent: [RecentTag]
   public var windowDays: Int?
+
+  public init(pinned: [String], pinnedNames: [String]? = nil, recent: [RecentTag], windowDays: Int? = nil) {
+    self.pinned = pinned
+    self.pinnedNames = pinnedNames
+    self.recent = recent
+    self.windowDays = windowDays
+  }
+
+  /// The pins by name.
+  public var pinnedTags: [Tag] { Hashtags.named(pinned, pinnedNames) }
 }
 
 public struct RecentTag: Codable, Sendable, Equatable {
   public var tag: String
+  public var name: String? = nil
   public var count: Int
   public var lastUsed: String?
+
+  public init(tag: String, name: String? = nil, count: Int, lastUsed: String? = nil) {
+    self.tag = tag
+    self.name = name
+    self.count = count
+    self.lastUsed = lastUsed
+  }
+}
+
+/// `GET /v1/tags/all`: every tag, most used first, by name, with what carries
+/// it. `upcoming` is nil without the `upcoming` scope, and `checkIns`
+/// without `activity` (API 1.21.0).
+public struct TagTotals: Codable, Sendable, Equatable {
+  public var tags: [TagTotal]
+}
+
+public struct TagTotal: Codable, Sendable, Equatable, Identifiable, Hashable {
+  public var tag: String
+  public var name: String?
+  public var notes: Int
+  public var days: Int
+  public var first: String?
+  public var last: String?
+  public var upcoming: Int?
+  public var checkIns: Int?
+
+  public init(tag: String, name: String? = nil, notes: Int, days: Int, first: String? = nil, last: String? = nil,
+              upcoming: Int? = nil, checkIns: Int? = nil) {
+    self.tag = tag
+    self.name = name
+    self.notes = notes
+    self.days = days
+    self.first = first
+    self.last = last
+    self.upcoming = upcoming
+    self.checkIns = checkIns
+  }
+
+  public var id: String { tag }
+  public var named: Tag { Tag(key: tag, name: name ?? tag) }
+
+  /// "3 days, 1 date, 2 check-ins": what carries it, each only when it does,
+  /// as the web's tags list says it.
+  public var carried: String {
+    var out: [String] = []
+    if days > 0 { out.append(days == 1 ? "1 day" : "\(days) days") }
+    if let upcoming, upcoming > 0 { out.append(upcoming == 1 ? "1 date" : "\(upcoming) dates") }
+    if let checkIns, checkIns > 0 { out.append(checkIns == 1 ? "1 check-in" : "\(checkIns) check-ins") }
+    return out.joined(separator: ", ")
+  }
 }
 
 /// `GET /v1/activity`: newest first, trimmed of words on the server.

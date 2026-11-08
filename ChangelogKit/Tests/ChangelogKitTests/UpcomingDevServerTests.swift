@@ -19,7 +19,7 @@ struct UpcomingDevServerTests {
     draft.start = start
     draft.end = end
     draft.place = "Paris"
-    draft.tag = "devtest"
+    draft.tags = [Tag(key: "devtest", name: "devtest")]
 
     // The dry run finds the city and saves nothing.
     let check = try await client.saveUpcoming(try draft.placeCheck(editing: nil).get(), idempotencyKey: nil)

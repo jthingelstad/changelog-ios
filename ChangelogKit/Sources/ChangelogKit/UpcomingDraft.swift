@@ -26,7 +26,8 @@ public struct UpcomingDraft: Sendable, Equatable {
   public var end: String
   /// A trip's destination, or an event's place.
   public var place = ""
-  public var tag = ""
+  /// Its tags, as the tags field took them (call 5: several).
+  public var tags: [Tag] = []
   public var reminders: [Int]
   public var email = true
   /// The account's today, for the year check.
@@ -40,7 +41,6 @@ public struct UpcomingDraft: Sendable, Equatable {
     case year = "A year goes with a birthday or anniversary, and can't be after this year."
     case end = "A trip's last day can't be before its first."
     case place = "A trip needs a destination, like Zürich or Paris, Texas."
-    case tag = "A tag is one word of letters, numbers and hyphens, like family."
     case reminders = "Choose from one to six reminders, or turn the morning email off."
   }
 
@@ -64,7 +64,7 @@ public struct UpcomingDraft: Sendable, Equatable {
     title = f.title
     year = f.year
     place = f.place ?? ""
-    tag = f.tag ?? ""
+    tags = f.tags
     reminders = f.reminders
     email = f.email
     if f.kind.annual {
@@ -85,13 +85,6 @@ public struct UpcomingDraft: Sendable, Equatable {
     guard !title.isEmpty, !title.contains(where: \.isNewline) else { return .failure(.title) }
     guard title.count <= Self.titleMax else { return .failure(.titleTooLong) }
 
-    var tag: String?
-    let typed = self.tag.trimmingCharacters(in: .whitespaces)
-    if !typed.isEmpty && typed != "#" {
-      guard let normal = Hashtags.normalize(typed) else { return .failure(.tag) }
-      tag = normal
-    }
-
     let days = Array(Set(reminders)).filter { (0...365).contains($0) }.sorted(by: >)
     guard (1...6).contains(days.count) else { return .failure(.reminders) }
 
@@ -100,14 +93,14 @@ public struct UpcomingDraft: Sendable, Equatable {
     case .birthday, .anniversary:
       if let year, year < 1 || year > (Self.parse(today)?.0 ?? Int.max) { return .failure(.year) }
       let date = String(format: "%02d-%02d", month, min(day, Self.days(in: month)))
-      return .success(UpcomingFields(kind: kind, title: title, date: date, year: year, tag: tag, reminders: days, email: email))
+      return .success(UpcomingFields(kind: kind, title: title, date: date, year: year, tags: tags, reminders: days, email: email))
     case .trip:
       guard end >= start else { return .failure(.end) }
       guard !place.isEmpty else { return .failure(.place) }
-      return .success(UpcomingFields(kind: kind, title: title, date: start, endDate: end, place: place, tag: tag,
+      return .success(UpcomingFields(kind: kind, title: title, date: start, endDate: end, place: place, tags: tags,
                                      reminders: days, email: email))
     case .event:
-      return .success(UpcomingFields(kind: kind, title: title, date: start, place: place.isEmpty ? nil : place, tag: tag,
+      return .success(UpcomingFields(kind: kind, title: title, date: start, place: place.isEmpty ? nil : place, tags: tags,
                                      reminders: days, email: email))
     }
   }

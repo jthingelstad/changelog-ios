@@ -12,7 +12,7 @@ import Testing
   static let entry = UpcomingEntry(
     id: "u-1", revision: 3, next: "2027-06-14", through: "2027-06-21", line: "Lake trip. June 14 - 21.",
     fields: UpcomingFields(kind: .trip, title: "Lake trip", date: "2027-06-14", endDate: "2027-06-21", place: "Duluth, Minnesota",
-                           tag: "family"))
+                           tags: [Tag(key: "family", name: "Family")]))
 
   @Test func anAddIsSnakeCaseAndLeavesOutWhatIsNone() throws {
     let body = try Self.json(UpcomingBatch.adding(UpcomingFields(kind: .birthday, title: "Ada", date: "11-04", year: 1990)))
@@ -24,6 +24,7 @@ import Testing
     #expect(add["reminders"] as? [Int] == [7, 1, 0])
     #expect(add["email"] as? Bool == true)
     #expect(add["end_date"] == nil && add["place"] == nil && add["tag"] == nil)
+    #expect(add["tags"] as? [String] == [])
   }
 
   @Test func aTripsDefaultsAndItsEndDate() throws {
@@ -33,6 +34,9 @@ import Testing
     #expect(add["endDate"] == nil)
     #expect(add["place"] as? String == "Duluth, Minnesota")
     #expect(add["reminders"] as? [Int] == [14, 1, 0])
+    // Tags go by name, the whole list, and never as the old single tag.
+    #expect(add["tags"] as? [String] == ["Family"])
+    #expect(add["tag"] == nil && add["tag_names"] == nil)
   }
 
   @Test func changeAndRemoveCarryTheRevision() throws {
@@ -76,10 +80,27 @@ import Testing
     #expect(list.pastLeftOut == 2)
     #expect(list.entries[0].fields.year == 1990)
     #expect(list.entries[1].fields.endDate == "2027-06-21")
+    // A server before 1.21.0 sends one tag; it is a tag named as its key.
+    #expect(list.entries[1].fields.tags == [Tag(key: "family", name: "family")])
+    #expect(list.entries[0].fields.tags.isEmpty)
     #expect(list.entries[1].through == "2027-06-21")
     #expect(list.entries[1].fields.email == false)
     #expect(list.entries[1].revision == 4)
     #expect(StubProtocol.requests("upcoming.test").first?.url?.path == "/v1/upcoming")
+  }
+
+  @Test func severalTagsReadWithTheirNames() throws {
+    let one = """
+      {"id":"u-4","kind":"trip","title":"North","tag":"road-trip","tags":["road-trip","🚗"],"tag_names":["Road Trip","🚗"],
+       "date":"2027-07-01","end_date":"2027-07-04","place":"Ely, Minnesota","email":true,"reminders":[14,1,0],"revision":2,
+       "next":"2027-07-01","status":"upcoming","line":"North. July 1 - 4."}
+      """
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let fields = try decoder.decode(UpcomingFields.self, from: Data(one.utf8))
+    #expect(fields.tags == [Tag(key: "road-trip", name: "Road Trip"), Tag(key: "🚗", name: "🚗")])
+    #expect(try Self.json(UpcomingBatch.adding(fields))["add"].flatMap { ($0 as? [[String: Any]])?.first?["tags"] as? [String] }
+            == ["Road Trip", "🚗"])
   }
 
   @Test func aSaveGoesUnderItsKey() async throws {
@@ -202,10 +223,8 @@ import Testing
     draft.end = "2027-06-13"
     #expect(draft.fields() == .failure(.end))
     draft.end = "2027-06-21"
-    draft.tag = "#!!"
-    #expect(draft.fields() == .failure(.tag))
-    draft.tag = "#Up North"
-    #expect((try? draft.fields().get())?.tag == "up-north")
+    draft.tags = [Tag(key: "up-north", name: "Up North"), Tag(key: "family", name: "family")]
+    #expect((try? draft.fields().get())?.tags.map(\.name) == ["Up North", "family"])
     draft.reminders = []
     #expect(draft.fields() == .failure(.reminders))
     draft.reminders = [0, 1, 1, 7]
@@ -222,7 +241,7 @@ import Testing
     #expect(draft.start == "2027-06-14")
     #expect(draft.end == "2027-06-21")
     #expect(draft.place == "Duluth, Minnesota")
-    #expect(draft.tag == "family")
+    #expect(draft.tags == [Tag(key: "family", name: "Family")])
     let batch = try draft.batch(editing: UpcomingTests.entry).get()
     #expect(batch.change.first?.revision == 3)
     #expect(batch.change.first?.fields == UpcomingTests.entry.fields)

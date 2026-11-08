@@ -195,7 +195,7 @@ struct LogView: View {
       .sheet(item: $fixing) { item in
         // A refused edit opens with its words, to save from the newest
         // revision; a refused note, to send again.
-        if case .edit(let date, let id, _, _) = item.operation {
+        if case .edit(let date, let id, _, _, _) = item.operation {
           EditNoteView(date: date, id: id, title: "Fix and save", refused: item)
         } else {
           FixWaitingView(item: item)
@@ -284,7 +284,7 @@ struct WaitingRow: View {
     switch item.operation {
     case .note(let text, _, _): text
     // An edit holds a note's whole words, and nothing here says whose note.
-    case .edit(_, _, let text, _): model.readingLocked ? "An edit to a note" : "Edit: \(text)"
+    case .edit(_, _, let text, _, _): model.readingLocked ? "An edit to a note" : "Edit: \(text)"
     case .delete(let date, _): "Delete a note from \(date)"
     case .attach(let attach): "Add \(Self.count(attach.files)) to a note from \(attach.date)"
     case .removeFile(let date, _, _): "Take a file off a note from \(date)"

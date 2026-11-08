@@ -30,24 +30,45 @@ import Testing
     #expect(Hashtags.found(in: text) == tags)
   }
 
-  @Test func normalizesWhatWasTyped() {
-    #expect(Hashtags.normalize("#Maine 2016") == "maine-2016")
-    #expect(Hashtags.normalize("2016") == nil)
-    #expect(Hashtags.normalize(String(repeating: "a", count: 60))?.count == 50)
-    #expect(Hashtags.normalize("#Москва") == "москва")
-    #expect(Hashtags.normalize("東京") == "東京")
-    #expect(Hashtags.normalize(String(repeating: "東", count: 60))?.unicodeScalars.count == 50)
-    #expect(Hashtags.normalize("#🎉") == nil)
+  @Test func spellsWhatWasTyped() throws {
+    #expect(try Hashtags.spelling("#Maine 2016").get() == Tag(key: "maine-2016", name: "Maine 2016"))
+    #expect(try Hashtags.spelling("2016").get().key == "2016")
+    #expect(Hashtags.spelling(String(repeating: "a", count: 51)) == .failure(.long))
+    #expect(try Hashtags.spelling(String(repeating: "a", count: 50)).get().name.count == 50)
+    #expect(try Hashtags.spelling("#Москва").get() == Tag(key: "москва", name: "Москва"))
+    #expect(try Hashtags.spelling("#🎉").get().key == "🎉")
+    #expect(Hashtags.spelling("#") == .failure(.empty))
+    #expect(Hashtags.spelling("Road, Trip") == .failure(.comma))
   }
 
-  @Test func togglesATag() {
-    #expect(Hashtags.toggling("house", in: "Fixed the faucet") == "Fixed the faucet #house")
-    #expect(Hashtags.toggling("house", in: "Fixed the faucet #house") == "Fixed the faucet")
-    #expect(Hashtags.toggling("house", in: "") == "#house ")
-    #expect(Hashtags.adding("house", to: "Fixed the #House faucet") == "Fixed the #House faucet")
-    #expect(Hashtags.toggling("東京", in: "Landed") == "Landed #東京")
-    #expect(Hashtags.toggling("東京", in: "Landed #東京") == "Landed")
+  @Test func addsToAField() throws {
+    let one = try Hashtags.adding("Road Trip", to: []).get()
+    #expect(one.tags == [Tag(key: "road-trip", name: "Road Trip")])
+    #expect(one.added == Tag(key: "road-trip", name: "Road Trip"))
+    // The same tag by another spelling adds nothing.
+    let again = try Hashtags.adding("road trip", to: one.tags).get()
+    #expect(again.tags == one.tags)
+    #expect(again.added == nil)
+    let full = (1...20).map { Tag(key: "t\($0)", name: "t\($0)") }
+    #expect(Hashtags.adding("one more", to: full).map(\.tags) == .failure(.many))
+    #expect(try Hashtags.adding("t3", to: full).get().added == nil)
+  }
+
+  @Test func aNoteHasItsFieldTagsThenItsWords() {
+    let lake = Tag(key: "lake", name: "Lake")
+    let trip = Tag(key: "road-trip", name: "Road Trip")
+    #expect(Hashtags.chips("At the #lake", field: [trip]) == [trip, Tag(key: "lake", name: "lake")])
+    #expect(Hashtags.chips("At the #lake", field: [lake]) == [lake])
+    #expect(Hashtags.fieldOnly("At the #lake", tags: [trip, lake]) == [trip])
+    #expect(Hashtags.line([trip, lake]) == "Road Trip, Lake")
+    #expect(Hashtags.named(["road-trip", "lake"], ["Road Trip"]) == [trip, Tag(key: "lake", name: "lake")])
+    #expect(Hashtags.named(nil, nil).isEmpty)
+  }
+
+  @Test func findsAKeyInWords() {
     #expect(Hashtags.contains("москва", in: "Snow in #Москва"))
+    #expect(Hashtags.contains("house", in: "Fixed the #House faucet"))
+    #expect(!Hashtags.contains("house", in: "Fixed the house faucet"))
   }
 
   /// As `removingTag` in Release Notes' `packages/domain/tags.ts`: the space
@@ -68,11 +89,15 @@ import Testing
   }
 
   @Test func theRowIsPinnedThenRecentThenQuick() {
-    let tags = Tags(pinned: ["house", "work"],
-                    recent: [RecentTag(tag: "running", count: 6, lastUsed: nil), RecentTag(tag: "work", count: 3, lastUsed: nil)],
+    let tags = Tags(pinned: ["house", "road-trip"], pinnedNames: ["House", "Road Trip"],
+                    recent: [RecentTag(tag: "running", name: "Running", count: 6, lastUsed: nil),
+                             RecentTag(tag: "road-trip", name: "road trip", count: 3, lastUsed: nil)],
                     windowDays: 30)
-    #expect(TagRow.tags(tags, limit: 5) == ["house", "work", "running", "added", "changed"])
-    #expect(TagRow.tags(nil, limit: 12) == TagRow.quick)
+    #expect(TagRow.tags(tags, limit: 5).map(\.name) == ["House", "Road Trip", "Running", "added", "changed"])
+    #expect(TagRow.tags(nil, limit: 12).map(\.key) == TagRow.quick)
+    // An older server sends keys alone: each is its own name.
+    let older = Tags(pinned: ["house"], recent: [RecentTag(tag: "work", count: 1, lastUsed: nil)], windowDays: 30)
+    #expect(TagRow.tags(older, limit: 2).map(\.name) == ["house", "work"])
   }
 
   @Test func recognizesATokenInWhatWasPasted() {
