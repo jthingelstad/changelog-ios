@@ -1495,16 +1495,22 @@ final class AppModel {
     }
   }
 
-  /// Queues an edit to a note's words and files, all of it or none. True once
-  /// it is safely queued; a refusal shows under Waiting to send.
-  func change(_ change: NoteChange) async -> Bool {
-    guard !change.isEmpty else { return true }
+  /// Queues an edit to a note's words and files, all of it or none, and
+  /// sends it. `queued` runs the moment it is safely queued, before it goes:
+  /// from then on its new files are the queue's. False when the phone
+  /// couldn't keep it; a refusal shows under Waiting to send.
+  func change(_ change: NoteChange, queued: () -> Void = {}) async -> Bool {
+    guard !change.isEmpty else {
+      queued()
+      return true
+    }
     do {
       try await outbox.enqueue(change.operations, account: account)
     } catch {
       problem = Self.notKept
       return false
     }
+    queued()
     waiting = await outbox.waiting
     await send()
     return true

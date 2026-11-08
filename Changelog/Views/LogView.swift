@@ -486,9 +486,13 @@ struct EditNoteView: View {
         .paperRows()
       }
       .paperForm()
+      // Saving, until the change is queued: nothing on the sheet may take
+      // off a file the change goes with, or close it (Codex on #51).
+      .disabled(saving)
+      .interactiveDismissDisabled(saving)
       .navigationTitle(title)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") {
             // Files taken off go for good: asked first.
@@ -536,16 +540,15 @@ struct EditNoteView: View {
     guard let note else { return }
     saving = true
     Task {
-      let done = if let refused {
-        await model.retry(refused, text: text, revision: note.revision)
+      if let refused {
+        if await model.retry(refused, text: text, revision: note.revision) { dismiss() }
       } else if let change {
-        await model.change(change)
-      } else {
-        false
-      }
-      if done {
-        self.kept?.saved = true
-        dismiss()
+        // Queued, the change holds the new files and the sheet closes while
+        // it goes, so nothing here can take them off under it.
+        _ = await model.change(change) {
+          kept?.saved = true
+          dismiss()
+        }
       }
       saving = false
     }
