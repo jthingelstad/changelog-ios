@@ -170,62 +170,47 @@ struct DayRoute: Hashable {
   let date: String
 }
 
-/// Today's notes, whole, then the days before it, newest first and a page at
-/// a time. The list goes when this view does, so it stays in memory only.
+/// Today's notes, whole, then On this day, then the days before it, newest
+/// first and a page at a time; or, once something is searched for, what was
+/// found, until Clear. The lists go when this view does, so they stay in
+/// memory only.
 private struct NotesList: View {
   @Environment(AppModel.self) private var model
   @State private var days: [DaySummary] = []
   @State private var next: String?
   @State private var problem: String?
+  @State private var past: [OnThisDay.PastDay] = []
+  @State private var pastFrom: String?
+  @State private var pastNext: String?
+  @State private var typed = ""
+  @State private var search: NoteSearch?
+  @State private var found: SearchResults?
+  @State private var foundNotes: [NoteDetail] = []
+  @State private var foundNext: String?
+  @State private var searchProblem: String?
+  @FocusState private var searching: Bool
+
+  /// A day's notes On this day shows; its own page has the rest.
+  private static let pastNotes = 3
 
   var body: some View {
     List {
       Group {
         BrandBar().paperRow(top: 14, bottom: 0)
         Text("Notes").face(.title).foregroundStyle(Color.ink).accessibilityAddTraits(.isHeader).paperRow(top: 18, bottom: 0)
-        Group {
-          if let version = model.version {
-            Text("Today in \(versionText(version))")
-          } else {
-            Text("Today")
-          }
-        }
-        .face(.head)
-        .foregroundStyle(Color.ink2)
-        .accessibilityAddTraits(.isHeader)
-        .paperRow(top: 28, bottom: 4)
-        let notes = model.todayNotes.filter { !model.isBeingDeleted($0) }
-        if notes.isEmpty {
-          Text(emptyToday)
-            .face(.hint)
-            .foregroundStyle(Color.ink2)
-            .paperRow(top: 8, bottom: 8)
-        }
-        ForEach(notes) { note in
-          NavigationLink(value: note) { NoteRow(note: note) }
-            .paperRow(top: 10, bottom: 10)
-        }
-        let past = days.filter { $0.date != model.me?.today }
-        if !past.isEmpty {
-          Text("Earlier")
-            .face(.head)
-            .foregroundStyle(Color.ink2)
-            .accessibilityAddTraits(.isHeader)
-            .paperRow(top: 28, bottom: 4)
-        }
-        ForEach(past) { day in
-          NavigationLink(value: DayRoute(date: day.date)) { DayRow(day: day) }
-            .paperRow(top: 10, bottom: 10)
-            .onAppear { if day.id == past.last?.id { Task { await more() } } }
-        }
-        if let problem {
-          Text(problem).face(.hint).foregroundStyle(Color.tangerineInk).paperRow(top: 8, bottom: 8)
+        SearchBox(typed: $typed, focused: $searching, showing: search != nil, find: { Task { await find() } }, clear: clear)
+          .paperRow(top: 14, bottom: 0)
+        if let search {
+          results(for: search)
+        } else {
+          everyDay
         }
         Color.clear.frame(height: 24).paperRow()
       }
       .listRowSeparator(.hidden)
     }
     .paperList()
+    .scrollDismissesKeyboard(.immediately)
     .refreshable {
       await model.refresh()
       await first()
@@ -233,21 +218,215 @@ private struct NotesList: View {
     .task(id: model.changes) { await first() }
   }
 
+  /// Today, the same day in years before, and every day before it.
+  @ViewBuilder private var everyDay: some View {
+    Group {
+      if let version = model.version {
+        Text("Today in \(versionText(version))")
+      } else {
+        Text("Today")
+      }
+    }
+    .face(.head)
+    .foregroundStyle(Color.ink2)
+    .accessibilityAddTraits(.isHeader)
+    .paperRow(top: 28, bottom: 4)
+    let notes = model.todayNotes.filter { !model.isBeingDeleted($0) }
+    if notes.isEmpty {
+      Text(emptyToday)
+        .face(.hint)
+        .foregroundStyle(Color.ink2)
+        .paperRow(top: 8, bottom: 8)
+    }
+    ForEach(notes) { note in
+      NavigationLink(value: note) { NoteRow(note: note) }
+        .paperRow(top: 10, bottom: 10)
+    }
+    onThisDay
+    let earlier = days.filter { $0.date != model.me?.today }
+    if !earlier.isEmpty {
+      Text("Earlier")
+        .face(.head)
+        .foregroundStyle(Color.ink2)
+        .accessibilityAddTraits(.isHeader)
+        .paperRow(top: 28, bottom: 4)
+    }
+    ForEach(earlier) { day in
+      NavigationLink(value: DayRoute(date: day.date)) { DayRow(day: day) }
+        .paperRow(top: 10, bottom: 10)
+        .onAppear { if day.id == earlier.last?.id { Task { await more() } } }
+    }
+    if let problem {
+      Text(problem).face(.hint).foregroundStyle(Color.tangerineInk).paperRow(top: 8, bottom: 8)
+    }
+  }
+
+  /// The same day in each earlier year, as the web's Today and the morning
+  /// email have it: a day's first notes, and the rest on its own page. With
+  /// nothing to show, or nothing read, there is no section.
+  @ViewBuilder private var onThisDay: some View {
+    let shown = past.filter { !$0.notes.isEmpty }
+    if !shown.isEmpty {
+      Text("On this day")
+        .face(.head)
+        .foregroundStyle(Color.ink2)
+        .accessibilityAddTraits(.isHeader)
+        .paperRow(top: 28, bottom: 4)
+      ForEach(shown) { day in
+        NavigationLink(value: DayRoute(date: day.date)) {
+          PastDayHead(day: day, from: pastFrom ?? model.me?.today ?? day.date)
+        }
+        .paperRow(top: 12, bottom: 2)
+        ForEach(day.notes.prefix(Self.pastNotes).filter { !model.isBeingDeleted($0) }) { note in
+          NavigationLink(value: note) { NoteRow(note: note) }
+            .paperRow(top: 8, bottom: 8)
+        }
+        let left = day.notesTotal - min(day.notes.count, Self.pastNotes)
+        if left > 0 {
+          NavigationLink(value: DayRoute(date: day.date)) {
+            Text(left == 1 ? "One more note" : "\(left) more notes").face(.action).foregroundStyle(Color.cobalt)
+          }
+          .paperRow(top: 0, bottom: 6)
+        }
+      }
+      if pastNext != nil {
+        Button("Earlier years") { Task { await morePast() } }
+          .buttonStyle(QuietButtonStyle())
+          .paperRow(top: 4, bottom: 4)
+      }
+    }
+  }
+
+  /// What a search found, newest first, a page at a time.
+  @ViewBuilder private func results(for search: NoteSearch) -> some View {
+    if let found {
+      Text(Self.sentence(found, for: search))
+        .face(.hint)
+        .foregroundStyle(Color.ink2)
+        .accessibilityIdentifier("search-found")
+        .paperRow(top: 18, bottom: 4)
+    } else if let searchProblem {
+      Text(searchProblem).face(.hint).foregroundStyle(Color.tangerineInk).paperRow(top: 18, bottom: 4)
+    } else {
+      ProgressView().paperRow(top: 18, bottom: 4)
+    }
+    let shown = foundNotes.filter { !model.isBeingDeleted($0) }
+    ForEach(shown) { note in
+      NavigationLink(value: note) { FoundRow(note: note) }
+        .paperRow(top: 10, bottom: 10)
+        .onAppear { if note.id == shown.last?.id { Task { await moreFound() } } }
+    }
+  }
+
+  /// As the web's search says it.
+  static func sentence(_ found: SearchResults, for search: NoteSearch) -> String {
+    switch (search, found.total) {
+    case (.words, 0): "No notes have all of those words."
+    case (.tag(let tag), 0): "No notes have #\(tag)."
+    case (_, let total): "\(total == 1 ? "1 note" : "\(total.formatted()) notes") for “\(search.shown)”, newest first"
+    }
+  }
+
   private var emptyToday: String {
     if !model.todayNotesRead { return "Today's notes couldn't be read yet. Pull down to try again." }
     return model.version.map { "No changes yet in \($0)." } ?? "Nothing yet today."
   }
 
+  /// Everything shown, read again: the days, On this day and what's being
+  /// searched for, side by side, so neither optional read holds up the days.
+  /// The days are read during a search too, so Clear never shows them as they
+  /// were before a note changed.
   private func first() async {
-    do throws(APIError) {
-      let page = try await model.days(before: nil)
+    let searched = Task { if let search { await find(search) } }
+    let pastRead = Task { try? await model.onThisDay(before: nil) }
+    let daysRead = Task { () -> Result<DayList, APIError> in
+      do throws(APIError) { return .success(try await model.days(before: nil)) } catch { return .failure(error) }
+    }
+    // Cancelled: a newer read (another change, a pull) has the page.
+    switch await daysRead.value {
+    case .success(let page) where !Task.isCancelled:
       days = page.days
       next = page.next
       problem = nil
-    } catch {
+    case .failure(let error) where !Task.isCancelled:
       // What was read stays; the first read failing says so.
       if days.isEmpty { problem = error.message }
+    default:
+      break
     }
+    // On this day never holds the page up, and a failure leaves what was there.
+    if let page = await pastRead.value, !Task.isCancelled {
+      past = page.days
+      pastFrom = page.date
+      pastNext = page.next
+    }
+    await searched.value
+  }
+
+  private func morePast() async {
+    guard let before = pastNext else { return }
+    pastNext = nil
+    do throws(APIError) {
+      let page = try await model.onThisDay(before: before)
+      past += page.days
+      pastNext = page.next
+    } catch {
+      pastNext = before
+    }
+  }
+
+  /// The box's words, searched for; an empty box is the days again.
+  private func find() async {
+    guard let asked = NoteSearch(typed) else {
+      clear()
+      return
+    }
+    searching = false
+    if asked != search {
+      found = nil
+      foundNotes = []
+      foundNext = nil
+    }
+    searchProblem = nil
+    search = asked
+    await find(asked)
+  }
+
+  /// The first page of a search. One asked since, or Clear, wins.
+  private func find(_ asked: NoteSearch) async {
+    do throws(APIError) {
+      let page = try await model.search(asked, after: nil)
+      guard search == asked else { return }
+      found = page
+      foundNotes = page.items
+      foundNext = page.next
+      searchProblem = nil
+    } catch {
+      guard search == asked else { return }
+      if found == nil { searchProblem = error.message }
+    }
+  }
+
+  private func moreFound() async {
+    guard let asked = search, let after = foundNext else { return }
+    foundNext = nil
+    do throws(APIError) {
+      let page = try await model.search(asked, after: after)
+      guard search == asked else { return }
+      foundNotes += page.items
+      foundNext = page.next
+    } catch {
+      if search == asked { foundNext = after }
+    }
+  }
+
+  private func clear() {
+    typed = ""
+    search = nil
+    found = nil
+    foundNotes = []
+    foundNext = nil
+    searchProblem = nil
   }
 
   private func more() async {
@@ -260,6 +439,78 @@ private struct NotesList: View {
       next = page.next
     } catch {
       next = before
+    }
+  }
+}
+
+/// The box at the top of Notes, as the web's search: words, "quoted phrases",
+/// or one #tag alone for that tag's notes. A rule under it, tangerine while
+/// typing, as Log's box has.
+private struct SearchBox: View {
+  @Binding var typed: String
+  var focused: FocusState<Bool>.Binding
+  let showing: Bool
+  let find: () -> Void
+  let clear: () -> Void
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "magnifyingglass").foregroundStyle(Color.ink3).accessibilityHidden(true)
+      TextField("Search your notes", text: $typed, prompt: Text(verbatim: "cabin, \"first snow\", #lake").foregroundStyle(Color.ink3))
+        .face(.note)
+        .focused(focused)
+        .submitLabel(.search)
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+        .onSubmit(find)
+        .accessibilityIdentifier("search")
+      if showing || !typed.isEmpty {
+        Button("Clear", action: clear).buttonStyle(QuietButtonStyle())
+      }
+    }
+    .padding(.vertical, 4)
+    .overlay(alignment: .bottom) {
+      Rectangle()
+        .fill(focused.wrappedValue ? Color.tangerine : Color.ink3)
+        .frame(height: focused.wrappedValue ? 3 : 1)
+    }
+  }
+}
+
+/// An earlier year's day, as the web's On this day heads it: how long ago,
+/// the version you were, and the date.
+private struct PastDayHead: View {
+  @Environment(AppModel.self) private var model
+  let day: OnThisDay.PastDay
+  /// The day it is looked back from.
+  let from: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text("\(ago) you were \(versionText(day.version))").face(.line).foregroundStyle(Color.ink)
+      Text(Day.label(day.date, today: model.me?.today ?? from)).face(.meta).foregroundStyle(Color.ink3)
+    }
+  }
+
+  private var ago: String {
+    let years = day.years(before: from)
+    return years == 1 ? "A year ago" : "\(years) years ago"
+  }
+}
+
+/// A note a search found: its day and version over it, since they come from
+/// every year.
+private struct FoundRow: View {
+  @Environment(AppModel.self) private var model
+  let note: NoteDetail
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(Day.label(note.date, today: model.me?.today ?? note.date)).face(.head).foregroundStyle(Color.ink2)
+        if let version = note.version { versionText(version).face(.meta) }
+      }
+      NoteRow(note: note)
     }
   }
 }

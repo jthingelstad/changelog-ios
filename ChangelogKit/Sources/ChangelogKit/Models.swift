@@ -343,6 +343,74 @@ public struct DayDetail: Codable, Sendable, Equatable {
   public var weatherCredit: String?
 }
 
+/// `GET /v1/search` (API 1.15.0): the notes that have every word, or a tag's
+/// notes, newest first, with the `after` for the next page.
+public struct SearchResults: Codable, Sendable, Equatable {
+  /// What was looked for, as the server read it.
+  public var terms: [String]
+  public var tag: String?
+  /// Every note found, across every page.
+  public var total: Int
+  public var items: [NoteDetail]
+  public var next: String?
+}
+
+/// `GET /v1/on-this-day` (API 1.15.0): the same day of each earlier release,
+/// newest first, as the morning email's On this day. Only days with notes.
+public struct OnThisDay: Codable, Sendable, Equatable {
+  public var date: String
+  public var version: String
+  public var days: [PastDay]
+  /// The `before` for the next page of years.
+  public var next: String?
+
+  public struct PastDay: Codable, Sendable, Equatable, Identifiable {
+    public var date: String
+    public var version: String
+    public var notesTotal: Int
+    /// Its first notes; the day's own page has the rest.
+    public var notes: [NoteDetail]
+
+    public var id: String { date }
+
+    /// The notes this answer left for the day's own page.
+    public var more: Int { max(0, notesTotal - notes.count) }
+
+    /// How many years before `day` (both yyyy-mm-dd) this one is.
+    public func years(before day: String) -> Int {
+      max(1, (Int(day.prefix(4)) ?? 0) - (Int(date.prefix(4)) ?? 0))
+    }
+  }
+}
+
+/// What the Notes tab's search box asks for: one `#tag` alone is that tag's
+/// page, as the web's tag links are; anything else is words, which the server
+/// reads as the web's search does (every word, "quoted phrases").
+public enum NoteSearch: Sendable, Equatable, Hashable {
+  case words(String)
+  case tag(String)
+
+  /// Nil for a box with nothing in it.
+  public init?(_ typed: String) {
+    let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return nil }
+    let spans = Hashtags.spans(text)
+    if spans.count == 1, let only = spans.first, only.start == 0, only.end == text.count {
+      self = .tag(only.tag)
+    } else {
+      self = .words(text)
+    }
+  }
+
+  /// As the owner sees it asked: the words, or the tag with its #.
+  public var shown: String {
+    switch self {
+    case .words(let words): words
+    case .tag(let tag): "#\(tag)"
+    }
+  }
+}
+
 /// A place as the web shows it: `label` is the whole of it on one line.
 public struct NotePlaceRead: Codable, Sendable, Equatable {
   public var label: String

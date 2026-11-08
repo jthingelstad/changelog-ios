@@ -248,6 +248,25 @@ struct DevServerTests {
     try await client.deleteNote(date: made.date, id: made.id, idempotencyKey: UUID().uuidString.lowercased())
   }
 
+  /// Search by a word and by a tag finds the note, and On this day reads.
+  @Test func aReadingTokenSearches() async throws {
+    let client = DevServer.client()
+    guard try await client.me().token.readsAll else { return }
+    let mark = "find\(UUID().uuidString.prefix(6).lowercased())"
+    let made = try await client.createNote(NoteRequest(text: "Looked for \(mark) at the lake #\(mark)tag"),
+                                           idempotencyKey: UUID().uuidString.lowercased()).note
+    let byWord = try await client.search(.words(mark), urls: true)
+    #expect(byWord.items.map(\.id) == [made.id])
+    #expect(byWord.total == 1)
+    let byTag = try await client.search(try #require(NoteSearch("#\(mark)tag")))
+    #expect(byTag.items.map(\.id) == [made.id])
+    let none = try await client.search(.words("\(mark) nowhere\(mark)"))
+    #expect(none.items.isEmpty && none.next == nil)
+    let past = try await client.onThisDay(urls: true)
+    #expect(past.days.allSatisfy { $0.date < past.date && $0.notesTotal >= $0.notes.count })
+    try await client.deleteNote(date: made.date, id: made.id, idempotencyKey: UUID().uuidString.lowercased())
+  }
+
   /// A stop through the queue as a phone reports it: an arrival, then its
   /// leaving under another key, one stay. Then its name and its deleting.
   @Test func aVisitReportedTwiceIsOneStayNamedThenDeleted() async throws {

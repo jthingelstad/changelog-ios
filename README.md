@@ -7,8 +7,9 @@ account and settings stay on the web.
 
 - **Log** a line, with one-tap tags. The button says Commit. Today shows
   what this phone sent today, words and all, read back from Release Notes.
-- **Notes**, if you let it: today and the days before it, wherever you wrote
-  them, whole, with their files. Edit or delete any of them. Reading can sit
+- **Notes**, if you let it: today, the same day in years before, and the days
+  before it, wherever you wrote them, whole, with their files. Search every
+  note by its words or a tag. Edit or delete any of them. Reading can sit
   behind Face ID; adding a note never does.
 - **Never lose a note.** Everything goes through an offline queue, and a
   resend never makes a duplicate.

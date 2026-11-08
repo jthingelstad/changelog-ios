@@ -181,8 +181,10 @@ there first, never work around it here.
   the birthday, which the app never learns) is filed to the day it was
   written by the Outbox, once, under a new key.
 - Changelog is "the fast way in, with your notes along; account and settings
-  stay on the web" (Jamie, 2026-11-05). It reads days, notes and their files;
-  search, tags, On this day and releases come next, the one map is of check-ins
+  stay on the web" (Jamie, 2026-11-05). It reads days, notes and their files,
+  searches every note as the web does (all the words, or one `#tag` alone for
+  that tag's notes) and shows On this day under Today, a day's first three
+  notes with the rest on its page; a list of tags and releases come next, the one map is of check-ins
   (Jamie's word, 2026-11-06, phase 4 of `docs/CHECK-INS.md` in Release Notes), a
   map of notes only on Jamie's word, badges and the mail log stay on the web. A new sign-in asks for `notes:all`
   (Jamie, 2026-10-30), which anyone may untick on the consent page; a token

@@ -1386,6 +1386,14 @@ final class AppModel {
     }
   }
 
+  func search(_ search: NoteSearch, after: String?) async throws(APIError) -> SearchResults {
+    try await reading { (client) async throws(APIError) in try await client.search(search, after: after, urls: true) }
+  }
+
+  func onThisDay(before: String?) async throws(APIError) -> OnThisDay {
+    try await reading { (client) async throws(APIError) in try await client.onThisDay(before: before, urls: true) }
+  }
+
   /// Whether a note can be changed from this phone: any note with `notes:all`,
   /// else only the notes this token wrote.
   func canChange(_ note: NoteDetail) -> Bool {

@@ -657,7 +657,10 @@ final class ChangelogUITests: XCTestCase {
     expect(allow, "the Notes tab offers reading", in: app, timeout: 15)
     allow.tap()
     let row = app.descendants(matching: .any).matching(elsewhere).firstMatch
-    expect(row, "a note from elsewhere reads whole", in: app, timeout: 30)
+    // Today lists oldest first, and the dev server's today fills up over a morning of runs.
+    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Today'")).firstMatch, "Notes reads", in: app, timeout: 30)
+    for _ in 0..<8 where !(row.waitForExistence(timeout: 3) && row.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    expect(row, "a note from elsewhere reads whole", in: app, timeout: 15)
     keep(app, "Notes")
     let (status, _) = try await Self.statusOfMe(server: server, token: old)
     XCTAssertEqual(status, 401, "the old token ended")
@@ -705,7 +708,8 @@ final class ChangelogUITests: XCTestCase {
     app.navigationBars.buttons.firstMatch.tap()
 
     // Activity's rows open their notes. The newest row filed is a note deleted
-    // since, which says so; the one before it is the rich note.
+    // since, which says so; the one before it is the rich note, or the note
+    // from elsewhere when both were filed in the same second.
     let spent = try await Self.addNoteNamed("Gone soon \(mark)", server: server, token: reader)
     try await Self.deleteNote(spent, server: server, token: reader)
     app.tabBars.buttons["Activity"].tap()
@@ -717,7 +721,8 @@ final class ChangelogUITests: XCTestCase {
     app.navigationBars.buttons.firstMatch.tap()
     expect(filedRows.element(boundBy: 1), "the list is still there", in: app, timeout: 15)
     filedRows.element(boundBy: 1).tap()
-    expect(app.staticTexts["second"], "a row opens its note", in: app, timeout: 15)
+    let opened = NSPredicate(format: "label == 'second' OR label CONTAINS %@", words)
+    expect(app.staticTexts.matching(opened).firstMatch, "a row opens its note", in: app, timeout: 15)
     keep(app, "A note from Activity")
     app.navigationBars.buttons.firstMatch.tap()
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Deleted from'")).firstMatch.exists,
@@ -758,6 +763,95 @@ final class ChangelogUITests: XCTestCase {
     turnLock(in: app, on: false)
     app.terminate()
     try await Self.revoke(reader, server: server)
+  }
+
+  /// Notes' search, across every year, and On this day, on notes filed to
+  /// this day in earlier years for the test.
+  @MainActor func testSearchAndOnThisDay() async throws {
+    let reader = try await Self.tokenOnThisAccount(["notes:write", "media:write", "upcoming", "activity", "notes:all"],
+                                                   server: server)
+    let (_, me) = try await Self.statusOfMe(server: server, token: reader)
+    let today = try XCTUnwrap((try JSONSerialization.jsonObject(with: me) as? [String: Any])?["today"] as? String)
+    guard !today.hasSuffix("-02-29") else { throw XCTSkip("A leap day: no year before has it.") }
+    let year = try XCTUnwrap(Int(today.prefix(4))), monthDay = today.dropFirst(4)
+    let mark = String(UUID().uuidString.prefix(6).lowercased())
+    var made: [(date: String, id: String)] = []
+    // Four last year, so On this day shows three and links the fourth.
+    for words in ["Ice on the lake \(mark) #ice-\(mark)", "Skating one \(mark)", "Skating two \(mark)", "Skating three \(mark)"] {
+      made.append(try await Self.addNoteNamed(words, on: "\(year - 1)\(monthDay)", server: server, token: reader))
+    }
+    made.append(try await Self.addNoteNamed("The first snow \(mark)", on: "\(year - 3)\(monthDay)", server: server, token: reader))
+    let server = server, gone = made
+    addTeardownBlock {
+      for note in gone { try await Self.deleteNote(note, server: server, token: reader) }
+      try await Self.revoke(reader, server: server)
+    }
+
+    let app = launch(as: reader, more: ["CHANGELOG_LOCK_ANSWER": "yes"])
+    let row = { (words: String) in
+      app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+    }
+    hideKeyboard(app)
+    app.tabBars.buttons["Notes"].tap()
+    let list = app.collectionViews.firstMatch
+    let ago = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'A year ago you were'")).firstMatch
+    expect(list, "Notes reads", in: app, timeout: 30)
+    for _ in 0..<8 where !(ago.exists && ago.isHittable) { list.swipeUp(velocity: .slow) }
+    expect(ago, "On this day heads last year", in: app, timeout: 15)
+    let fourth = app.buttons["One more note"]
+    for _ in 0..<4 where !(fourth.exists && fourth.isHittable) { list.swipeUp(velocity: .slow) }
+    expect(fourth, "the day's other note is a link away", in: app)
+    let snowRow = row("The first snow \(mark)")
+    expect(snowRow, "the year before that has its note", in: app)
+    expect(app.buttons.matching(NSPredicate(format: "label BEGINSWITH '3 years ago you were'")).firstMatch,
+           "and its own head", in: app)
+    // The four were written in the same minute, so which three come first is the server's to say.
+    let lastYears = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND NOT label CONTAINS 'first snow'", mark))
+    XCTAssertEqual(lastYears.count, 3, "On this day shows a day's first three")
+    keep(app, "On this day")
+    fourth.tap()
+    expect(row("Ice on the lake \(mark)"), "the day's own page has every note", in: app)
+    expect(row("Skating three \(mark)"), "every one", in: app)
+    app.navigationBars.buttons.firstMatch.tap()
+
+    // Words, across every year, newest first.
+    let box = app.textFields["search"]
+    for _ in 0..<8 where !(box.exists && box.isHittable) { list.swipeDown(velocity: .fast) }
+    box.tap()
+    box.typeText("\(mark)\n")
+    let sentence = app.staticTexts["search-found"]
+    expect(sentence, "the search answers", in: app, timeout: 15)
+    XCTAssertEqual(sentence.label, "5 notes for “\(mark)”, newest first")
+    XCTAssertFalse(app.keyboards.firstMatch.exists, "searching puts the keyboard away")
+    let snow = row("The first snow \(mark)")
+    for _ in 0..<4 where !(snow.exists && snow.isHittable) { list.swipeUp(velocity: .slow) }
+    expect(snow, "a note from three years ago is found", in: app)
+    keep(app, "Search")
+    snow.tap()
+    expect(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "The first snow \(mark)")).firstMatch,
+           "a found note opens", in: app)
+    app.navigationBars.buttons.firstMatch.tap()
+
+    // A tag alone is that tag's notes.
+    expect(app.buttons["Clear"], "a search can be cleared", in: app)
+    app.buttons["Clear"].tap()
+    box.tap()
+    box.typeText("#ice-\(mark)\n")
+    expect(sentence, "the tag search answers", in: app, timeout: 15)
+    XCTAssertEqual(sentence.label, "1 note for “#ice-\(mark)”, newest first")
+    expect(row("Ice on the lake \(mark)"), "the tagged note is found", in: app)
+
+    // Nothing found says so; Clear goes back to the days.
+    app.buttons["Clear"].tap()
+    box.tap()
+    box.typeText("nothing\(mark)here \(mark)\n")
+    expect(sentence, "a search that finds nothing answers", in: app, timeout: 15)
+    XCTAssertEqual(sentence.label, "No notes have all of those words.")
+    keep(app, "Nothing found")
+    app.buttons["Clear"].tap()
+    XCTAssertTrue(sentence.waitForNonExistence(timeout: 10), "Clear ends the search")
+    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Today'")).firstMatch, "the days are back", in: app)
+    app.terminate()
   }
 
   /// Settings' lock switch, on or off, and it says so.
@@ -921,13 +1015,16 @@ final class ChangelogUITests: XCTestCase {
   }
 
   /// A note added for a test, with where to find it again.
-  private static func addNoteNamed(_ words: String, server: String, token: String) async throws -> (date: String, id: String) {
+  private static func addNoteNamed(_ words: String, on date: String? = nil, server: String,
+                                   token: String) async throws -> (date: String, id: String) {
     var request = URLRequest(url: URL(string: "\(server)/v1/notes")!)
     request.httpMethod = "POST"
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
-    request.httpBody = try JSONSerialization.data(withJSONObject: ["text": words])
+    var body = ["text": words]
+    if let date { body["date"] = date }
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
     let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
     XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201, "the note went in")
     let receipt = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
