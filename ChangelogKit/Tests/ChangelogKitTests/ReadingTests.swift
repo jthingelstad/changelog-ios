@@ -96,6 +96,60 @@ struct ReadingTests {
     #expect(query == ["from": "2026-11-04", "to": "2026-11-04", "after": "a:b#c", "limit": "100", "mine": "true", "include": "urls"])
   }
 
+  @Test func searchesForWordsAsTheWebDoes() async throws {
+    StubProtocol.set("search.test", .init(status: 200, body: """
+      {"terms":["cabin","first snow"],"tag":null,"from":"1980-01-01","to":"2026-11-08","total":41,
+       "items":[\(Self.wholeNote)],"next":"n:2"}
+      """))
+    let found = try await client("search.test").search(.words(#"cabin "first snow""#), after: "n:1", urls: true)
+    #expect(found.total == 41)
+    #expect(found.terms == ["cabin", "first snow"])
+    #expect(found.items.map(\.id) == ["w-1"])
+    #expect(found.next == "n:2")
+    let url = try #require(StubProtocol.requests("search.test").first?.url)
+    let query = Dictionary(uniqueKeysWithValues: URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.map { ($0.name, $0.value ?? "") })
+    #expect(url.path == "/v1/search")
+    #expect(query == ["q": #"cabin "first snow""#, "after": "n:1", "limit": "30", "include": "urls"])
+  }
+
+  @Test func searchesATagByItsPage() async throws {
+    StubProtocol.set("tag.test", .init(status: 200, body: #"{"terms":[],"tag":"lake","from":"1980-01-01","to":"2026-11-08","total":0,"items":[],"next":null}"#))
+    let found = try await client("tag.test").search(.tag("lake"))
+    #expect(found.total == 0)
+    #expect(found.tag == "lake")
+    let url = try #require(StubProtocol.requests("tag.test").first?.url)
+    #expect(url.query(percentEncoded: false) == "limit=30&tag=lake")
+  }
+
+  @Test func readsOnThisDay() async throws {
+    StubProtocol.set("past.test", .init(status: 200, body: """
+      {"date":"2026-11-08","version":"4.5.147","next":"2016-11-08",
+       "days":[{"date":"2025-11-08","version":"4.4.147","notes_total":7,"notes":[\(Self.wholeNote)]},
+               {"date":"2019-11-08","version":"3.8.147","notes_total":1,"notes":[\(Self.wholeNote)]}]}
+      """))
+    let past = try await client("past.test").onThisDay(before: "2026-11-08", urls: true)
+    #expect(past.days.map(\.date) == ["2025-11-08", "2019-11-08"])
+    #expect(past.days.map { $0.years(before: past.date) } == [1, 7])
+    #expect(past.days.map(\.more) == [6, 0])
+    #expect(past.next == "2016-11-08")
+    let url = try #require(StubProtocol.requests("past.test").first?.url)
+    #expect(url.path == "/v1/on-this-day")
+    #expect(url.query(percentEncoded: false) == "limit=10&before=2026-11-08&include=urls")
+  }
+
+  /// One `#tag` alone is that tag's page; anything more is words.
+  @Test func aSearchBoxReadsATagAlone() {
+    #expect(NoteSearch("  ") == nil)
+    #expect(NoteSearch("#Lake") == .tag("lake"))
+    #expect(NoteSearch(" #東京 ") == .tag("東京"))
+    #expect(NoteSearch("#lake #cabin") == .words("#lake #cabin"))
+    #expect(NoteSearch("#lake, dock") == .words("#lake, dock"))
+    #expect(NoteSearch("#lake,") == .words("#lake,"))
+    #expect(NoteSearch("#2026") == .words("#2026"))
+    #expect(NoteSearch(#"cabin "first snow""#) == .words(#"cabin "first snow""#))
+    #expect(NoteSearch("#Lake")?.shown == "#lake")
+  }
+
   @Test func asksForAFreshAddress() async throws {
     StubProtocol.set("file.test", .init(status: 200, body: #"{"url":"https://files.test/9","type":"image/jpeg","expires_in":600}"#))
     let address = try await client("file.test").fileAddress(date: "2026-11-04", id: "w-1", n: 3, thumb: true)

@@ -28,6 +28,31 @@ extension APIClient {
     try await send("GET", "v1/days/\(date)", query: urls ? [URLQueryItem(name: "include", value: "urls")] : [])
   }
 
+  /// Every note with all the words, or with a tag, across the whole archive,
+  /// newest first; `next` goes on through `after`.
+  public func search(_ search: NoteSearch, after: String? = nil, limit: Int = 30,
+                     urls: Bool = false) async throws(APIError) -> SearchResults {
+    var query = [URLQueryItem(name: "limit", value: String(limit))]
+    switch search {
+    case .words(let words): query.append(URLQueryItem(name: "q", value: words))
+    case .tag(let tag): query.append(URLQueryItem(name: "tag", value: tag))
+    }
+    if let after { query.append(URLQueryItem(name: "after", value: after)) }
+    if urls { query.append(URLQueryItem(name: "include", value: "urls")) }
+    return try await send("GET", "v1/search", query: query)
+  }
+
+  /// The same day in earlier years, newest first, each with its first notes;
+  /// `next` goes on through `before`. Left out, `date` is the account's today.
+  public func onThisDay(date: String? = nil, before: String? = nil, limit: Int = 10,
+                        urls: Bool = false) async throws(APIError) -> OnThisDay {
+    var query = [URLQueryItem(name: "limit", value: String(limit))]
+    if let date { query.append(URLQueryItem(name: "date", value: date)) }
+    if let before { query.append(URLQueryItem(name: "before", value: before)) }
+    if urls { query.append(URLQueryItem(name: "include", value: "urls")) }
+    return try await send("GET", "v1/on-this-day", query: query)
+  }
+
   /// A fresh address for one of a note's files, or for its small copy.
   public func fileAddress(date: String, id: String, n: Int, thumb: Bool = false) async throws(APIError) -> FileAddress {
     try await send("GET", "v1/notes/\(date)/\(id)/media/\(n)", query: thumb ? [URLQueryItem(name: "size", value: "thumb")] : [])
