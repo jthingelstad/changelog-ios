@@ -66,9 +66,14 @@ public struct APIClient: Sendable {
     try await send("GET", "v1/notes/\(date)/\(id)", query: urls ? [URLQueryItem(name: "include", value: "urls")] : [])
   }
 
-  public func editNote(date: String, id: String, text: String, revision: String, idempotencyKey: String) async throws(APIError) -> NoteRef {
-    struct Body: Encodable { var text: String; var revision: String }
-    let answer: Wrapped = try await send("PUT", "v1/notes/\(date)/\(id)", body: Body(text: text, revision: revision), idempotencyKey: idempotencyKey)
+  /// New words from the revision read. `tags`, by name, is the note's whole
+  /// list from its tags field, with the hashtags in `text` after them; nil
+  /// keeps the tags its old words didn't carry (API 1.21.0).
+  public func editNote(date: String, id: String, text: String, revision: String, tags: [String]? = nil,
+                       idempotencyKey: String) async throws(APIError) -> NoteRef {
+    struct Body: Encodable { var text: String; var revision: String; var tags: [String]? }
+    let answer: Wrapped = try await send("PUT", "v1/notes/\(date)/\(id)", body: Body(text: text, revision: revision, tags: tags),
+                                         idempotencyKey: idempotencyKey)
     return answer.note
   }
 
@@ -86,6 +91,13 @@ public struct APIClient: Sendable {
     try await send("GET", "v1/tags")
   }
 
+  /// Every tag, most used first, by name, with what carries it (API 1.21.0).
+  /// Needs `notes:read` or `notes:all`.
+  public func allTags() async throws(APIError) -> TagTotals {
+    try await send("GET", "v1/tags/all")
+  }
+
+  /// The pins, by name (kept by name since API 1.21.0), at most 12.
   public func setPinned(_ pinned: [String], idempotencyKey: String) async throws(APIError) -> Tags {
     struct Body: Encodable { var pinned: [String] }
     return try await send("PUT", "v1/tags/pinned", body: Body(pinned: pinned), idempotencyKey: idempotencyKey)

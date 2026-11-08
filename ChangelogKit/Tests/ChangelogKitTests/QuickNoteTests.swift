@@ -90,9 +90,15 @@ import Testing
     #expect(QuickNote.said(.filed(receipt)) == "Unlocked: API release")
   }
 
-  @Test func theStickyTagGoesOnTheEnd() {
-    #expect(QuickNote.words("  Fixed the gate\n", sticky: "house") == "Fixed the gate #house")
-    #expect(QuickNote.words("Fixed the gate #house", sticky: "house") == "Fixed the gate #house")
-    #expect(QuickNote.words("Fixed the gate", sticky: nil) == "Fixed the gate")
+  /// The sticky tag goes in the tags field by name, so one with a space
+  /// stays one tag; the words are sent as written.
+  @Test func theStickyTagGoesInTheTagsField() {
+    #expect(QuickNote.words("  Fixed the gate\n") == "Fixed the gate")
+    #expect(QuickNote.tags(sticky: "house") == ["house"])
+    #expect(QuickNote.tags(sticky: "#Road  Trip") == ["Road Trip"])
+    #expect(QuickNote.tags(sticky: nil) == nil)
+    #expect(QuickNote.tags(sticky: "#") == nil)
+    #expect(NotePost(text: "Fixed the gate", writtenAt: "2026-11-08T09:00:00-06:00", tags: QuickNote.tags(sticky: "Road Trip")).request.tags == ["Road Trip"])
+    #expect(NotePost(text: "Fixed the gate", writtenAt: "2026-11-08T09:00:00-06:00", tags: QuickNote.tags(sticky: nil)).request.tags == nil)
   }
 }

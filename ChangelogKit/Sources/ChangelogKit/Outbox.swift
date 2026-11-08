@@ -5,8 +5,10 @@ import Foundation
 public enum OutboxOperation: Codable, Sendable, Equatable {
   /// A new note, with the moment its words were typed.
   case note(text: String, date: String?, writtenAt: String)
-  /// New words for a note this token wrote, from the revision it read.
-  case edit(date: String, id: String, text: String, revision: String)
+  /// New words for a note this token wrote, from the revision it read, and
+  /// its tags field's whole list by name (API 1.21.0), or nil to keep the
+  /// tags its old words didn't carry. Nil in a queue an earlier build saved.
+  case edit(date: String, id: String, text: String, revision: String, tags: [String]? = nil)
   case delete(date: String, id: String)
   case pins([String])
   /// A new note with files, a place or both. Its own case, so a queue saved
@@ -71,9 +73,12 @@ public struct NotePost: Codable, Sendable, Equatable {
   /// A check-in's name, so a note about it keeps it when its place is only
   /// named as it sends. Its own field, so a queue saved earlier still reads.
   public var venue: String? = nil
+  /// Its tags by name, from the tags field and the sticky tag (API 1.21.0);
+  /// the hashtags in its words are tags too, after these.
+  public var tags: [String]? = nil
 
   public init(text: String, date: String? = nil, writtenAt: String, files: [QueuedFile] = [], spot: Spot? = nil, place: DevicePlace? = nil,
-              venue: String? = nil) {
+              venue: String? = nil, tags: [String]? = nil) {
     self.text = text
     self.date = date
     self.writtenAt = writtenAt
@@ -82,6 +87,7 @@ public struct NotePost: Codable, Sendable, Equatable {
     self.place = place
     self.reuploads = 0
     self.venue = venue
+    self.tags = tags?.isEmpty == true ? nil : tags
   }
 
   /// Every file posted and the place named: ready to send.
@@ -91,7 +97,7 @@ public struct NotePost: Codable, Sendable, Equatable {
     let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
     return NoteRequest(text: words.isEmpty ? nil : text, date: date, writtenAt: writtenAt,
                        uploads: files.isEmpty ? nil : files.map { UploadRef(upload: $0.upload ?? "", type: $0.type, name: $0.name) },
-                       place: place)
+                       place: place, tags: tags)
   }
 }
 
@@ -134,9 +140,12 @@ public struct NoteChange: Sendable, Equatable {
   public var adding: [QueuedFile]
   /// The numbers of the files taken off.
   public var removing: Set<Int>
+  /// Its tags field's whole new list (the tags its words don't carry as
+  /// #words), or nil to leave them as they are (API 1.21.0).
+  public var tags: [Tag]?
 
   public init(date: String, id: String, revision: String, wordsNow: String, filesNow: Int,
-              words: String? = nil, adding: [QueuedFile] = [], removing: Set<Int> = []) {
+              words: String? = nil, adding: [QueuedFile] = [], removing: Set<Int> = [], tags: [Tag]? = nil) {
     self.date = date
     self.id = id
     self.revision = revision
@@ -145,17 +154,21 @@ public struct NoteChange: Sendable, Equatable {
     self.words = words
     self.adding = adding
     self.removing = removing
+    self.tags = tags
   }
 
   /// A change to a note as read: words the same as it has, or blank where it
-  /// has none, are no change to them.
-  public init(_ note: NoteDetail, words: String, adding: [QueuedFile] = [], removing: Set<Int> = []) {
+  /// has none, are no change to them, and nor is a tags field with the same
+  /// tags it has, by key.
+  public init(_ note: NoteDetail, words: String, adding: [QueuedFile] = [], removing: Set<Int> = [], tags: [Tag]? = nil) {
     let same = words == note.text || (Self.blank(words) && Self.blank(note.text))
+    let sameTags = tags.map { $0.map(\.key) == note.fieldTags.map(\.key) && $0.map(\.name) == note.fieldTags.map(\.name) } ?? true
     self.init(date: note.date, id: note.id, revision: note.revision, wordsNow: note.text,
-              filesNow: note.media?.count ?? note.files ?? 0, words: same ? nil : words, adding: adding, removing: removing)
+              filesNow: note.media?.count ?? note.files ?? 0, words: same ? nil : words, adding: adding, removing: removing,
+              tags: sameTags ? nil : tags)
   }
 
-  public var isEmpty: Bool { words == nil && adding.isEmpty && removing.isEmpty }
+  public var isEmpty: Bool { words == nil && tags == nil && adding.isEmpty && removing.isEmpty }
 
   /// How many files it leaves the note.
   public var filesAfter: Int { filesNow - removing.count + adding.count }
@@ -165,6 +178,7 @@ public struct NoteChange: Sendable, Equatable {
   /// `MediaType.maxFiles` files, and one with no words keeps its last.
   public var refusal: String? {
     if let words, Self.blank(words) { return "A note's words can change but not go. To take it away, delete the note." }
+    if tags != nil, Self.blank(words ?? wordsNow) { return "Tags go on a note with words. Write some first." }
     if filesAfter > MediaType.maxFiles { return "A note holds up to \(MediaType.maxFiles) files." }
     if filesAfter <= 0, Self.blank(words ?? wordsNow) { return "A note with no words keeps its last file. To take it away, delete the note." }
     return nil
@@ -176,7 +190,9 @@ public struct NoteChange: Sendable, Equatable {
   /// is on.
   public var operations: [OutboxOperation] {
     var out: [OutboxOperation] = []
-    if let words { out.append(.edit(date: date, id: id, text: words, revision: revision)) }
+    if words != nil || tags != nil {
+      out.append(.edit(date: date, id: id, text: words ?? wordsNow, revision: revision, tags: tags?.map(\.name)))
+    }
     var off = removing.sorted().map { OutboxOperation.removeFile(date: date, id: id, n: $0) }
     let last = !adding.isEmpty && Self.blank(words ?? wordsNow) && removing.count >= filesNow ? off.popLast() : nil
     out += off
@@ -235,7 +251,7 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   /// The words it carries, for a note or an edit.
   public var text: String? {
     switch operation {
-    case .note(let text, _, _), .edit(_, _, let text, _): text
+    case .note(let text, _, _), .edit(_, _, let text, _, _): text
     case .post(let post): post.text
     case .delete, .pins, .checkIn, .attach, .removeFile: nil
     }
@@ -279,7 +295,7 @@ public struct OutboxItem: Codable, Sendable, Equatable, Identifiable {
   /// The note it changes, for a change to a note already filed.
   public var changing: (date: String, id: String)? {
     switch operation {
-    case .edit(let date, let id, _, _), .delete(let date, let id), .removeFile(let date, let id, _): (date, id)
+    case .edit(let date, let id, _, _, _), .delete(let date, let id), .removeFile(let date, let id, _): (date, id)
     case .attach(let attach): (attach.date, attach.id)
     default: nil
     }
@@ -607,8 +623,8 @@ public actor Outbox {
     switch items[i].operation {
     case .note(_, let date, let writtenAt):
       items[i].operation = .note(text: text, date: date, writtenAt: writtenAt)
-    case .edit(let date, let note, _, let read):
-      items[i].operation = .edit(date: date, id: note, text: text, revision: revision ?? read)
+    case .edit(let date, let note, _, let read, let tags):
+      items[i].operation = .edit(date: date, id: note, text: text, revision: revision ?? read, tags: tags)
     case .post(var post):
       post.text = text
       if let files {
@@ -834,8 +850,8 @@ public extension APIClient {
     switch item.operation {
     case .note(let text, let date, let writtenAt):
       return .filed(try await createNote(NoteRequest(text: text, date: date, writtenAt: writtenAt), idempotencyKey: key))
-    case .edit(let date, let id, let text, let revision):
-      return .edited(try await editNote(date: date, id: id, text: text, revision: revision, idempotencyKey: key))
+    case .edit(let date, let id, let text, let revision, let tags):
+      return .edited(try await editNote(date: date, id: id, text: text, revision: revision, tags: tags, idempotencyKey: key))
     case .delete(let date, let id):
       try await deleteNote(date: date, id: id, idempotencyKey: key)
       return .deleted

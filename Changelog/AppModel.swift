@@ -86,6 +86,11 @@ final class AppModel {
   var draft = "" {
     didSet { if draft != oldValue { keepDraftSoon() } }
   }
+  /// The tags added in the box's tags field, by name (API 1.21.0). Its
+  /// #words are tags too, after these.
+  private(set) var draftTags: [Tag] = [] {
+    didSet { if draftTags != oldValue { keepDraftSoon() } }
+  }
   /// Files on the draft, their bytes already beside the queue.
   private(set) var draftFiles: [QueuedFile] = [] {
     didSet { keepDraftSoon() }
@@ -146,8 +151,10 @@ final class AppModel {
     didSet { defaults.set(hereByDefault, forKey: "here") }
   }
 
-  /// A tag that rides on every note until turned off (a trip, a project).
-  /// Kept on this phone only: a habit of the moment, not a setting.
+  /// A tag, by name, that rides on every note until turned off (a trip, a
+  /// project), in its tags field, so "Road Trip" stays one tag. Kept on this
+  /// phone only: a habit of the moment, not a setting. One kept before tags
+  /// had names is its key, which reads as a name.
   var sticky: String? {
     didSet {
       defaults.set(sticky, forKey: "sticky")
@@ -215,7 +222,11 @@ final class AppModel {
   }
 
   var version: String? { me?.version }
-  var tagRow: [String] { TagRow.tags(tags) }
+  var tagRow: [Tag] { TagRow.tags(tags) }
+  /// The draft's tags as chips: its field's, then its #words.
+  var draftChips: [Tag] { Hashtags.chips(draft, field: draftTags) }
+  /// The sticky tag as a tag; nil for none.
+  var stickyTag: Tag? { sticky.flatMap { try? Hashtags.spelling($0).get() } }
 
   // MARK: Signing in and out
 
@@ -783,17 +794,20 @@ final class AppModel {
   func commit() async {
     guard !addingMoment else { return }
     let typed = draft
-    var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
     let files = draftFiles
     guard !text.isEmpty || !files.isEmpty else { return }
     committing += 1
-    if let sticky { text = Hashtags.adding(sticky, to: text) }
+    // The field's tags, then the sticky one; the #words come after them.
+    let field = draftTags
+    let tags = Hashtags.merge(field, stickyTag.map { [$0] } ?? [])
     let stamp = Timestamp.string(.now)
     // The draft as it is, kept with the note it is becoming, so a launch
     // after the app ended mid-commit can tell whether that note reached
     // the queue.
     let handing = Draft(text: typed, files: files, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff,
-                        placeFromMoment: placeFromMoment, day: day, handover: Draft.Handover(text: text, writtenAt: stamp))
+                        placeFromMoment: placeFromMoment, day: day, tags: field,
+                        handover: Draft.Handover(text: text, writtenAt: stamp))
     let placed = (spot: placeOff ? nil : spot, here: here, venue: venue, spotAt: spotAt, fromMoment: placeFromMoment)
     var place = placed.here?.place
     place?.venue = placed.venue
@@ -803,6 +817,7 @@ final class AppModel {
     let date = filedDay.flatMap { day in me.map { day < $0.today ? day : nil } ?? day }
     draft = ""
     draftFiles = []
+    draftTags = []
     day = nil
     momentNotice = nil
     // With "Add where I am" on, the next note within ten minutes takes the
@@ -812,17 +827,18 @@ final class AppModel {
     if draftRestored { drafts.save(handing) }
     let item: OutboxItem
     do {
-      if files.isEmpty && placed.spot == nil {
+      if files.isEmpty && placed.spot == nil && tags.isEmpty {
         item = try await outbox.enqueue(.note(text: text, date: date, writtenAt: stamp), account: account)
       } else {
         item = try await outbox.enqueue(.post(NotePost(text: text, date: date, writtenAt: stamp, files: files,
                                                        spot: placed.spot, place: placed.spot == nil ? nil : place,
-                                                       venue: placed.venue)),
+                                                       venue: placed.venue, tags: tags.map(\.name))),
                                         account: account)
       }
     } catch {
       draft = draft.isEmpty ? typed : typed + "\n" + draft
       draftFiles = files + draftFiles
+      draftTags = Hashtags.merge(field, draftTags)
       if spot == nil, let kept = placed.spot {
         spot = kept
         here = placed.here
@@ -1085,7 +1101,7 @@ final class AppModel {
     keeping?.cancel()
     guard draftRestored, committing == 0 else { return }
     drafts.save(Draft(text: draft, files: draftFiles, spot: spot, here: here, venue: venue, spotAt: spotAt, placeOff: placeOff,
-                      placeFromMoment: placeFromMoment, day: day))
+                      placeFromMoment: placeFromMoment, day: day, tags: draftTags))
   }
 
   /// Puts back the draft a run that ended left, and its photos' pictures.
@@ -1102,6 +1118,7 @@ final class AppModel {
     placeOff = kept.placeOff
     placeFromMoment = kept.placeFromMoment
     day = kept.day
+    draftTags = kept.tags
     let outbox = self.outbox
     for file in kept.files where file.isPhoto {
       Task {
@@ -1528,19 +1545,47 @@ final class AppModel {
 
   // MARK: Tags
 
-  func toggle(_ tag: String) {
-    draft = Hashtags.toggling(tag, in: draft)
+  /// A tag from the row: on the draft, it comes off, its #words too (call 1);
+  /// off, it goes in the tags field.
+  func toggle(_ tag: Tag) {
+    if draftChips.contains(where: { $0.key == tag.key }) { removeTag(tag) } else { addTag(tag) }
   }
 
-  func toggleSticky(_ tag: String) {
-    sticky = sticky == tag ? nil : tag
+  /// A tag in the draft's tags field. A 21st is refused, saying why; one the
+  /// draft has already, by any spelling, stays as it is.
+  func addTag(_ tag: Tag) {
+    guard !draftChips.contains(where: { $0.key == tag.key }) else { return }
+    guard draftChips.count < Hashtags.maxTags else {
+      problem = TagRefusal.many.said
+      return
+    }
+    draftTags.append(tag)
   }
 
-  /// Shows the new pins at once; Release Notes' answer replaces them.
-  func setPinned(_ pinned: [String]) async {
+  /// Takes a tag off the draft: out of its field, and its #words out of the
+  /// words, with the space beside each (call 1).
+  func removeTag(_ tag: Tag) {
+    draftTags.removeAll { $0.key == tag.key }
+    if Hashtags.contains(tag.key, in: draft) { draft = Hashtags.removing(tag.key, from: draft) }
+  }
+
+  func toggleSticky(_ tag: Tag) {
+    sticky = stickyTag?.key == tag.key ? nil : tag.name
+  }
+
+  /// Shows the new pins at once; they go by name, and Release Notes' answer
+  /// replaces them.
+  func setPinned(_ pinned: [Tag]) async {
     let before = tags
-    tags?.pinned = pinned
-    if !(await queue(.pins(pinned))) { tags = before }
+    tags?.pinned = pinned.map(\.key)
+    tags?.pinnedNames = pinned.map(\.name)
+    if !(await queue(.pins(pinned.map(\.name)))) { tags = before }
+  }
+
+  /// Every tag, by its latest name, with how many notes, Upcoming dates and
+  /// check-ins have it.
+  func allTags() async throws(APIError) -> TagTotals {
+    try await reading { (client) async throws(APIError) in try await client.allTags() }
   }
 
   // MARK: Check-ins
@@ -1625,6 +1670,29 @@ final class AppModel {
     return changed
   }
 
+  /// A stay's whole list of tags, at once, as its name is.
+  func tag(_ stay: CheckIn, with tags: [Tag], idempotencyKey: String) async throws(APIError) -> CheckIn {
+    let changed = try await reading { (client) async throws(APIError) in
+      try await client.tagCheckIn(id: stay.id, tags: tags, revision: stay.revision, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+    return changed
+  }
+
+  /// Every stay with a tag, newest first, a page at a time to the last, as
+  /// the web's tag page lists them all.
+  func checkIns(tagged key: String) async throws(APIError) -> [CheckIn] {
+    var stays: [CheckIn] = []
+    var before: String?
+    repeat {
+      let cursor = before
+      let page = try await reading { (client) async throws(APIError) in try await client.checkIns(before: cursor, tag: key) }
+      stays += page.items
+      before = page.next == cursor ? nil : page.next
+    } while before != nil
+    return stays
+  }
+
   /// Remember this place: the name goes on the place, and this stop's own name
   /// comes off, or it would go on outranking the place. Saving a name has to
   /// show it, so where another place still wins here, the stop keeps the name
@@ -1700,6 +1768,26 @@ final class AppModel {
     changes += 1
     await loadToday()
     return changed
+  }
+
+  /// A place's whole list of tags: every new check-in there gets them. When
+  /// it gains one, the answer counts the check-ins already there.
+  func setTags(_ place: RememberedPlace, _ tags: [Tag], idempotencyKey: String) async throws(APIError) -> RememberedPlace {
+    let changed = try await reading { (client) async throws(APIError) in
+      try await client.setPlaceTags(id: place.id, tags: tags, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+    return changed
+  }
+
+  /// Tags the check-ins already at a place, for the count shown; answers how
+  /// many it tagged (call 6).
+  func tagCheckIns(at place: RememberedPlace, with tags: [Tag], count: Int, idempotencyKey: String) async throws(APIError) -> Int {
+    let tagged = try await reading { (client) async throws(APIError) in
+      try await client.tagCheckIns(atPlace: place.id, tags: tags, count: count, idempotencyKey: idempotencyKey)
+    }
+    checkInChanges += 1
+    return tagged
   }
 
   /// Delete existing check-ins here, for the count the owner was shown;

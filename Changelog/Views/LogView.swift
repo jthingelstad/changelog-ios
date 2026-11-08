@@ -14,6 +14,7 @@ struct LogView: View {
   @State private var deleting: ActivityItem?
   /// A held note whose Delete was tapped, waiting for the confirmation.
   @State private var discarding: OutboxItem?
+  @State private var tagTyping = TagTyping()
 
   var body: some View {
     @Bindable var model = model
@@ -48,14 +49,19 @@ struct LogView: View {
           if let notice = model.momentNotice {
             Label(notice, systemImage: "info.circle").face(.meta).foregroundStyle(Color.ink3)
           }
+          // Its tags as chips, from the field and its #words, and a box for
+          // one more, as the web's form has them; then the row.
+          TagField(tags: model.draftChips, hint: "Tags can have spaces and emoji, like Road Trip. A #word in the note is a tag too.",
+                   offer: model.tagRow, typing: $tagTyping, add: model.addTag, remove: model.removeTag)
+            .padding(.top, 8)
           TagRowView()
           if model.day != nil { DayMenu() }
-          if model.placeLabel != nil || model.sticky != nil {
+          if model.placeLabel != nil || model.stickyTag != nil {
             HStack {
               PlaceMenu()
               Spacer()
-              if let sticky = model.sticky {
-                Label("#\(sticky) on every note", systemImage: "pin.fill")
+              if let sticky = model.stickyTag {
+                Label("\(sticky.name) on every note", systemImage: "pin.fill")
                   .face(.meta)
                   .foregroundStyle(Color.ink3)
               }
@@ -69,6 +75,13 @@ struct LogView: View {
             ComposerTools()
             if !typeSize.isAccessibilitySize { Spacer() }
             Button("Commit") {
+              // A tag typed without Return goes with the note, or stays in
+              // its box saying why, and nothing is committed yet.
+              switch tagTyping.take(into: model.draftChips) {
+              case .refused: return
+              case .added(let tag): model.addTag(tag)
+              case .nothing: break
+              }
               Task {
                 await model.commit()
                 // A tall draft (a moment's, with its day and place) shrinks
@@ -195,7 +208,7 @@ struct LogView: View {
       .sheet(item: $fixing) { item in
         // A refused edit opens with its words, to save from the newest
         // revision; a refused note, to send again.
-        if case .edit(let date, let id, _, _) = item.operation {
+        if case .edit(let date, let id, _, _, _) = item.operation {
           EditNoteView(date: date, id: id, title: "Fix and save", refused: item)
         } else {
           FixWaitingView(item: item)
@@ -284,11 +297,11 @@ struct WaitingRow: View {
     switch item.operation {
     case .note(let text, _, _): text
     // An edit holds a note's whole words, and nothing here says whose note.
-    case .edit(_, _, let text, _): model.readingLocked ? "An edit to a note" : "Edit: \(text)"
+    case .edit(_, _, let text, _, _): model.readingLocked ? "An edit to a note" : "Edit: \(text)"
     case .delete(let date, _): "Delete a note from \(date)"
     case .attach(let attach): "Add \(Self.count(attach.files)) to a note from \(attach.date)"
     case .removeFile(let date, _, _): "Take a file off a note from \(date)"
-    case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.map { "#\($0)" }.joined(separator: " ")
+    case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.joined(separator: ", ")
     case .post(let post):
       post.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.count(post.files) : post.text
     // Never the spot.
@@ -422,6 +435,9 @@ struct EditNoteView: View {
   @State private var thumbnails: [UUID: CGImage] = [:]
   @State private var confirming = false
   @State private var kept: EditFilesKept?
+  /// Its tags field as edited: the tags its words don't carry. Nil until read.
+  @State private var fieldTags: [Tag]?
+  @State private var tagTyping = TagTyping()
 
   /// Locked, the words of a note from elsewhere stay closed: what it says now,
   /// and a refused edit's own, which are that note's too.
@@ -468,9 +484,25 @@ struct EditNoteView: View {
             } footer: {
               if let change, change.words != nil, let refusal = change.refusal { SectionNote(refusal) }
             }
+            if note != nil, refused == nil, let fieldTags {
+              Section {
+                // Its #words are chips too: taking one off takes the word out
+                // of the note (call 1).
+                TagField(tags: Hashtags.chips(text, field: fieldTags), offer: model.tagRow, typing: $tagTyping,
+                         add: { tag in self.fieldTags = Hashtags.merge(fieldTags, [tag]) },
+                         remove: { tag in
+                           self.fieldTags = fieldTags.filter { $0.key != tag.key }
+                           text = Hashtags.removing(tag.key, from: text)
+                         })
+              } header: {
+                SectionHead("Tags")
+              } footer: {
+                if let change, change.words == nil, change.tags != nil, let refusal = change.refusal { SectionNote(refusal) }
+              }
+            }
             if let note, refused == nil, model.canAddFiles {
               EditFiles(note: note, kept: kept, removing: $removing, adding: $adding, thumbnails: $thumbnails,
-                        importing: $importing, refusal: change?.words == nil ? change?.refusal : nil)
+                        importing: $importing, refusal: change?.words == nil && change?.tags == nil ? change?.refusal : nil)
             }
           } else if failure == nil {
             ProgressView()
@@ -498,6 +530,9 @@ struct EditNoteView: View {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") {
+            // A tag typed without Return is saved too, or stays in its box
+            // saying why, and nothing is saved yet.
+            guard takeTyped(), canSave else { return }
             // Files taken off go for good: asked first.
             if refused == nil, !removing.isEmpty { confirming = true } else { save() }
           }
@@ -528,7 +563,11 @@ struct EditNoteView: View {
 
   /// The edit as it stands, from the note read.
   private var change: NoteChange? {
-    note.map { NoteChange($0, words: text, adding: adding, removing: removing) }
+    note.map { note in
+      // The field's own: a tag typed as a #word since goes with the words.
+      let tags = fieldTags.map { Hashtags.fieldOnly(text, tags: $0) }
+      return NoteChange(note, words: text, adding: adding, removing: removing, tags: tags)
+    }
   }
 
   private var canSave: Bool {
@@ -536,7 +575,19 @@ struct EditNoteView: View {
     // A refused edit saves its words from the newest revision, as ever.
     if refused != nil { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     guard let change else { return false }
-    return !change.isEmpty && change.refusal == nil
+    return (!change.isEmpty || !tagTyping.isEmpty) && change.refusal == nil
+  }
+
+  /// The tag typed and not yet a chip, as one, before a save: false when the
+  /// box refuses it.
+  private func takeTyped() -> Bool {
+    guard refused == nil, let fieldTags else { return true }
+    switch tagTyping.take(into: Hashtags.chips(text, field: fieldTags)) {
+    case .refused: return false
+    case .added(let tag): self.fieldTags = Hashtags.merge(fieldTags, [tag])
+    case .nothing: break
+    }
+    return true
   }
 
   private func save() {
@@ -566,7 +617,10 @@ struct EditNoteView: View {
         return
       }
       note = read
-      if refused == nil { text = read.text }
+      if refused == nil {
+        text = read.text
+        fieldTags = read.fieldTags
+      }
     } catch {
       failure = error
     }

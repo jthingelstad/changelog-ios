@@ -7,6 +7,6 @@ let package = Package(
   products: [.library(name: "ChangelogKit", targets: ["ChangelogKit"])],
   targets: [
     .target(name: "ChangelogKit"),
-    .testTarget(name: "ChangelogKitTests", dependencies: ["ChangelogKit"]),
+    .testTarget(name: "ChangelogKitTests", dependencies: ["ChangelogKit"], resources: [.copy("tag-vectors.json")]),
   ]
 )

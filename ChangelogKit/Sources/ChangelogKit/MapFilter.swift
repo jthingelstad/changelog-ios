@@ -13,6 +13,8 @@ public struct NotePin: Codable, Sendable, Equatable, Hashable {
   /// False when a city was chosen: it stands for the city, not a spot.
   public var exact: Bool
   public var tags: [String]
+  /// Its tags' names, beside `tags` (API 1.21.0).
+  public var tagNames: [String]? = nil
   public var release: String
   public var version: String
   /// The note's opening words.
@@ -22,7 +24,7 @@ public struct NotePin: Codable, Sendable, Equatable, Hashable {
   public var writtenAt: String?
 
   public init(date: String, id: String, lat: Double, lon: Double, place: String, exact: Bool = true,
-              tags: [String] = [], release: String = "", version: String = "", text: String = "",
+              tags: [String] = [], tagNames: [String]? = nil, release: String = "", version: String = "", text: String = "",
               writtenAt: String? = nil) {
     self.date = date
     self.id = id
@@ -31,6 +33,7 @@ public struct NotePin: Codable, Sendable, Equatable, Hashable {
     self.place = place
     self.exact = exact
     self.tags = tags
+    self.tagNames = tagNames
     self.release = release
     self.version = version
     self.text = text
@@ -102,11 +105,29 @@ public struct MapFilter: Sendable, Equatable, Hashable {
 
   private func inYear(_ day: String) -> Bool { year == nil || Self.year(of: day) == year }
 
-  /// The check-ins it keeps. A search keeps notes alone, as on the web's
-  /// Map: a check-in has no words or tags to find.
+  /// The check-ins it keeps. Words keep notes alone, as on the web's Map: a
+  /// check-in has no words to find. A tag keeps the check-ins with it too
+  /// (call 8).
   public func stays(_ stays: [CheckIn]) -> [CheckIn] {
-    guard checkIns, search == nil else { return [] }
-    return stays.filter { inYear($0.day) }
+    guard checkIns else { return [] }
+    switch search {
+    case nil: return stays.filter { inYear($0.day) }
+    case .tag(let tag): return stays.filter { inYear($0.day) && ($0.tags ?? []).contains(tag) }
+    case .words: return []
+    }
+  }
+
+  /// Whether check-ins can show for what is searched: none for words.
+  public var keepsCheckIns: Bool {
+    if case .words = search { return false }
+    return checkIns
+  }
+
+  /// The tags on what the map has, each once, by name, for its Tag menu: a
+  /// tag with a space or an emoji can't be typed as one #tag.
+  public static func tags(_ stays: [CheckIn], _ pins: [NotePin]) -> [Tag] {
+    Hashtags.mergeAll(stays.map(\.tagList) + pins.map { Hashtags.named($0.tags, $0.tagNames) })
+      .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
   /// The notes it keeps. A tag is read from the pins; words are found by
@@ -126,24 +147,25 @@ public struct MapFilter: Sendable, Equatable, Hashable {
 
   /// The line over the map: what shows, of each kind that is on. `stays`
   /// and `notes` are nil for a kind that isn't on the map.
-  public func summary(stays: Int?, notes: Int?) -> String {
+  public func summary(stays: Int?, notes: Int?, tagName: String? = nil) -> String {
     let found = switch search {
     case .words(let words): " with \u{201C}\(words)\u{201D}"
-    case .tag(let tag): " tagged #\(tag)"
+    case .tag(let tag): " tagged \(tagName ?? "#" + tag)"
     case nil: ""
     }
     let when = year.map { " in \(String($0))" } ?? ""
     func count(_ n: Int, _ one: String, _ many: String) -> String { "\(n.formatted()) \(n == 1 ? one : many)" }
     switch (stays, notes) {
     case (nil, nil):
-      return search == nil ? "Turn on Check-ins or Notes to see them here." : "A search finds notes: turn on Notes to see them."
+      if case .words = search { return "A search finds notes: turn on Notes to see them." }
+      return "Turn on Check-ins or Notes to see them here."
     case (let stays?, nil):
-      return stays == 0 ? "No check-ins\(when)." : "\(count(stays, "check-in", "check-ins"))\(when)."
+      return stays == 0 ? "No check-ins\(found)\(when)." : "\(count(stays, "check-in", "check-ins"))\(found)\(when)."
     case (nil, let notes?):
       return notes == 0 ? "No notes\(found)\(when)." : "\(count(notes, "note", "notes"))\(found)\(when)."
     case (let stays?, let notes?):
-      if stays == 0, notes == 0 { return "No check-ins or notes\(when)." }
-      return "\(count(stays, "check-in", "check-ins")) and \(count(notes, "note", "notes"))\(when)."
+      if stays == 0, notes == 0 { return "No check-ins or notes\(found)\(when)." }
+      return "\(count(stays, "check-in", "check-ins")) and \(count(notes, "note", "notes"))\(found)\(when)."
     }
   }
 

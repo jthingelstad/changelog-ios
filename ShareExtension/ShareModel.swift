@@ -152,7 +152,7 @@ final class ShareModel {
     do {
       // Stamped with the account the app last read, so should the app send
       // it, it goes only to that account (`OutboxItem.account`).
-      try await share.outbox.enqueue(.post(NotePost(text: words, writtenAt: Timestamp.string(.now), files: files)),
+      try await share.outbox.enqueue(.post(NotePost(text: words, writtenAt: Timestamp.string(.now), files: files, tags: QuickNote.tags())),
                                      account: AppGroup.account)
     } catch {
       phase = .ready

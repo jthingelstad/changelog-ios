@@ -58,10 +58,34 @@ struct MapFilterTests {
     #expect(filter.notes(pins, found: []).isEmpty)
   }
 
-  @Test func aSearchKeepsNotesAlone() {
-    // As on the web's Map: a check-in has no words or tags.
+  @Test func wordsKeepNotesAlone() {
+    // As on the web's Map: a check-in has no words.
     #expect(MapFilter(search: .words("cabin")).stays(stays).isEmpty)
-    #expect(MapFilter(search: .tag("lake")).stays(stays).isEmpty)
+    #expect(!MapFilter(search: .words("cabin")).keepsCheckIns)
+  }
+
+  @Test func aTagKeepsTheCheckInsWithItToo() {
+    // Call 8 (Jamie, 2026-11-08): the tag filter keeps notes and check-ins.
+    var tagged = stays
+    tagged[1].tags = ["lake", "road-trip"]
+    tagged[1].tagNames = ["lake", "Road Trip"]
+    tagged[2].tags = ["lake"]
+    #expect(MapFilter(search: .tag("lake")).stays(tagged).map(\.id) == ["c2", "c1"])
+    #expect(MapFilter(year: 2026, search: .tag("lake")).stays(tagged).map(\.id) == ["c2"])
+    #expect(MapFilter(search: .tag("cabin")).stays(tagged).isEmpty)
+    #expect(MapFilter(checkIns: false, search: .tag("lake")).stays(tagged).isEmpty)
+    #expect(MapFilter(search: .tag("lake")).keepsCheckIns)
+  }
+
+  @Test func theTagMenuHasEachTagOnceByName() {
+    var tagged = stays
+    tagged[1].tags = ["road-trip"]
+    tagged[1].tagNames = ["Road Trip"]
+    let named = [Self.pin("n9", "2026-10-11", lat: 46.9, tags: ["road-trip", "🚗-lake"])]
+    var withNames = named
+    withNames[0].tagNames = ["road trip", "🚗 Lake"]
+    #expect(MapFilter.tags(tagged, pins + withNames).map(\.name) == ["🚗 Lake", "cabin", "lake", "Road Trip"])
+    #expect(MapFilter.tags([], []).isEmpty)
   }
 
   @Test func notesAtOneSpotShareADotNewestFirst() {
@@ -108,7 +132,11 @@ struct MapFilterTests {
     #expect(MapFilter(search: .words("first snow")).summary(stays: nil, notes: 2) == "2 notes with \u{201C}first snow\u{201D}.")
     #expect(MapFilter(year: 2025, search: .tag("lake")).summary(stays: nil, notes: 0) == "No notes tagged #lake in 2025.")
     #expect(MapFilter().summary(stays: nil, notes: nil) == "Turn on Check-ins or Notes to see them here.")
-    #expect(MapFilter(search: .tag("lake")).summary(stays: nil, notes: nil) == "A search finds notes: turn on Notes to see them.")
+    #expect(MapFilter(search: .words("lake")).summary(stays: nil, notes: nil) == "A search finds notes: turn on Notes to see them.")
+    #expect(MapFilter(search: .tag("lake")).summary(stays: nil, notes: nil) == "Turn on Check-ins or Notes to see them here.")
+    #expect(MapFilter(search: .tag("road-trip")).summary(stays: 2, notes: 3, tagName: "Road Trip") ==
+      "2 check-ins and 3 notes tagged Road Trip.")
+    #expect(MapFilter(search: .tag("lake")).summary(stays: 0, notes: nil) == "No check-ins tagged #lake.")
   }
 
   @Test func pinsReadAsTheAPIWritesThem() throws {
