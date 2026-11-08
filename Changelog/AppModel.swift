@@ -1679,9 +1679,18 @@ final class AppModel {
     return changed
   }
 
-  /// A page of the stays with a tag, newest first.
-  func checkIns(tagged key: String, before: String?) async throws(APIError) -> CheckInList {
-    try await reading { (client) async throws(APIError) in try await client.checkIns(before: before, tag: key) }
+  /// Every stay with a tag, newest first, a page at a time to the last, as
+  /// the web's tag page lists them all.
+  func checkIns(tagged key: String) async throws(APIError) -> [CheckIn] {
+    var stays: [CheckIn] = []
+    var before: String?
+    repeat {
+      let cursor = before
+      let page = try await reading { (client) async throws(APIError) in try await client.checkIns(before: cursor, tag: key) }
+      stays += page.items
+      before = page.next == cursor ? nil : page.next
+    } while before != nil
+    return stays
   }
 
   /// Remember this place: the name goes on the place, and this stop's own name

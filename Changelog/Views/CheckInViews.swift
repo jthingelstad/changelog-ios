@@ -345,6 +345,7 @@ private struct PlaceTagsView: View {
   let place: RememberedPlace
   let changed: (RememberedPlace) -> Void
   @State private var asking: Asking?
+  @State private var tagTyping = TagTyping()
   @State private var said: String?
   @State private var problem: String?
   @State private var busy = false
@@ -355,7 +356,7 @@ private struct PlaceTagsView: View {
     VStack(alignment: .leading, spacing: 8) {
       TagField(tags: place.tags, label: "Tags for \(place.name)",
                hint: "Each new check-in here gets these. Taking one off leaves the check-ins already here as they are.",
-               offer: model.tagRow, busy: busy,
+               offer: model.tagRow, busy: busy, typing: $tagTyping,
                add: { tag in Task { await send(Hashtags.merge(place.tags, [tag])) } },
                remove: { tag in Task { await send(place.tags.filter { $0.key != tag.key }) } })
       if let asking {
@@ -457,6 +458,7 @@ struct CheckInPage: View {
   @State private var deleteKey = RequestKey<String>()
   @State private var tagKey = RequestKey<String>()
   @State private var busy = false
+  @State private var tagTyping = TagTyping()
   @State private var tagging = false
 
   var body: some View {
@@ -500,7 +502,7 @@ struct CheckInPage: View {
       Text(meta).face(.meta).foregroundStyle(Color.ink3)
     }
     TagField(tags: stay.tagList, hint: "Tags group it with notes and Upcoming dates, like Road Trip.",
-             offer: model.tagRow, busy: tagging,
+             offer: model.tagRow, busy: tagging, typing: $tagTyping,
              add: { tag in Task { await retag(stay, Hashtags.merge(stay.tagList, [tag])) } },
              remove: { tag in Task { await retag(stay, stay.tagList.filter { $0.key != tag.key }) } })
     if let problem {

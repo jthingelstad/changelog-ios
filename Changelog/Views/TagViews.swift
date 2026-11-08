@@ -75,7 +75,8 @@ struct TagChip: View {
 /// stay ("Road Trip", "🚗 Lake"). It refuses a tag over 50 characters, a 21st
 /// tag, a comma and a line break, saying why (call 4). A tag already there by
 /// any spelling stays as it is. What a chip's removal does is the caller's: a
-/// note's #words leave its words too (call 1).
+/// note's #words leave its words too (call 1). What is typed is the caller's
+/// too, so a form's Save or Commit takes a tag typed without Return.
 struct TagField: View {
   let tags: [Tag]
   var label = "Tags"
@@ -85,11 +86,10 @@ struct TagField: View {
   /// Saving the last change, where each one saves: the box keeps what is
   /// typed until it is done.
   var busy = false
+  @Binding var typing: TagTyping
   let add: (Tag) -> Void
   let remove: (Tag) -> Void
 
-  @State private var typed = ""
-  @State private var problem: String?
   @FocusState private var focused: Bool
 
   var body: some View {
@@ -98,7 +98,7 @@ struct TagField: View {
         FlowLayout {
           ForEach(tags) { tag in
             TagChip(tag: tag, disabled: busy) {
-              problem = nil
+              typing.problem = nil
               remove(tag)
             }
           }
@@ -106,7 +106,7 @@ struct TagField: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
       }
-      TextField(label, text: $typed, prompt: Text(tags.isEmpty ? "Add a tag" : "Add another").foregroundStyle(Color.ink3))
+      TextField(label, text: $typing.text, prompt: Text(tags.isEmpty ? "Add a tag" : "Add another").foregroundStyle(Color.ink3))
         .face(.tag)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
@@ -116,7 +116,7 @@ struct TagField: View {
           commit()
           focused = true
         }
-        .onChange(of: typed) { _, _ in problem = nil }
+        .onChange(of: typing.text) { _, _ in typing.problem = nil }
         .onChange(of: focused) { _, now in if !now { commit() } }
         .accessibilityLabel(label)
         .accessibilityHint(hint ?? "")
@@ -126,7 +126,7 @@ struct TagField: View {
           HStack(spacing: 14) {
             ForEach(offered) { tag in
               Button(tag.name) {
-                typed = tag.name
+                typing.text = tag.name
                 commit()
               }
               .buttonStyle(QuietButtonStyle())
@@ -135,7 +135,7 @@ struct TagField: View {
           }
         }
       }
-      if let problem {
+      if let problem = typing.problem {
         Text(problem).face(.meta).foregroundStyle(Color.tangerineInk)
       } else if let hint, focused {
         Text(hint).face(.meta).foregroundStyle(Color.ink2)
@@ -146,7 +146,7 @@ struct TagField: View {
   /// While typing: the tags used before that begin with what is typed, or
   /// have a word that does, and aren't here yet.
   private var suggestions: [Tag] {
-    let start = typed.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }.lowercased()
+    let start = typing.text.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }.lowercased()
     guard focused, !start.isEmpty else { return [] }
     return offer.filter { tag in
       !tags.contains { $0.key == tag.key }
@@ -156,14 +156,36 @@ struct TagField: View {
   }
 
   private func commit() {
-    guard !busy, !typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-    switch Hashtags.adding(typed, to: tags) {
+    guard !busy else { return }
+    if case .added(let tag) = typing.take(into: tags) { add(tag) }
+  }
+}
+
+/// What is typed in a tags field and isn't a chip yet. The form around the
+/// field keeps it, so its Save or Commit takes a tag typed without Return
+/// rather than losing it (Codex on #57), as leaving the box does.
+struct TagTyping: Equatable {
+  var text = ""
+  /// Why the box kept what is typed, said under it.
+  var problem: String?
+
+  enum Taken: Equatable { case nothing, added(Tag), refused }
+
+  var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+  /// What is typed, as one more tag for `tags`: added, and the box empties;
+  /// nothing, for an empty box or a tag already there by any spelling; or
+  /// refused, and the box keeps it and says why (call 4).
+  mutating func take(into tags: [Tag]) -> Taken {
+    guard !isEmpty else { return .nothing }
+    switch Hashtags.adding(text, to: tags) {
     case .failure(let why):
       problem = why.said
+      return .refused
     case .success(let done):
       problem = nil
-      typed = ""
-      if let added = done.added { add(added) }
+      text = ""
+      return done.added.map(Taken.added) ?? .nothing
     }
   }
 }
@@ -342,7 +364,7 @@ struct TagPage: View {
       guard model.canRemind else { return [] }
       return try? await model.upcoming().entries.filter { $0.fields.tags.contains { $0.key == key } }
     }
-    let staysRead = Task { try? await model.checkIns(tagged: key, before: nil).items }
+    let staysRead = Task { try? await model.checkIns(tagged: key) }
     do throws(APIError) {
       let page = try await model.search(.tag(key), after: nil)
       let upcoming = await datesRead.value, checkIns = await staysRead.value

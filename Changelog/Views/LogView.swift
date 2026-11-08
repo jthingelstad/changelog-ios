@@ -14,6 +14,7 @@ struct LogView: View {
   @State private var deleting: ActivityItem?
   /// A held note whose Delete was tapped, waiting for the confirmation.
   @State private var discarding: OutboxItem?
+  @State private var tagTyping = TagTyping()
 
   var body: some View {
     @Bindable var model = model
@@ -51,7 +52,7 @@ struct LogView: View {
           // Its tags as chips, from the field and its #words, and a box for
           // one more, as the web's form has them; then the row.
           TagField(tags: model.draftChips, hint: "Tags can have spaces and emoji, like Road Trip. A #word in the note is a tag too.",
-                   offer: model.tagRow, add: model.addTag, remove: model.removeTag)
+                   offer: model.tagRow, typing: $tagTyping, add: model.addTag, remove: model.removeTag)
             .padding(.top, 8)
           TagRowView()
           if model.day != nil { DayMenu() }
@@ -74,6 +75,13 @@ struct LogView: View {
             ComposerTools()
             if !typeSize.isAccessibilitySize { Spacer() }
             Button("Commit") {
+              // A tag typed without Return goes with the note, or stays in
+              // its box saying why, and nothing is committed yet.
+              switch tagTyping.take(into: model.draftChips) {
+              case .refused: return
+              case .added(let tag): model.addTag(tag)
+              case .nothing: break
+              }
               Task {
                 await model.commit()
                 // A tall draft (a moment's, with its day and place) shrinks
@@ -429,6 +437,7 @@ struct EditNoteView: View {
   @State private var kept: EditFilesKept?
   /// Its tags field as edited: the tags its words don't carry. Nil until read.
   @State private var fieldTags: [Tag]?
+  @State private var tagTyping = TagTyping()
 
   /// Locked, the words of a note from elsewhere stay closed: what it says now,
   /// and a refused edit's own, which are that note's too.
@@ -479,7 +488,7 @@ struct EditNoteView: View {
               Section {
                 // Its #words are chips too: taking one off takes the word out
                 // of the note (call 1).
-                TagField(tags: Hashtags.chips(text, field: fieldTags), offer: model.tagRow,
+                TagField(tags: Hashtags.chips(text, field: fieldTags), offer: model.tagRow, typing: $tagTyping,
                          add: { tag in self.fieldTags = Hashtags.merge(fieldTags, [tag]) },
                          remove: { tag in
                            self.fieldTags = fieldTags.filter { $0.key != tag.key }
@@ -521,6 +530,9 @@ struct EditNoteView: View {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") {
+            // A tag typed without Return is saved too, or stays in its box
+            // saying why, and nothing is saved yet.
+            guard takeTyped(), canSave else { return }
             // Files taken off go for good: asked first.
             if refused == nil, !removing.isEmpty { confirming = true } else { save() }
           }
@@ -563,7 +575,19 @@ struct EditNoteView: View {
     // A refused edit saves its words from the newest revision, as ever.
     if refused != nil { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     guard let change else { return false }
-    return !change.isEmpty && change.refusal == nil
+    return (!change.isEmpty || !tagTyping.isEmpty) && change.refusal == nil
+  }
+
+  /// The tag typed and not yet a chip, as one, before a save: false when the
+  /// box refuses it.
+  private func takeTyped() -> Bool {
+    guard refused == nil, let fieldTags else { return true }
+    switch tagTyping.take(into: Hashtags.chips(text, field: fieldTags)) {
+    case .refused: return false
+    case .added(let tag): self.fieldTags = Hashtags.merge(fieldTags, [tag])
+    case .nothing: break
+    }
+    return true
   }
 
   private func save() {

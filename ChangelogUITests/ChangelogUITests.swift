@@ -214,7 +214,8 @@ final class ChangelogUITests: XCTestCase {
     XCTAssertTrue(versions.wait(for: \.isSelected, toEqual: true, timeout: 10), "Versions is back")
   }
 
-  /// A birthday added in Upcoming saves once, and a swipe deletes it.
+  /// A birthday added in Upcoming saves once, with the tag typed and never
+  /// entered with Return, and a swipe deletes it.
   @MainActor func testUpcoming() async throws {
     let app = launch()
     hideKeyboard(app)
@@ -228,11 +229,18 @@ final class ChangelogUITests: XCTestCase {
     expect(field, "the editor opens", in: app)
     field.tap()
     field.typeText(title)
+    // Save takes a tag still in its box (Codex on #57).
+    let tags = app.textFields["Tags"]
+    for _ in 0..<8 where !(tags.exists && tags.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    tags.tap()
+    tags.typeText("Road Trip")
     app.buttons["Save"].tap()
     let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
     expect(row, "the date is in the list", in: app)
     let saved = try await dates(titled: title)
     XCTAssertEqual(saved, 1, "saved once")
+    let tagged = try await Self.dateTags(titled: title, server: server, token: token)
+    XCTAssertEqual(tagged, ["Road Trip"], "the tag typed without Return is saved with the date")
     row.swipeLeft()
     app.buttons["Delete"].firstMatch.tap()
     // The confirmation's Delete, not the swipe's.
@@ -1428,8 +1436,20 @@ final class ChangelogUITests: XCTestCase {
   }
 
   private struct Dates: Decodable {
-    struct Entry: Decodable { let title: String }
+    struct Entry: Decodable {
+      let title: String
+      let tagNames: [String]?
+      enum CodingKeys: String, CodingKey { case title, tagNames = "tag_names" }
+    }
     let entries: [Entry]
+  }
+
+  /// The tags, by name, of the Upcoming date on the dev server with this title.
+  private static func dateTags(titled title: String, server: String, token: String) async throws -> [String]? {
+    var request = URLRequest(url: URL(string: "\(server)/v1/upcoming")!)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let (data, _) = try await URLSession.shared.data(for: request)
+    return try JSONDecoder().decode(Dates.self, from: data).entries.first { $0.title == title }?.tagNames
   }
 
   /// How many Upcoming dates on the dev server have this title.

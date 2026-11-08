@@ -277,6 +277,7 @@ struct UpcomingEditor: View {
   @Environment(\.dismiss) private var dismiss
   @State private var draft: UpcomingDraft
   @State private var problem: String?
+  @State private var tagTyping = TagTyping()
   @State private var saving = false
   @Binding var saveKey: RequestKey<UpcomingBatch>
   /// The city a dry run found for the destination typed, or why not.
@@ -362,7 +363,7 @@ struct UpcomingEditor: View {
           }
 
           Section {
-            TagField(tags: draft.tags, offer: model.tagRow,
+            TagField(tags: draft.tags, offer: model.tagRow, typing: $tagTyping,
                      add: { draft.tags.append($0) }, remove: { tag in draft.tags.removeAll { $0.key == tag.key } })
           } header: {
             SectionHead("Tags")
@@ -477,6 +478,13 @@ struct UpcomingEditor: View {
 
   private func save() async {
     problem = nil
+    // A tag typed without Return is saved too, or stays in its box saying
+    // why, and nothing is saved yet.
+    switch tagTyping.take(into: draft.tags) {
+    case .refused: return
+    case .added(let tag): draft.tags.append(tag)
+    case .nothing: break
+    }
     switch draft.batch(editing: target.entry) {
     case .failure(let problem):
       self.problem = problem.rawValue
