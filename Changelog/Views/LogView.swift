@@ -469,7 +469,7 @@ struct EditNoteView: View {
               if let change, change.words != nil, let refusal = change.refusal { SectionNote(refusal) }
             }
             if let note, refused == nil, model.canAddFiles {
-              EditFiles(note: note, removing: $removing, adding: $adding, thumbnails: $thumbnails,
+              EditFiles(note: note, kept: kept, removing: $removing, adding: $adding, thumbnails: $thumbnails,
                         importing: $importing, refusal: change?.words == nil ? change?.refusal : nil)
             }
           } else if failure == nil {
@@ -587,7 +587,8 @@ struct EditNoteView: View {
 /// The new files an edit holds in the queue's folder. Saved, they belong to
 /// the queued change; otherwise they go when the edit does, closed in any
 /// way (Cancel, a swipe, reading locking), and never while it is only covered
-/// by the camera.
+/// by the camera. An import still coming in holds it, so a file that lands
+/// after the edit closed goes with the rest (Codex on #51).
 final class EditFilesKept {
   private let outbox: Outbox
   var files: [QueuedFile] = []
@@ -608,6 +609,8 @@ final class EditFilesKept {
 private struct EditFiles: View {
   @Environment(AppModel.self) private var model
   let note: NoteDetail
+  /// Where each new file is recorded as it lands, closed or not.
+  let kept: EditFilesKept?
   @Binding var removing: Set<Int>
   @Binding var adding: [QueuedFile]
   @Binding var thumbnails: [UUID: CGImage]
@@ -742,9 +745,10 @@ private struct EditFiles: View {
     }
     let n = files.filter { $0.kind == "image" }.count + adding.filter(\.isPhoto).count + 1
     switch await model.keepPhoto(data, number: n) {
-    case .success(let kept):
-      adding.append(kept.file)
-      thumbnails[kept.file.id] = kept.thumbnail
+    case .success(let made):
+      kept?.files.append(made.file)
+      adding.append(made.file)
+      thumbnails[made.file.id] = made.thumbnail
       problem = nil
     case .failure(let refused): problem = refused.message
     }
@@ -758,6 +762,7 @@ private struct EditFiles: View {
     let n = files.filter { $0.kind == "audio" }.count + adding.filter(\.isRecording).count + 1
     switch await model.keepRecording(data, number: n) {
     case .success(let file):
+      kept?.files.append(file)
       adding.append(file)
       problem = nil
     case .failure(let refused): problem = refused.message
