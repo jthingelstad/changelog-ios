@@ -806,7 +806,10 @@ final class ChangelogUITests: XCTestCase {
     app = launch(as: reader, more: ["CHANGELOG_LOCK_ANSWER": "yes"])
     hideKeyboard(app)
     app.tabBars.buttons["Notes"].tap()
-    expect(app.descendants(matching: .any).matching(elsewhere).firstMatch, "unlocked, it reads", in: app, timeout: 30)
+    let unlocked = app.descendants(matching: .any).matching(elsewhere).firstMatch
+    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Today'")).firstMatch, "unlocked, Notes reads", in: app, timeout: 30)
+    for _ in 0..<8 where !unlocked.waitForExistence(timeout: 3) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
+    expect(unlocked, "unlocked, it reads", in: app, timeout: 15)
     turnLock(in: app, on: false)
     app.terminate()
     try await Self.revoke(reader, server: server)
@@ -910,6 +913,8 @@ final class ChangelogUITests: XCTestCase {
     for _ in 0..<12 where !(lock.exists && lock.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
     keep(app, on ? "The lock, off" : "The lock, on")
     XCTAssertTrue(lock.isHittable, "Settings offers the lock")
+    // Already so (a run that failed with it on, say): left as it is.
+    if lock.value as? String == (on ? "1" : "0") { return }
     // The row is the element; its switch is at the right-hand end.
     lock.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", on ? "1" : "0"), object: lock)
