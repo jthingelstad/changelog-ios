@@ -173,7 +173,7 @@ struct ActivityStop: Hashable {
   let id: String
 }
 
-/// A note by its day and id, as an activity row or a ring on the map knows it.
+/// A note by its day and id, as an activity row or a dot on the map knows it.
 struct ActivityNote: Hashable {
   let date: String
   let id: String
