@@ -173,6 +173,77 @@ struct DevServerTests {
     #expect(report.filed.first?.note.files == 1)
   }
 
+  /// Files put on and taken off a note already filed, in the order a
+  /// NoteChange gives, and a note with no words never left with no file.
+  @Test func filesOnAndOffAFiledNote() async throws {
+    let client = DevServer.client()
+    guard try await client.me().token.scopes.contains("media:write") else { return }
+    let folder = FileManager.default.temporaryDirectory.appending(path: "changelog dev " + UUID().uuidString, directoryHint: .isDirectory)
+    let outbox = Outbox(file: nil, files: folder)
+    let prepare: Outbox.Preparer = { item, folder throws(APIError) in try await client.prepare(item, files: folder) }
+    let send: Outbox.Sender = { item throws(APIError) in try await client.perform(item) }
+    let png = Self.png()
+    func photo(_ n: Int) throws -> QueuedFile {
+      let file = QueuedFile(type: "image/png", name: "Photo \(n).png", size: png.count)
+      try outbox.keep(png, as: file)
+      return file
+    }
+
+    try await outbox.enqueue(text: "Files on and off #devtest")
+    var report = await outbox.flush(prepare: prepare, send)
+    let worded = try #require(report.filed.first).note
+    var note = try await client.note(date: worded.date, id: worded.id)
+    try await outbox.enqueue(NoteChange(note, words: note.text, adding: [try photo(1), try photo(2)]).operations)
+    report = await outbox.flush(prepare: prepare, send)
+    #expect(report.stopped == nil && report.refused.isEmpty)
+    note = try await client.note(date: worded.date, id: worded.id)
+    #expect(note.media?.map(\.n) == [1, 2])
+
+    // New words and a file off together.
+    let stale = note
+    try await outbox.enqueue(NoteChange(note, words: "Files on and off, edited #devtest", removing: [1]).operations)
+    report = await outbox.flush(prepare: prepare, send)
+    #expect(report.stopped == nil && report.refused.isEmpty && report.sent.count == 2)
+    note = try await client.note(date: worded.date, id: worded.id)
+    #expect(note.media?.map(\.n) == [2])
+    #expect(note.text == "Files on and off, edited #devtest")
+    // From a revision since changed: the words are refused, and the file
+    // asked off with them stays on, held behind them; discarded, both go.
+    try await outbox.enqueue(NoteChange(stale, words: "Stale words #devtest", removing: [2]).operations)
+    report = await outbox.flush(prepare: prepare, send)
+    #expect(report.refused.count == 1 && report.sent.isEmpty)
+    #expect(await outbox.waiting.last?.status == Outbox.afterChange)
+    #expect(try await client.note(date: worded.date, id: worded.id).media?.map(\.n) == [2])
+    await outbox.discard(try #require(report.refused.first).id)
+    #expect(await outbox.waiting.isEmpty)
+    // A file already gone, taken off again, is done rather than refused.
+    try await outbox.enqueue(.removeFile(date: worded.date, id: worded.id, n: 1))
+    report = await outbox.flush(prepare: prepare, send)
+    #expect(report.refused.isEmpty && report.sent.count == 1)
+
+    // A note with no words: its one photo swapped for two others, one on
+    // before it comes off.
+    try await outbox.enqueue(.post(NotePost(text: "", writtenAt: Timestamp.string(.now), files: [try photo(3)])))
+    report = await outbox.flush(prepare: prepare, send)
+    let bare = try #require(report.filed.first).note
+    note = try await client.note(date: bare.date, id: bare.id)
+    #expect(NoteChange(note, words: "", removing: [1]).refusal != nil)
+    try await outbox.enqueue(NoteChange(note, words: "", adding: [try photo(4), try photo(5)], removing: [1]).operations)
+    report = await outbox.flush(prepare: prepare, send)
+    #expect(report.stopped == nil && report.refused.isEmpty && report.sent.count == 3)
+    note = try await client.note(date: bare.date, id: bare.id)
+    #expect(note.media?.map(\.n) == [2, 3])
+    // Its files taken off one by one, alone: Release Notes refuses the
+    // last, and it waits.
+    try await outbox.enqueue(.removeFile(date: bare.date, id: bare.id, n: 2))
+    try await outbox.enqueue(.removeFile(date: bare.date, id: bare.id, n: 3))
+    report = await outbox.flush(prepare: prepare, send)
+    #expect(report.sent.count == 1 && report.refused.count == 1)
+    #expect(try await client.note(date: bare.date, id: bare.id).media?.map(\.n) == [3])
+
+    for gone in [worded, bare] { try await client.deleteNote(date: gone.date, id: gone.id, idempotencyKey: UUID().uuidString.lowercased()) }
+  }
+
   /// API 1.4.0: the account and the token's id, this token's rows carrying
   /// it; and a note held for another account, its file prepared there, goes
   /// to this one only once moved, under its own key, its file posted again.

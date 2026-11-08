@@ -32,10 +32,17 @@ private actor Calls {
   init(_ outcomes: [Result<OutboxResult, APIError>]) { self.outcomes = outcomes }
   func prepare(_ item: OutboxItem) -> OutboxItem {
     prepared += 1
-    guard case .post(var post) = item.operation else { return item }
-    for i in post.files.indices { post.files[i].upload = String(repeating: "\(prepared)", count: 32) }
     var ready = item
-    ready.operation = .post(post)
+    switch item.operation {
+    case .post(var post):
+      for i in post.files.indices { post.files[i].upload = String(repeating: "\(prepared)", count: 32) }
+      ready.operation = .post(post)
+    case .attach(var attach):
+      for i in attach.files.indices { attach.files[i].upload = String(repeating: "\(prepared)", count: 32) }
+      ready.operation = .attach(attach)
+    default:
+      break
+    }
     return ready
   }
   func send(_ item: OutboxItem) throws(APIError) -> OutboxResult {
@@ -144,6 +151,224 @@ private func folder() -> URL {
     #expect(keys.count == 2 && keys[0] == item.idempotencyKey && keys[1] != item.idempotencyKey)
     #expect(report.refused.count == 1)
     #expect(await outbox.waiting.first?.refusal != nil)
+  }
+
+  @Test func filesAddedToAFiledNoteArePostedOnceAndResentAsTheyWere() async throws {
+    let outbox = Outbox(file: nil, files: folder())
+    let file = QueuedFile(type: "image/jpeg", name: "Photo 1.jpg", size: 5)
+    try outbox.keep(Data("BYTES".utf8), as: file)
+    let item = try await outbox.enqueue(.attach(NoteAttach(date: "2026-10-29", id: "n1", files: [file])))
+    #expect(item.files == [file] && item.changesFiles && !item.canMove && !item.isNote && item.text == nil)
+    #expect(item.changing?.date == "2026-10-29" && item.changing?.id == "n1")
+    let offline = APIError(status: 0, code: "network", message: "offline")
+    let ref = NoteRef(id: "n1", date: "2026-10-29", version: "4.5.137", revision: "r2", token: "Changelog", files: 2)
+    let calls = Calls([.failure(offline), .success(.edited(ref))])
+    let prepare: Outbox.Preparer = { item, _ throws(APIError) in await calls.prepare(item) }
+    _ = await outbox.flush(prepare: prepare) { item throws(APIError) in try await calls.send(item) }
+    let report = await outbox.flush(prepare: prepare) { item throws(APIError) in try await calls.send(item) }
+    #expect(await calls.prepared == 1)
+    let sent = await calls.sent
+    #expect(sent.map(\.idempotencyKey) == [item.idempotencyKey, item.idempotencyKey])
+    #expect(sent[0].operation == sent[1].operation && sent[0].files.allSatisfy { $0.upload != nil })
+    #expect(report.sent.map(\.result) == [.edited(ref)])
+    #expect(outbox.url(for: file).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } == false)
+  }
+
+  @Test func uploadsAFiledNoteFindsGoneAreMadeAgainOnce() async throws {
+    let outbox = Outbox(file: nil, files: folder())
+    let file = QueuedFile(type: "audio/mp4", name: "Voice memo.m4a", size: 5)
+    try outbox.keep(Data("BYTES".utf8), as: file)
+    let item = try await outbox.enqueue(.attach(NoteAttach(date: "2026-10-29", id: "n1", files: [file])))
+    let gone = APIError(status: 400, code: "invalid_request", message: "An upload isn't there.", field: "uploads")
+    let ref = NoteRef(id: "n1", date: "2026-10-29", version: "4.5.137", revision: "r2", token: "Changelog")
+    let calls = Calls([.failure(gone), .success(.edited(ref))])
+    let prepare: Outbox.Preparer = { item, _ throws(APIError) in await calls.prepare(item) }
+    let report = await outbox.flush(prepare: prepare) { item throws(APIError) in try await calls.send(item) }
+    #expect(await calls.prepared == 2)
+    let keys = await calls.sent.map(\.idempotencyKey)
+    #expect(keys.count == 2 && keys[0] == item.idempotencyKey && keys[1] != item.idempotencyKey)
+    #expect(report.sent.count == 1 && report.refused.isEmpty)
+  }
+
+  @Test func aSweepKeepsFilesWaitingToBeAddedToAFiledNote() async throws {
+    let outbox = Outbox(file: nil, files: folder())
+    let waiting = QueuedFile(type: "image/jpeg", name: "a.jpg", size: 1)
+    let stray = QueuedFile(type: "image/jpeg", name: "b.jpg", size: 1)
+    for f in [waiting, stray] { try outbox.keep(Data("x".utf8), as: f) }
+    try await outbox.enqueue(.attach(NoteAttach(date: "2026-10-29", id: "n1", files: [waiting])))
+    await outbox.sweep()
+    let exists = { (f: QueuedFile) in outbox.url(for: f).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } ?? false }
+    #expect(exists(waiting) && !exists(stray))
+  }
+
+  @Test func addingAndTakingOffFilesAsTheAPIAsks() async throws {
+    let answer = #"{"note":{"id":"n1","date":"2026-10-29","version":"4.5.137","revision":"r2","token":"Changelog","files":1}}"#
+    StubProtocol.set("files.test", .init(status: 200, body: answer))
+    let client = stubbedClient("files.test")
+    let upload = QueuedFile(type: "image/jpeg", name: "Photo 1.jpg", size: 5, upload: String(repeating: "u", count: 32))
+    let attach = OutboxItem(id: UUID(), operation: .attach(NoteAttach(date: "2026-10-29", id: "n1", files: [upload])),
+                            queuedAt: .now, attempts: 0, refusal: nil)
+    let off = OutboxItem(id: UUID(), operation: .removeFile(date: "2026-10-29", id: "n1", n: 2), queuedAt: .now, attempts: 0, refusal: nil)
+    let ref = NoteRef(id: "n1", date: "2026-10-29", version: "4.5.137", revision: "r2", token: "Changelog", files: 1)
+    #expect(try await client.perform(attach) == .edited(ref))
+    #expect(try await client.perform(off) == .edited(ref))
+    let requests = StubProtocol.requests("files.test")
+    #expect(requests.map(\.httpMethod) == ["POST", "DELETE"])
+    #expect(requests.map { $0.url?.path() } == ["/v1/notes/2026-10-29/n1/media", "/v1/notes/2026-10-29/n1/media/2"])
+    #expect(requests.map { $0.value(forHTTPHeaderField: "Idempotency-Key") } == [attach.idempotencyKey, off.idempotencyKey])
+    let body = try #require(requests[0].httpBody.flatMap { try JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+    let uploads = try #require(body["uploads"] as? [[String: String]])
+    #expect(uploads == [["upload": String(repeating: "u", count: 32), "type": "image/jpeg", "name": "Photo 1.jpg"]])
+    // A file gone already, or its note, is what was asked: done, never a refusal.
+    StubProtocol.set("files.test", .init(status: 404, body: #"{"error":{"code":"not_found","message":"No such file."}}"#))
+    #expect(try await client.perform(off) == .done)
+  }
+
+  @Test func anEditGoesWordsFirstThenFilesOffThenFilesOn() async throws {
+    let photo = QueuedFile(type: "image/jpeg", name: "Photo 1.jpg", size: 5)
+    let change = NoteChange(date: "2026-10-29", id: "n1", revision: "r1", wordsNow: "Old words", filesNow: 3,
+                            words: "New words", adding: [photo], removing: [3, 1])
+    #expect(change.operations == [
+      .edit(date: "2026-10-29", id: "n1", text: "New words", revision: "r1"),
+      .removeFile(date: "2026-10-29", id: "n1", n: 1),
+      .removeFile(date: "2026-10-29", id: "n1", n: 3),
+      .attach(NoteAttach(date: "2026-10-29", id: "n1", files: [photo]))
+    ])
+    #expect(change.refusal == nil && change.filesAfter == 2)
+    #expect(NoteChange(date: "2026-10-29", id: "n1", revision: "r1", wordsNow: "", filesNow: 1).isEmpty)
+    #expect(NoteChange(date: "2026-10-29", id: "n1", revision: "r1", wordsNow: "w", filesNow: 2, removing: [2]).operations
+      == [.removeFile(date: "2026-10-29", id: "n1", n: 2)])
+    let outbox = Outbox(file: nil, files: folder())
+    let queued = try await outbox.enqueue(change.operations, account: "a1")
+    #expect(await outbox.waiting.map(\.operation) == change.operations)
+    #expect(Set(queued.map(\.id)).count == 4 && queued.allSatisfy { $0.account == "a1" })
+  }
+
+  @Test func aNoteWithNoWordsKeepsAFileAtEveryStep() {
+    let photo = QueuedFile(type: "image/jpeg", name: "Photo 1.jpg", size: 5)
+    // Both of its files go for a new one: the last goes once the new one is on.
+    let swap = NoteChange(date: "2026-10-29", id: "n1", revision: "r1", wordsNow: "", filesNow: 2, adding: [photo], removing: [1, 2])
+    #expect(swap.operations == [
+      .removeFile(date: "2026-10-29", id: "n1", n: 1),
+      .attach(NoteAttach(date: "2026-10-29", id: "n1", files: [photo])),
+      .removeFile(date: "2026-10-29", id: "n1", n: 2)
+    ])
+    #expect(swap.refusal == nil)
+    // With words given first, its files can all go before the new one.
+    var worded = swap
+    worded.words = "Now with words"
+    #expect(worded.operations.map(\.removing) == [nil, 1, 2, nil])
+    // Some of its files kept: off first, as any note.
+    var partial = swap
+    partial.removing = [1]
+    #expect(partial.operations.map(\.removing) == [1, nil])
+    // A full set for its two: one on, the last old one off, then the rest,
+    // so the note holds at least one file and never more than it may.
+    let full = (0..<MediaType.maxFiles).map { QueuedFile(type: "image/jpeg", name: "Photo \($0).jpg", size: 5) }
+    var whole = swap
+    whole.adding = full
+    #expect(whole.refusal == nil)
+    #expect(whole.operations == [
+      .removeFile(date: "2026-10-29", id: "n1", n: 1),
+      .attach(NoteAttach(date: "2026-10-29", id: "n1", files: [full[0]])),
+      .removeFile(date: "2026-10-29", id: "n1", n: 2),
+      .attach(NoteAttach(date: "2026-10-29", id: "n1", files: Array(full.dropFirst())))
+    ])
+    for change in [swap, worded, partial, whole] {
+      var held = change.filesNow
+      for operation in change.operations {
+        switch operation {
+        case .removeFile: held -= 1
+        case .attach(let attach): held += attach.files.count
+        default: continue
+        }
+        #expect((1...MediaType.maxFiles).contains(held) || change.words != nil)
+      }
+      #expect(held == change.filesAfter)
+    }
+  }
+
+  @Test func aChangeSaysWhatReleaseNotesWouldRefuse() {
+    let note = NoteDetail(id: "n1", date: "2026-10-29", text: "Words", revision: "r1", writtenAt: nil, files: 1)
+    #expect(NoteChange(note, words: "Words").isEmpty)
+    #expect(NoteChange(note, words: "Words", removing: [1]).refusal == nil)
+    #expect(NoteChange(note, words: " \n").refusal?.contains("can change but not go") == true)
+    let photos = NoteDetail(id: "n2", date: "2026-10-29", text: "", revision: "r1", writtenAt: nil, files: 1)
+    // Blank where it was blank is no change to its words.
+    #expect(NoteChange(photos, words: " ").isEmpty)
+    #expect(NoteChange(photos, words: "", removing: [1]).refusal?.contains("keeps its last file") == true)
+    #expect(NoteChange(photos, words: "Now words", removing: [1]).refusal == nil)
+    let full = (0..<MediaType.maxFiles).map { QueuedFile(type: "image/jpeg", name: "Photo \($0).jpg", size: 5) }
+    #expect(NoteChange(photos, words: "", adding: full).refusal == "A note holds up to \(MediaType.maxFiles) files.")
+    #expect(NoteChange(photos, words: "", adding: full, removing: [1]).refusal == nil)
+  }
+
+  @Test func writesThatGoTogetherAreQueuedAllOrNone() async throws {
+    let dir = folder()
+    let file = dir.appending(path: "outbox.json")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let outbox = Outbox(file: file)
+    try await outbox.enqueue(.pins(["lake"]))
+    // The queue's file can't be written: nothing of the edit is kept.
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path(percentEncoded: false))
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path(percentEncoded: false)) }
+    let change = NoteChange(date: "2026-10-29", id: "n1", revision: "r1", wordsNow: "w", filesNow: 1, words: "x", removing: [1])
+    await #expect(throws: OutboxNotKept.self) { try await outbox.enqueue(change.operations) }
+    #expect(await outbox.waiting.map(\.operation) == [.pins(["lake"])])
+  }
+
+  @Test func aChangeGoesInOrderAndARefusalHoldsTheRest() async throws {
+    let dir = folder()
+    let file = dir.appending(path: "outbox.json")
+    let change = NoteChange(date: "2026-10-29", id: "n1", revision: "r1", wordsNow: "w", filesNow: 2, words: "x", removing: [1, 2])
+    let queued = try await Outbox(file: file).enqueue(change.operations, account: "a1")
+    #expect(queued.count == 3 && Set(queued.compactMap(\.group)).count == 1)
+    let alone = try await Outbox(file: file).enqueue(.pins(["lake"]), account: "a1")
+    #expect(alone.group == nil)
+    // The words were changed elsewhere: the files stay on until the words
+    // are fixed, and what stands alone still goes.
+    let changed = APIError(status: 409, code: "revision_mismatch", message: "Changed since it was read.", revision: "r2")
+    let calls = Calls([.failure(changed), .success(.done)])
+    var outbox = Outbox(file: file)
+    let report = await outbox.flush(for: .account("a1")) { item throws(APIError) in try await calls.send(item) }
+    #expect(await calls.sent.map(\.id) == [queued[0].id, alone.id])
+    #expect(report.refused.map(\.id) == [queued[0].id] && report.stopped == nil)
+    #expect(await outbox.waiting.map(\.status).suffix(2) == Array(repeating: Outbox.afterChange, count: 2))
+    // Still held after a relaunch: nothing goes.
+    outbox = Outbox(file: file)
+    let idle = Calls([])
+    _ = await outbox.flush(for: .account("a1")) { item throws(APIError) in try await idle.send(item) }
+    #expect(await idle.sent.isEmpty)
+    // Fixed, the words go and then the files come off, in order.
+    try await outbox.retry(queued[0].id, text: "x", revision: "r2")
+    let ref = NoteRef(id: "n1", date: "2026-10-29", version: "4.5.137", revision: "r3", token: "Changelog")
+    let fixed = Calls([.success(.edited(ref)), .success(.edited(ref)), .success(.edited(ref))])
+    _ = await outbox.flush(for: .account("a1")) { item throws(APIError) in try await fixed.send(item) }
+    #expect(await fixed.sent.map(\.operation) == [
+      .edit(date: "2026-10-29", id: "n1", text: "x", revision: "r2"),
+      .removeFile(date: "2026-10-29", id: "n1", n: 1),
+      .removeFile(date: "2026-10-29", id: "n1", n: 2)
+    ])
+    #expect(await outbox.waiting.isEmpty)
+  }
+
+  @Test func discardingAStepDiscardsTheRestOfItsChange() async throws {
+    let outbox = Outbox(file: nil, files: folder())
+    let photo = QueuedFile(type: "image/jpeg", name: "Photo 1.jpg", size: 5)
+    try outbox.keep(Data("BYTES".utf8), as: photo)
+    let change = NoteChange(date: "2026-10-29", id: "n1", revision: "r1", wordsNow: "w", filesNow: 2, words: "x",
+                            adding: [photo], removing: [1])
+    let queued = try await outbox.enqueue(change.operations)
+    let alone = try await outbox.enqueue(.pins(["lake"]))
+    // A later step goes alone, with what follows it; what came before stays.
+    await outbox.discard(queued[1].id)
+    #expect(await outbox.waiting.map(\.id) == [queued[0].id, alone.id])
+    #expect(outbox.url(for: photo).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } == false)
+    await outbox.discard(queued[0].id)
+    #expect(await outbox.waiting.map(\.id) == [alone.id])
+    // One write alone is only itself.
+    let single = try await outbox.enqueue([.pins(["dock"])])
+    #expect(single.first?.group == nil)
   }
 
   @Test func discardingANoteRemovesItsFiles() async throws {
@@ -359,5 +584,12 @@ private func folder() -> URL {
       #expect(Outbox.held(error) == "Waiting for room on this phone")
     }
     #expect(StubProtocol.requests("queue-unused-storage.test").isEmpty)
+  }
+}
+
+extension OutboxOperation {
+  /// The file a removal takes off, for checking an order.
+  fileprivate var removing: Int? {
+    if case .removeFile(_, _, let n) = self { n } else { nil }
   }
 }

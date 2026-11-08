@@ -940,7 +940,7 @@ final class AppModel {
     // A stop reported with the app off the screen changes nothing anyone sees.
     let onScreen = UIApplication.shared.applicationState == .active
     if report.sent.contains(where: { $0.item.isCheckIn }) { checkInChanges += 1 }
-    if report.sent.contains(where: { $0.item.text != nil || $0.result == .deleted || ($0.item.isCheckIn && onScreen) }) {
+    if report.sent.contains(where: { $0.item.text != nil || $0.item.changesFiles || $0.result == .deleted || ($0.item.isCheckIn && onScreen) }) {
       changes += 1
       await loadToday()
     }
@@ -1123,45 +1123,78 @@ final class AppModel {
   /// A photo from the library or the camera: JPEG, PNG, GIF and WebP as
   /// they are, anything else made a JPEG with its time and place kept.
   func addPhoto(_ data: Data?) async {
+    guard roomForFiles > 0 else {
+      problem = Self.tooManyFiles
+      return
+    }
+    switch await keepPhoto(data, number: draftFiles.filter(\.isPhoto).count + 1) {
+    case .success(let kept): await added(kept.file, thumbnail: kept.thumbnail)
+    case .failure(let refusal): problem = refusal.message
+    }
+  }
+
+  func addRecording(_ data: Data) async {
+    guard roomForFiles > 0 else {
+      problem = Self.tooManyFiles
+      return
+    }
+    switch await keepRecording(data, number: draftFiles.filter(\.isRecording).count + 1) {
+    case .success(let file): await added(file, thumbnail: nil)
+    case .failure(let refusal): problem = refusal.message
+    }
+  }
+
+  private func added(_ file: QueuedFile, thumbnail: CGImage?) async {
+    draftFiles.append(file)
+    thumbnails[file.id] = thumbnail
+    problem = nil
+    await draftStarted()
+  }
+
+  /// Why a file wasn't kept, in words for the person.
+  struct FileRefused: Error {
+    let message: String
+  }
+
+  static let tooManyFiles = "A note holds up to \(MediaType.maxFiles) files."
+
+  /// A photo kept in the queue's folder, ready for a note, with its small
+  /// copy: JPEG, PNG, GIF and WebP as they are, anything else made a JPEG
+  /// with its time and place kept. Nothing holds it until a note does.
+  func keepPhoto(_ data: Data?, number n: Int) async -> Result<(file: QueuedFile, thumbnail: CGImage?), FileRefused> {
     let made = await Task.detached { () -> (data: Data, type: String, thumbnail: CGImage?)? in
       guard let data, let photo = MediaType.photo(data) else { return nil }
       return (photo.data, photo.type, MediaType.thumbnail(photo.data))
     }.value
-    guard let made else {
-      problem = "That photo couldn't be read."
-      return
-    }
-    let n = draftFiles.filter(\.isPhoto).count + 1
-    await addFile(made.data, type: made.type, name: "Photo \(n).\(MediaType.fileExtension(made.type))", thumbnail: made.thumbnail)
+    guard let made else { return .failure(FileRefused(message: "That photo couldn't be read.")) }
+    return await keepFile(made.data, type: made.type, name: "Photo \(n).\(MediaType.fileExtension(made.type))")
+      .map { ($0, made.thumbnail) }
   }
 
-  func addRecording(_ data: Data) async {
-    let n = draftFiles.filter(\.isRecording).count + 1
-    await addFile(data, type: "audio/mp4", name: n == 1 ? "Voice memo.m4a" : "Voice memo \(n).m4a", thumbnail: nil)
+  /// A voice memo kept in the queue's folder, ready for a note.
+  func keepRecording(_ data: Data, number n: Int) async -> Result<QueuedFile, FileRefused> {
+    await keepFile(data, type: "audio/mp4", name: n == 1 ? "Voice memo.m4a" : "Voice memo \(n).m4a")
   }
 
-  private func addFile(_ data: Data, type: String, name: String, thumbnail: CGImage?) async {
-    guard roomForFiles > 0 else {
-      problem = "A note holds up to \(MediaType.maxFiles) files."
-      return
-    }
-    guard data.count <= MediaType.maxBytes else {
-      problem = "That file is over 50 MB, the most a note keeps."
-      return
-    }
+  private func keepFile(_ data: Data, type: String, name: String) async -> Result<QueuedFile, FileRefused> {
+    guard data.count <= MediaType.maxBytes else { return .failure(FileRefused(message: "That file is over 50 MB, the most a note keeps.")) }
     let file = QueuedFile(type: type, name: name, size: data.count)
     let outbox = self.outbox
     let kept = await Task.detached { () -> Bool in
       do { try outbox.keep(data, as: file); return true } catch { return false }
     }.value
-    guard kept else {
-      problem = Self.notKept
-      return
-    }
-    draftFiles.append(file)
-    thumbnails[file.id] = thumbnail
-    problem = nil
-    await draftStarted()
+    return kept ? .success(file) : .failure(FileRefused(message: Self.notKept))
+  }
+
+  /// Holds new files for an edit, and takes them off the phone if the edit
+  /// goes unsaved, however it goes.
+  func editFiles() -> EditFilesKept {
+    EditFilesKept(outbox: outbox)
+  }
+
+  /// New files taken off an edit before it is saved.
+  func removeKept(_ files: [QueuedFile]) {
+    outbox.removeFiles(files)
   }
 
   func remove(_ file: QueuedFile) {
@@ -1420,12 +1453,7 @@ final class AppModel {
 
   /// A change to this note waits to send, so what shows may be behind it.
   func hasChangeWaiting(_ note: NoteDetail) -> Bool {
-    waiting.contains { item in
-      switch item.operation {
-      case .edit(let date, let id, _, _), .delete(let date, let id): date == note.date && id == note.id
-      default: false
-      }
-    }
+    waiting.contains { $0.changing.map { $0.date == note.date && $0.id == note.id } ?? false }
   }
 
   /// This note's delete waits to send, so it is gone as far as the owner goes.
@@ -1467,10 +1495,25 @@ final class AppModel {
     }
   }
 
-  /// Queues an edit from the revision read. True once it is safely queued:
-  /// a refusal (changed since) shows under Waiting to send.
-  func save(_ note: NoteDetail, text: String) async -> Bool {
-    await queue(.edit(date: note.date, id: note.id, text: text, revision: note.revision))
+  /// Queues an edit to a note's words and files, all of it or none, and
+  /// sends it. `queued` runs the moment it is safely queued, before it goes:
+  /// from then on its new files are the queue's. False when the phone
+  /// couldn't keep it; a refusal shows under Waiting to send.
+  func change(_ change: NoteChange, queued: () -> Void = {}) async -> Bool {
+    guard !change.isEmpty else {
+      queued()
+      return true
+    }
+    do {
+      try await outbox.enqueue(change.operations, account: account)
+    } catch {
+      problem = Self.notKept
+      return false
+    }
+    queued()
+    waiting = await outbox.waiting
+    await send()
+    return true
   }
 
   func delete(_ item: ActivityItem) async {

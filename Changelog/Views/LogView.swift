@@ -1,4 +1,5 @@
 import ChangelogKit
+import PhotosUI
 import SwiftUI
 
 /// The home screen: today's version, the box, the tag row, Commit, and what
@@ -285,6 +286,8 @@ struct WaitingRow: View {
     // An edit holds a note's whole words, and nothing here says whose note.
     case .edit(_, _, let text, _): model.readingLocked ? "An edit to a note" : "Edit: \(text)"
     case .delete(let date, _): "Delete a note from \(date)"
+    case .attach(let attach): "Add \(Self.count(attach.files)) to a note from \(attach.date)"
+    case .removeFile(let date, _, _): "Take a file off a note from \(date)"
     case .pins(let pinned): pinned.isEmpty ? "Unpin every tag" : "Pin " + pinned.map { "#\($0)" }.joined(separator: " ")
     case .post(let post):
       post.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.count(post.files) : post.text
@@ -408,7 +411,17 @@ struct EditNoteView: View {
   @State private var failure: APIError?
   @State private var text: String
   @State private var saving = false
+  /// Photos, a camera shot or a recording still coming in: Save waits, so
+  /// the change goes with every file picked (Codex on #51).
+  @State private var importing = 0
   @State private var lockedOut = false
+  /// The files an edit takes off, by number, and the new ones it puts on,
+  /// kept in the queue's folder until it is saved or cancelled.
+  @State private var removing: Set<Int> = []
+  @State private var adding: [QueuedFile] = []
+  @State private var thumbnails: [UUID: CGImage] = [:]
+  @State private var confirming = false
+  @State private var kept: EditFilesKept?
 
   /// Locked, the words of a note from elsewhere stay closed: what it says now,
   /// and a refused edit's own, which are that note's too.
@@ -450,7 +463,15 @@ struct EditNoteView: View {
                 .foregroundStyle(Color.ink2)
             }
           } else if !closed, note != nil || refused != nil {
-            TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
+            Section {
+              TextField("Note", text: $text, axis: .vertical).lineLimit(3...20)
+            } footer: {
+              if let change, change.words != nil, let refusal = change.refusal { SectionNote(refusal) }
+            }
+            if let note, refused == nil, model.canAddFiles {
+              EditFiles(note: note, kept: kept, removing: $removing, adding: $adding, thumbnails: $thumbnails,
+                        importing: $importing, refusal: change?.words == nil ? change?.refusal : nil)
+            }
           } else if failure == nil {
             ProgressView()
           }
@@ -468,33 +489,71 @@ struct EditNoteView: View {
         .paperRows()
       }
       .paperForm()
+      // Saving, until the change is queued: nothing on the sheet may take
+      // off a file the change goes with, or close it (Codex on #51).
+      .disabled(saving)
+      .interactiveDismissDisabled(saving)
       .navigationTitle(title)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") {
-            guard let note else { return }
-            saving = true
-            Task {
-              var kept = false
-              if let refused {
-                kept = await model.retry(refused, text: text, revision: note.revision)
-              } else {
-                kept = await model.save(note, text: text)
-              }
-              if kept { dismiss() }
-              saving = false
-            }
+            // Files taken off go for good: asked first.
+            if refused == nil, !removing.isEmpty { confirming = true } else { save() }
           }
-          .disabled(note == nil || saving || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .disabled(!canSave)
         }
       }
-      .task { await read() }
+      .confirmationDialog(removing.count == 1 ? "Take this file off the note?" : "Take \(removing.count) files off the note?",
+                          isPresented: $confirming, titleVisibility: .visible) {
+        Button(removing.count == 1 ? "Take It Off" : "Take Them Off", role: .destructive) { save() }
+      } message: {
+        Text(note?.source == "email"
+             ? "Each goes with its transcript or description. A file that came by email stays in that email. This can't be undone."
+             : "Each goes with its transcript or description. This can't be undone.")
+      }
+      .task {
+        if kept == nil { kept = model.editFiles() }
+        // Once: back from the camera, the words typed stay.
+        if note == nil, !lockedOut { await read() }
+      }
+      .onChange(of: adding) { _, files in kept?.files = files }
       // Locked with this open: gone with the rest of reading, unless it's
       // this token's own note, which stays as it always has.
       .onChange(of: model.readingLocked) { _, locked in
         if locked, note?.mine != true { dismiss() }
       }
+    }
+  }
+
+  /// The edit as it stands, from the note read.
+  private var change: NoteChange? {
+    note.map { NoteChange($0, words: text, adding: adding, removing: removing) }
+  }
+
+  private var canSave: Bool {
+    guard note != nil, !saving, importing == 0 else { return false }
+    // A refused edit saves its words from the newest revision, as ever.
+    if refused != nil { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    guard let change else { return false }
+    return !change.isEmpty && change.refusal == nil
+  }
+
+  private func save() {
+    guard let note else { return }
+    saving = true
+    Task {
+      if let refused {
+        if await model.retry(refused, text: text, revision: note.revision) { dismiss() }
+      } else if let change {
+        // Queued, the change holds the new files and the sheet closes while
+        // it goes, so nothing here can take them off under it.
+        _ = await model.change(change) {
+          kept?.saved = true
+          dismiss()
+        }
+      }
+      saving = false
     }
   }
 
@@ -522,6 +581,209 @@ struct EditNoteView: View {
       error.signedOut ? "Sign in again to change this note."
         : error.status == 0 ? "Couldn't reach Release Notes to read this note. Try again in a moment." : error.message
     }
+  }
+}
+
+/// The new files an edit holds in the queue's folder. Saved, they belong to
+/// the queued change; otherwise they go when the edit does, closed in any
+/// way (Cancel, a swipe, reading locking), and never while it is only covered
+/// by the camera. An import still coming in holds it, so a file that lands
+/// after the edit closed goes with the rest (Codex on #51).
+final class EditFilesKept {
+  private let outbox: Outbox
+  var files: [QueuedFile] = []
+  var saved = false
+
+  init(outbox: Outbox) {
+    self.outbox = outbox
+  }
+
+  deinit {
+    if !saved { outbox.removeFiles(files) }
+  }
+}
+
+/// A note's files as an edit changes them: each it has, to take off or keep,
+/// and new ones to put on from Photos, the camera or the recorder. Nothing
+/// changes until the edit is saved.
+private struct EditFiles: View {
+  @Environment(AppModel.self) private var model
+  let note: NoteDetail
+  /// Where each new file is recorded as it lands, closed or not.
+  let kept: EditFilesKept?
+  @Binding var removing: Set<Int>
+  @Binding var adding: [QueuedFile]
+  @Binding var thumbnails: [UUID: CGImage]
+  /// How many imports are still coming in.
+  @Binding var importing: Int
+  /// Why Release Notes would refuse the files as they stand.
+  let refusal: String?
+  @State private var picks: [PhotosPickerItem] = []
+  @State private var camera = false
+  @State private var recording = false
+  @State private var problem: String?
+
+  private var files: [NoteFileEntry] { note.media ?? [] }
+  private var room: Int { MediaType.maxFiles - (files.count - removing.count + adding.count) }
+
+  var body: some View {
+    Section {
+      ForEach(files) { file in
+        let off = removing.contains(file.n)
+        HStack(spacing: 12) {
+          Group {
+            if file.kind == "image" {
+              NoteThumb(file: file, note: note)
+            } else {
+              Self.icon(file.kind == "audio" ? "waveform" : "doc")
+            }
+          }
+          .frame(width: 44, height: 44)
+          .opacity(off ? 0.4 : 1)
+          Text(Self.name(file))
+            .strikethrough(off)
+            .foregroundStyle(off ? Color.ink3 : Color.ink)
+            .lineLimit(1)
+          Spacer(minLength: 8)
+          Button(off ? "Keep" : "Take off") {
+            if off { removing.remove(file.n) } else { removing.insert(file.n) }
+          }
+          .buttonStyle(QuietButtonStyle(color: off ? .cobalt : .tangerineInk))
+          .accessibilityLabel(off ? "Keep \(Self.name(file))" : "Take off \(Self.name(file))")
+        }
+        .accessibilityElement(children: .contain)
+      }
+      ForEach(adding) { file in
+        HStack(spacing: 12) {
+          Group {
+            if let thumbnail = thumbnails[file.id] {
+              Image(decorative: thumbnail, scale: 1).resizable().scaledToFill()
+            } else {
+              Self.icon(file.isRecording ? "waveform" : "doc")
+            }
+          }
+          .frame(width: 44, height: 44)
+          .clipShape(.rect(cornerRadius: 6))
+          VStack(alignment: .leading, spacing: 0) {
+            Text(file.name).foregroundStyle(Color.ink).lineLimit(1)
+            Text("New").face(.meta).foregroundStyle(Color.ink3)
+          }
+          Spacer(minLength: 8)
+          Button("Take off") {
+            adding.removeAll { $0.id == file.id }
+            thumbnails[file.id] = nil
+            model.removeKept([file])
+          }
+          .buttonStyle(QuietButtonStyle(color: .tangerineInk))
+          .accessibilityLabel("Take off \(file.name)")
+        }
+        .accessibilityElement(children: .contain)
+      }
+      HStack(spacing: 24) {
+        PhotosPicker(selection: $picks, maxSelectionCount: max(1, room), matching: .images, preferredItemEncoding: .compatible) {
+          Label("Photos", systemImage: "photo.on.rectangle")
+        }
+        .accessibilityLabel("Add photos")
+        .accessibilityIdentifier("edit.addPhotos")
+        Button("Camera", systemImage: "camera") { camera = true }
+          .accessibilityLabel("Take a photo")
+          .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+        Button("Record", systemImage: "mic") { recording = true }
+          .accessibilityLabel("Record a voice memo")
+      }
+      .buttonStyle(QuietButtonStyle())
+      .disabled(room <= 0)
+      // On the one row: a Section's modifiers can go on each of its rows.
+      .onChange(of: picks) { _, items in
+        guard !items.isEmpty else { return }
+        picks = []
+        importing += 1
+        Task {
+          for item in items { await keepPhoto(try? await item.loadTransferable(type: Data.self)) }
+          importing -= 1
+        }
+      }
+      .fullScreenCover(isPresented: $camera) {
+        CameraView { data in
+          camera = false
+          guard let data else { return }
+          importing += 1
+          Task {
+            await keepPhoto(data)
+            importing -= 1
+          }
+        }
+        .ignoresSafeArea()
+      }
+      .sheet(isPresented: $recording) {
+        RecorderView { data in
+          importing += 1
+          Task {
+            await keepRecording(data)
+            importing -= 1
+          }
+        }
+          .presentationDetents([.medium]).presentationBackground(Color.paper)
+      }
+    } header: {
+      SectionHead("Files")
+    } footer: {
+      if importing > 0 {
+        SectionNote("Getting the new files ready…")
+      } else if let line = problem ?? refusal {
+        SectionNote(line)
+      } else if !removing.isEmpty {
+        SectionNote("A file taken off goes when you save, with its transcript or description.")
+      }
+    }
+  }
+
+  private func keepPhoto(_ data: Data?) async {
+    guard room > 0 else {
+      problem = AppModel.tooManyFiles
+      return
+    }
+    let n = files.filter { $0.kind == "image" }.count + adding.filter(\.isPhoto).count + 1
+    switch await model.keepPhoto(data, number: n) {
+    case .success(let made):
+      kept?.files.append(made.file)
+      adding.append(made.file)
+      thumbnails[made.file.id] = made.thumbnail
+      problem = nil
+    case .failure(let refused): problem = refused.message
+    }
+  }
+
+  private func keepRecording(_ data: Data) async {
+    guard room > 0 else {
+      problem = AppModel.tooManyFiles
+      return
+    }
+    let n = files.filter { $0.kind == "audio" }.count + adding.filter(\.isRecording).count + 1
+    switch await model.keepRecording(data, number: n) {
+    case .success(let file):
+      kept?.files.append(file)
+      adding.append(file)
+      problem = nil
+    case .failure(let refused): problem = refused.message
+    }
+  }
+
+  /// What a file is called here: its own name, or what it is.
+  static func name(_ file: NoteFileEntry) -> String {
+    if let name = file.name, !name.isEmpty { return name }
+    return switch file.kind {
+    case "image": "Photo \(file.n)"
+    case "audio": "Voice memo \(file.n)"
+    default: "File \(file.n)"
+    }
+  }
+
+  private static func icon(_ symbol: String) -> some View {
+    Image(systemName: symbol)
+      .foregroundStyle(Color.ink3)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color.ink3.opacity(0.12), in: .rect(cornerRadius: 6))
   }
 }
 

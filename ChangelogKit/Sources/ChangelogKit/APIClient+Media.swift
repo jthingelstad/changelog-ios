@@ -68,10 +68,15 @@ public extension APIClient {
     }
   }
 
-  /// Adds uploads to a note this token wrote.
+  /// Adds uploads to a note this token wrote, or any note with `notes:all`.
   func addFiles(date: String, id: String, uploads: [UploadRef], idempotencyKey: String) async throws(APIError) -> NoteReceipt {
     struct Body: Encodable { var uploads: [UploadRef] }
     return try await send("POST", "v1/notes/\(date)/\(id)/media", body: Body(uploads: uploads), idempotencyKey: idempotencyKey)
+  }
+
+  /// Takes one file off a note, by its number. The others keep theirs.
+  func removeFile(date: String, id: String, n: Int, idempotencyKey: String) async throws(APIError) -> NoteReceipt {
+    try await send("DELETE", "v1/notes/\(date)/\(id)/media/\(n)", idempotencyKey: idempotencyKey)
   }
 
   /// Names the spot the phone is at, with the businesses nearby. Nothing is
