@@ -33,7 +33,8 @@ there first, never work around it here.
   signing out), `QuickNote` (a note sent from outside the app's screens,
   within a deadline, else left for the app), `Moment` (a moment picked in
   Apple's Journaling Suggestions, as plain values, and what it puts in the
-  draft) and `WidgetSnapshot` (what the widgets show, one day per local
+  draft), `Pages` (a list read a page at a time to the last, never the same
+  cursor twice; every such read uses it) and `WidgetSnapshot` (what the widgets show, one day per local
   midnight). It has its own tests:
   `swift test --package-path ChangelogKit`.
 - `Changelog/` is the SwiftUI app: `AppModel` holds the state, `Views/` the
@@ -187,10 +188,9 @@ there first, never work around it here.
   Rows, a check-in's page and the map open with reading locked (Jamie's
   call): check-ins show there, notes only once reading is open; capture is never locked. The privacy page says this, and the written
   reason for Always that Beta App Review reads is in `docs/DISTRIBUTION.md`.
-- The visits test's file (`VisitsTest`) stays read-only, for the owner to read,
-  share and delete, until Jamie decides what happens to it. Nothing writes to
-  it and nothing in it goes to Release Notes. It goes when signing out, as the
-  test promised; check-ins stay on the account.
+- The visits test is gone (Jamie, 2026-11-09, the audit plan: "removing the
+  iPhone visits test"). The file it left on a phone is deleted as the app
+  starts.
 - A moment only fills the draft: nothing is sent until the person
   commits. Its photos go through `addPhoto` within the draft's room, its
   place through the same Here naming as the location button, once a pick,

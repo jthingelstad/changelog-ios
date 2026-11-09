@@ -162,8 +162,7 @@ memo and a transcript.
     still started it and the stop arrived. A row opens its page locked too:
     name it, take the name off, Remember it, Write about this, Delete. Settings,
     Remembered places: rename and forget one. Delete all check-ins, and the
-    places stay. Sign out: the switch goes off, check-ins stay on the web, and
-    "Visits from the test" has gone.
+    places stay. Sign out: the switch goes off, and check-ins stay on the web.
 
 24. **The Check In control and the map.** Add "Check In" to Control Center, the
     Lock Screen and the Action Button. Each press opens Activity and says

@@ -419,12 +419,15 @@ private struct VoiceMemoPlayer: View {
       }
     }
     // The line follows the sound while it plays, and goes back to the start
-    // once it ends.
+    // once it ends. Stopped short (a call, the app put away), it stays where
+    // it stopped, and Play goes on from there. iOS puts a player that played
+    // to the end back at 0.
     .task(id: playing) {
       while playing, !Task.isCancelled {
         guard let player, player.isPlaying else {
           playing = false
-          position = 0
+          let at = player?.currentTime ?? 0
+          position = at < (player?.duration ?? 0) - 0.25 ? at : 0
           release()
           return
         }

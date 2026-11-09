@@ -695,29 +695,6 @@ final class ChangelogUITests: XCTestCase {
     try await Self.deleteCheckIns(server: server, token: token)
   }
 
-  /// What the visits test left on a phone stays readable and deletable, and
-  /// nothing goes up. `CHANGELOG_OLD_VISITS` makes the file as the test did.
-  @MainActor func testVisitsFromTheTest() throws {
-    let app = launch(more: ["CHANGELOG_OLD_VISITS": "1"])
-    hideKeyboard(app)
-    app.tabBars.buttons["Settings"].tap()
-    let page = app.buttons["Visits from the test"]
-    for _ in 0..<12 where !(page.exists && page.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
-    expect(page, "the test's file is still there", in: app)
-    page.tap()
-    expect(app.staticTexts["1 stop over 1 day"], "it reads as it did", in: app, timeout: 15)
-    keep(app, "Visits from the test")
-    let delete = app.buttons["Delete them all"]
-    for _ in 0..<6 where !(delete.exists && delete.isHittable) { app.collectionViews.firstMatch.swipeUp(velocity: .slow) }
-    delete.tap()
-    let confirm = app.buttons.matching(identifier: "Delete").firstMatch
-    expect(confirm, "deleting asks first", in: app)
-    confirm.tap()
-    expect(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Nothing here'")).firstMatch, "they went", in: app, timeout: 15)
-    app.navigationBars.buttons.firstMatch.tap()
-    XCTAssertFalse(page.waitForExistence(timeout: 3), "with the file gone, Settings stops offering it")
-  }
-
   /// A widget's tap (or the New Note control) opens Log from any tab, with
   /// the keyboard up.
   @MainActor func testANewNoteLink() throws {

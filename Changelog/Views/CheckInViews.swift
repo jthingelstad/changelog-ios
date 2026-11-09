@@ -55,9 +55,6 @@ struct CheckInSection: View {
       if model.me?.token.changesAll == true {
         Button("Delete all check-ins", role: .destructive) { confirmDelete = true }
       }
-      if VisitsTest.hasFile {
-        NavigationLink("Visits from the test") { VisitsTestPage() }
-      }
     } header: {
       SectionHead("Check-ins")
     } footer: {

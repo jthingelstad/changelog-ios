@@ -423,7 +423,6 @@ final class AppModel {
     unlocked = false
     PreviewFiles.sweep()
     CheckInRecorder.shared.forget()
-    VisitsTest.forget()
     versions = [:]
     todayGeneration += 1
     changes += 1
@@ -1647,16 +1646,14 @@ final class AppModel {
   /// since merged with one that began before midnight. Nil once it has gone.
   func checkIn(day: String, id: String) async throws(APIError) -> CheckIn? {
     let from = Day.date(day).flatMap { Calendar.current.date(byAdding: .day, value: -1, to: $0) }.map(Day.string) ?? day
-    var before: String?
-    repeat {
-      let cursor = before
-      let page = try await reading { (client) async throws(APIError) in
-        try await client.checkIns(from: from, to: day, before: cursor)
-      }
-      if let stay = page.items.first(where: { $0.answers(to: id) }) { return stay }
-      before = page.next
-    } while before != nil
-    return nil
+    var stay: CheckIn?
+    try await Pages.read({ (cursor) async throws(APIError) in
+      try await reading { (client) async throws(APIError) in try await client.checkIns(from: from, to: day, before: cursor) }
+    }, next: \.next) { page in
+      stay = page.items.first { $0.answers(to: id) }
+      return stay == nil
+    }
+    return stay
   }
 
   /// A name on this stay alone, or nil to take its own name off. At once, as
@@ -1683,13 +1680,12 @@ final class AppModel {
   /// the web's tag page lists them all.
   func checkIns(tagged key: String) async throws(APIError) -> [CheckIn] {
     var stays: [CheckIn] = []
-    var before: String?
-    repeat {
-      let cursor = before
-      let page = try await reading { (client) async throws(APIError) in try await client.checkIns(before: cursor, tag: key) }
+    try await Pages.read({ (cursor) async throws(APIError) in
+      try await reading { (client) async throws(APIError) in try await client.checkIns(before: cursor, tag: key) }
+    }, next: \.next) { page in
       stays += page.items
-      before = page.next == cursor ? nil : page.next
-    } while before != nil
+      return true
+    }
     return stays
   }
 
