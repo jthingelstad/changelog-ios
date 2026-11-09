@@ -12,9 +12,10 @@ struct ChangelogApp: App {
     // iOS can start the app just to deliver a visit, with no window: this has
     // to be listening, and the queue ready to take it.
     CheckInRecorder.shared.attach { await model.report($0) }
-    #if DEBUG
-    VisitsTest.standIn()
-    #endif
+    // The visits test's file, which nothing shows since the test went
+    // (Jamie, 2026-11-09). Before the first unlock it can't go: next time.
+    try? FileManager.default.removeItem(atPath: URL.applicationSupportDirectory
+      .appending(path: "Visits", directoryHint: .isDirectory).path(percentEncoded: false))
   }
 
   var body: some Scene {

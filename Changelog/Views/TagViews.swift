@@ -364,7 +364,10 @@ struct TagPage: View {
       guard model.canRemind else { return [] }
       return try? await model.upcoming().entries.filter { $0.fields.tags.contains { $0.key == key } }
     }
-    let staysRead = Task { try? await model.checkIns(tagged: key) }
+    let staysRead = Task { () -> [CheckIn]? in
+      guard model.hasActivity else { return [] }
+      return try? await model.checkIns(tagged: key)
+    }
     do throws(APIError) {
       let page = try await model.search(.tag(key), after: nil)
       let upcoming = await datesRead.value, checkIns = await staysRead.value

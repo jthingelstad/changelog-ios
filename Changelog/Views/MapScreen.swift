@@ -34,7 +34,15 @@ struct MapScreen: View {
   /// Every page of notes has come since reading opened.
   @State private var notesRead = false
   @State private var finding = false
-  @State private var problem: String?
+  /// Each read's last error, kept apart so one read that works doesn't hide
+  /// another that failed; each clears its own once it works.
+  @State private var stayProblem: String?
+  @State private var noteProblem: String?
+  @State private var findProblem: String?
+  /// Each read counts up as it starts: one overtaken (and cancelled) leaves
+  /// its flag to the read that took its place.
+  @State private var stayReads = 0
+  @State private var noteReads = 0
   /// Try again counts up, and every read starts again through its own task.
   @State private var retries = 0
   @State private var chosen: MapChoice?
@@ -236,12 +244,16 @@ struct MapScreen: View {
     return tagPicked.name
   }
 
+  private var problem: String? { stayProblem ?? noteProblem ?? findProblem }
+
   @ViewBuilder private func status(stays: Int, notes: Int) -> some View {
     if let problem {
       HStack(spacing: 12) {
         Text(problem).face(.hint).foregroundStyle(Color.tangerineInk)
         Button("Try again") {
-          self.problem = nil
+          stayProblem = nil
+          noteProblem = nil
+          findProblem = nil
           retries += 1
         }
           .buttonStyle(QuietButtonStyle())
@@ -280,53 +292,60 @@ struct MapScreen: View {
   /// has them all.
   private func readStays() async {
     guard model.hasActivity else { return }
+    stayReads += 1
+    let generation = stayReads
     readingStays = true
-    problem = nil
-    defer { readingStays = false }
+    defer { if generation == stayReads { readingStays = false } }
     var read: [CheckIn] = []
-    var before: String?
     do {
-      repeat {
-        let page = try await model.checkInPage(before: before)
-        guard !Task.isCancelled else { return }
+      try await Pages.read({ (before) async throws(APIError) in try await model.checkInPage(before: before) },
+                           next: \.next) { page in
+        guard !Task.isCancelled else { return false }
         read += page.items
         if read.count > stays.count { stays = read }
-        before = page.next
-      } while before != nil
+        return true
+      }
+      guard !Task.isCancelled else { return }
       stays = read
       staysRead = true
+      stayProblem = nil
     } catch {
       guard !Task.isCancelled else { return }
-      problem = error.message
+      stayProblem = error.message
     }
   }
 
   /// Every note with a place of its own, while reading is open. Locked, they go.
   private func readNotes() async {
+    noteReads += 1
+    let generation = noteReads
     guard model.readingOpen else {
       pins = []
       found = nil
       foundFor = nil
       notesRead = false
+      readingNotes = false
+      noteProblem = nil
       return
     }
     readingNotes = true
-    defer { readingNotes = false }
+    defer { if generation == noteReads { readingNotes = false } }
     var read: [NotePin] = []
-    var after: String?
     do {
-      repeat {
-        let page = try await model.mapPins(nil, after: after)
-        guard !Task.isCancelled else { return }
+      try await Pages.read({ (after) async throws(APIError) in try await model.mapPins(nil, after: after) },
+                           next: \.next) { page in
+        guard !Task.isCancelled else { return false }
         read += page.pins
         if read.count > pins.count { pins = read }
-        after = page.next
-      } while after != nil
+        return true
+      }
+      guard !Task.isCancelled else { return }
       pins = read
       notesRead = true
+      noteProblem = nil
     } catch {
       guard !Task.isCancelled else { return }
-      problem = error.message
+      noteProblem = error.message
     }
   }
 
@@ -339,6 +358,7 @@ struct MapScreen: View {
       found = nil
       foundFor = nil
       finding = false
+      findProblem = nil
       return
     }
     if foundFor != search { found = nil }
@@ -346,21 +366,21 @@ struct MapScreen: View {
     // A search overtaken leaves this to the one that took its place.
     defer { if !Task.isCancelled { finding = false } }
     var keys: Set<String> = []
-    var after: String?
     do {
-      repeat {
-        let page = try await model.mapPins(search, after: after)
-        guard !Task.isCancelled else { return }
+      try await Pages.read({ (after) async throws(APIError) in try await model.mapPins(search, after: after) },
+                           next: \.next) { page in
+        guard !Task.isCancelled else { return false }
         keys.formUnion(page.pins.map(\.key))
-        after = page.next
-      } while after != nil
+        return true
+      }
       // Only what these words found, never an answer to words since changed.
       guard !Task.isCancelled, filter.search == search else { return }
       found = keys
       foundFor = search
+      findProblem = nil
     } catch {
       guard !Task.isCancelled else { return }
-      problem = error.message
+      findProblem = error.message
     }
   }
 }
