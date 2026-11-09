@@ -114,7 +114,10 @@ there first, never work around it here.
   agent, script or test writes to a real account. The one pass on
   production is by hand: the owner of an account trying a TestFlight
   build on it (`docs/PHONE-TEST.md`), since a release build talks to
-  nothing else.
+  nothing else. Only a debug build may use plain HTTP, to the dev server:
+  `NSAllowsLocalNetworking` is inside `#if DEBUG` in `Config/Info.plist`
+  and `Config/ShareExtension-Info.plist`, which Xcode preprocesses (so
+  `plutil` can't read them as they stand; read a built one).
 - No third-party packages. Apple's frameworks only.
 - Never log, print or put in an error message a token or a note's text.
 - A file URL goes to `FileManager` as `path(percentEncoded: false)`.
@@ -231,7 +234,10 @@ there first, never work around it here.
   this token's notes, so Log shows what it always did, a waiting edit shows no
   words, and Fix opens only on this token's own note. Turning it on or off asks
   first. Activity's rows open their notes only while reading is open, and
-  close with it; the rows themselves never carry a note's words.
+  close with it; the rows themselves never carry a note's words. With the
+  lock on, the app switcher shows a cover while the app isn't active
+  (`PrivacyCover`): a window of its own above alerts, so it is over every
+  sheet and Quick Look too, which an overlay on the tabs would sit under.
 - Tags are first-class, as Release Notes keeps them (Jamie, 2026-11-08:
   "Approved: build first-class tags in Release Notes as proposed, with calls
   1 to 8 as recommended"; the server's `docs/TAGS.md` has the calls). A tag is

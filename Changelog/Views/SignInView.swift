@@ -60,7 +60,10 @@ struct SignInView: View {
               .textContentType(.password)
               .onSubmit { check(pasted) }
             Button("Paste token") {
-              if let text = UIPasteboard.general.string { check(text) }
+              // Counted before it is read, so a copy made meanwhile never
+              // matches and is never cleared.
+              let copied = UIPasteboard.general.changeCount
+              if let text = UIPasteboard.general.string { check(text, copied: copied) }
             }
             Button("Sign in with this token") { check(pasted) }
               .disabled(checking || pasted.isEmpty)
@@ -115,14 +118,22 @@ struct SignInView: View {
     }
   }
 
-  private func check(_ raw: String) {
+  /// `copied` is the clipboard's change count when the token was taken from
+  /// it. Signed in, the token leaves the clipboard if the clipboard still
+  /// holds it: unchanged since, by its count, which reads without iOS asking
+  /// to paste again.
+  private func check(_ raw: String, copied: Int? = nil) {
     checking = true
     problem = nil
     pasteProblem = nil
     Task {
       pasteProblem = await model.signIn(with: raw)
       checking = false
-      if pasteProblem != nil { pasted = "" }
+      if pasteProblem != nil {
+        pasted = ""
+      } else if let copied, UIPasteboard.general.changeCount == copied {
+        UIPasteboard.general.items = []
+      }
     }
   }
 }

@@ -83,12 +83,9 @@ struct RootView: View {
         AppRoute.shared.checkInAsked = false
         Task { await model.checkInFromOutside() }
       }
-      // With the lock on, the app switcher's picture shows no note.
-      .overlay {
-        if model.lockOn, model.readsNotes, scenePhase != .active {
-          Color.paper.ignoresSafeArea().overlay { BrandMark(size: 56) }
-        }
-      }
+      // With the lock on, the app switcher's picture shows no note, nor any
+      // sheet or file open over the tabs.
+      .background { PrivacyCover(shows: model.lockOn && model.readsNotes && scenePhase != .active) }
     }
   }
 

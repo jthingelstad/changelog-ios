@@ -62,7 +62,7 @@ public struct ShareInbox: Sendable {
   public func hold(_ files: [QueuedFile], for file: URL) {
     guard let data = try? JSONEncoder().encode(files) else { return }
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    try? data.write(to: draft(of: file), options: .atomic)
+    try? data.write(to: draft(of: file), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
   }
 
   /// The draft is committed or cancelled; its files are no longer held by it.

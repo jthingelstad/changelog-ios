@@ -1,6 +1,7 @@
 import ChangelogKit
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The home screen: today's version, the box, the tag row, Commit, and what
 /// happened today from every channel.
@@ -898,13 +899,18 @@ struct FixWaitingView: View {
   }
 }
 
-/// Puts a refused note's words on the clipboard, so they outlive a Discard.
+/// Puts a refused note's words on the clipboard, so they outlive a Discard:
+/// this phone's alone, not handed to the owner's other devices, and gone in
+/// ten minutes.
 struct CopyWordsButton: View {
   let text: String
 
   var body: some View {
-    Button("Copy the words", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
-      .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    Button("Copy the words", systemImage: "doc.on.doc") {
+      UIPasteboard.general.setItems([[UTType.utf8PlainText.identifier: text]],
+                                    options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(10 * 60)])
+    }
+    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 }
 
