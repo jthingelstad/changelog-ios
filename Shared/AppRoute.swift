@@ -16,6 +16,10 @@ final class AppRoute {
   /// A check-in asked for from outside the app's screens, until the signed-in
   /// app takes it.
   var checkInAsked = false
+  /// Whether it asks "Check in here?" first. The link does, since any app or
+  /// web page can open it; the Check In control and Siri stay one tap (Jamie,
+  /// 2026-11-08, call 5 of the Release Notes security audit).
+  var checkInConfirms = false
 
   func newNote() {
     tab = "log"
@@ -23,14 +27,15 @@ final class AppRoute {
   }
 
   /// Activity, where the stop shows, and it says so there.
-  func checkIn() {
+  func checkIn(confirming: Bool = false) {
     tab = "activity"
+    checkInConfirms = confirming
     checkInAsked = true
   }
 
   /// The link a widget opens: Log, ready to write.
   static let newNoteURL = URL(string: "com.yourversionnumber.changelog:new-note")!
-  /// The same for a check-in.
+  /// The same for a check-in, which asks first.
   static let checkInURL = URL(string: "com.yourversionnumber.changelog:check-in")!
 }
 

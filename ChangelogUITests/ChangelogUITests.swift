@@ -345,14 +345,26 @@ final class ChangelogUITests: XCTestCase {
     close.tap()
     XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the sheet closes")
 
-    // Where the control goes: Activity, a fix, and it says so.
+    // Where the link goes: Activity, a question first, then a fix, and it
+    // says so. Cancel checks in nowhere.
     app.tabBars.buttons["Settings"].tap()
-    app.open(URL(string: "com.yourversionnumber.changelog:check-in")!)
+    let link = URL(string: "com.yourversionnumber.changelog:check-in")!
+    app.open(link)
+    let ask = app.alerts["Check in here?"]
+    expect(ask, "the link asks first", in: app, timeout: 15)
+    keep(app, "Check in here?")
+    ask.buttons["Cancel"].tap()
+    XCTAssertTrue(ask.waitForNonExistence(timeout: 5), "Cancel closes it")
+    let checkedIn = app.staticTexts.matching(NSPredicate(format: "identifier == 'toast' AND label BEGINSWITH 'Checked in at'"))
+    XCTAssertFalse(checkedIn.firstMatch.waitForExistence(timeout: 5), "and checks in nowhere")
+    app.open(link)
+    expect(ask, "the link asks again", in: app, timeout: 15)
+    ask.buttons["Check In"].tap()
     let said = app.staticTexts["toast"]
     expect(said, "a check-in from outside says so", in: app, timeout: 30)
     XCTAssertTrue(said.label.hasPrefix("Checked in at"), said.label)
     XCTAssertTrue(app.tabBars.buttons["Activity"].isSelected, "it opens Activity")
-    keep(app, "Check in from the control")
+    keep(app, "Check in from the link")
     try await Self.deleteCheckIns(server: server, token: owner)
     try await Self.forgetPlaces(server: server, token: owner)
   }

@@ -68,7 +68,10 @@ there first, never work around it here.
   `AppRoute` (the tab, the new note or the check-in the app opens to),
   `NewNoteIntent` ("New Note", which opens Log ready to write) and
   `CheckInIntent` ("Check In", which opens Activity and checks in). A control
-  can only name an intent both targets have.
+  can only name an intent both targets have. The check-in link
+  (`com.yourversionnumber.changelog:check-in`) asks "Check in here?" first,
+  since any app or web page can open it; the control and Siri stay one tap
+  (Jamie, 2026-11-08, call 5 of the Release Notes security audit: "5. Yes.").
 - `ShareExtension/` is the share sheet's Changelog. It keeps each share in
   a queue of its own in the App Group's `shares/` folder, sends it if it
   can within 25 seconds, and leaves the rest for the app, which adopts it
