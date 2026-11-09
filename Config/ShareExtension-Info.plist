@@ -28,10 +28,13 @@
 		<key>NSExtensionPrincipalClass</key>
 		<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
 	</dict>
+#if DEBUG
+	<!-- Plain HTTP to the dev server on this Mac: a debug build alone. A release build only talks to Release Notes, over HTTPS. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+#endif
 </dict>
 </plist>
