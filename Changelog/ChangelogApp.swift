@@ -36,7 +36,7 @@ struct ChangelogApp: App {
         // A widget's link: Log, ready to write, or a check-in.
         .onOpenURL { url in
           if url == AppRoute.newNoteURL { AppRoute.shared.newNote() }
-          if url == AppRoute.checkInURL { AppRoute.shared.checkIn() }
+          if url == AppRoute.checkInURL { AppRoute.shared.checkIn(confirming: true) }
         }
     }
     .backgroundTask(.appRefresh(PhoneReminders.refreshTask)) { await model.backgroundRefresh() }
@@ -47,6 +47,7 @@ struct RootView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.scenePhase) private var scenePhase
   @State private var tab = RootView.firstTab
+  @State private var confirmingCheckIn = false
 
   var body: some View {
     switch model.phase {
@@ -58,7 +59,7 @@ struct RootView: View {
       SignInView()
         // Nothing to check in to: it mustn't happen later, on signing in.
         .onChange(of: AppRoute.shared.checkInAsked, initial: true) { _, asked in
-          if asked { AppRoute.shared.checkInAsked = false }
+          if asked { AppRoute.shared.checkInAsked = false; AppRoute.shared.checkInConfirms = false }
         }
     case .signedIn:
       TabView(selection: $tab) {
@@ -77,11 +78,22 @@ struct RootView: View {
         AppRoute.shared.tab = nil
       }
       // The Check In control, or its link. The app is on the screen by now, so
-      // the fix can be taken.
+      // the fix can be taken. The link asks first.
       .onChange(of: AppRoute.shared.checkInAsked, initial: true) { _, asked in
         guard asked else { return }
         AppRoute.shared.checkInAsked = false
-        Task { await model.checkInFromOutside() }
+        if AppRoute.shared.checkInConfirms {
+          AppRoute.shared.checkInConfirms = false
+          confirmingCheckIn = true
+        } else {
+          Task { await model.checkInFromOutside() }
+        }
+      }
+      .alert("Check in here?", isPresented: $confirmingCheckIn) {
+        Button("Check In") { Task { await model.checkInFromOutside() } }
+        Button("Cancel", role: .cancel) {}
+      } message: {
+        Text("A link opened Changelog to add where you are to Release Notes.")
       }
       // With the lock on, the app switcher's picture shows no note, nor any
       // sheet or file open over the tabs.
