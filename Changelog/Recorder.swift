@@ -10,8 +10,9 @@ import Observation
 /// into the file, and into the levels the waveform draws. AVAudioRecorder's
 /// meter smooths its average over a long window, so its bars trailed a
 /// voice; these are each 50 ms of sound as it was. The microphone comes
-/// through Apple's voice processing, as a browser's does through its noise
-/// suppression: a room's hum is taken out of the bars and the memo alike.
+/// through Apple's voice processing where it answers, as a browser's does
+/// through its noise suppression: a room's hum is taken out of the bars and
+/// the memo alike.
 @MainActor @Observable
 final class Recorder {
   enum State: Equatable { case idle, recording, denied, failed }
@@ -130,30 +131,55 @@ final class Recorder {
 /// The running microphone: an engine whose input tap writes each buffer to
 /// the file and measures it. The tap runs on the engine's own thread, so
 /// everything it touches is behind the lock.
+///
+/// It starts with Apple's voice processing and, if no sound comes through
+/// that in a moment, starts again without it: build 102 turned it on and
+/// the microphone sent nothing at all on Jamie's phone (2026-11-10), so a
+/// memo must never hang on it again.
 private final class Capture: @unchecked Sendable {
   let url: URL
-  private let engine = AVAudioEngine()
+  private let heard: @Sendable ([Double]) -> Void
+  private var engine = AVAudioEngine()
   private let lock = NSLock()
   private var file: AVAudioFile?
   private var frames: AVAudioFramePosition = 0
-  private let rate: Double
+  private var rate: Double = 0
+  /// Signalled by every buffer the tap is given.
+  private let first = DispatchSemaphore(value: 0)
   private let stopping = NSLock()
   private var ended = false
 
+  /// How long voice processing has to send its first sound.
+  static let patience: DispatchTimeInterval = .milliseconds(1500)
+
   init(url: URL, heard: @escaping @Sendable ([Double]) -> Void) throws {
     self.url = url
+    self.heard = heard
+    if (try? run(voiceProcessing: true)) != nil, first.wait(timeout: .now() + Self.patience) == .success {
+      return
+    }
+    halt()
+    engine = AVAudioEngine()
+    try run(voiceProcessing: false)
+  }
+
+  private func run(voiceProcessing: Bool) throws {
     let input = engine.inputNode
-    // Apple's voice processing: noise suppression and gain control, as on a
-    // call. Its format is the input's from here on, so it goes first. A
-    // microphone without it (a simulator's, say) records as it is.
-    if (try? input.setVoiceProcessingEnabled(true)) != nil {
-      // It runs the output too, which must be in the graph for the engine
-      // to start: the main mixer joins it, with nothing to play.
-      _ = engine.mainMixerNode
+    if voiceProcessing {
+      // Apple's voice processing: noise suppression and gain control, as on
+      // a call. It is one unit for the input and the output, and it sends
+      // the input only while the output pulls it, so the input goes to the
+      // main mixer, turned all the way down: nothing plays.
+      try input.setVoiceProcessingEnabled(true)
     }
     let format = input.outputFormat(forBus: 0)
-    guard format.sampleRate > 0, format.channelCount > 0 else { throw CocoaError(.featureUnsupported) }
-    rate = format.sampleRate
+    guard format.sampleRate > 0, format.channelCount > 0,
+      format.commonFormat == .pcmFormatFloat32
+    else { throw CocoaError(.featureUnsupported) }
+    if voiceProcessing {
+      engine.connect(input, to: engine.mainMixerNode, format: format)
+      engine.mainMixerNode.outputVolume = 0
+    }
     let file = try AVAudioFile(
       forWriting: url,
       settings: [
@@ -165,10 +191,16 @@ private final class Capture: @unchecked Sendable {
       commonFormat: .pcmFormatFloat32,
       interleaved: false
     )
+    lock.lock()
+    rate = format.sampleRate
+    frames = 0
     self.file = file
+    lock.unlock()
     let mono = file.processingFormat
+    let rate = format.sampleRate
     let limit = AVAudioFramePosition(Recorder.longest * rate)
     let chunk = max(1, Int(rate * Recorder.meterInterval))
+    let heard = self.heard
 
     input.installTap(onBus: 0, bufferSize: AVAudioFrameCount(chunk), format: format) { [weak self] buffer, _ in
       guard let self, let samples = buffer.floatChannelData?[0] else { return }
@@ -200,6 +232,7 @@ private final class Capture: @unchecked Sendable {
       self.frames += AVAudioFramePosition(count)
       let full = self.frames >= limit
       self.lock.unlock()
+      self.first.signal()
       heard(new)
       // At the longest a memo may be, the microphone goes off, as
       // AVAudioRecorder's did, so no bars move for sound Add won't keep.
@@ -216,9 +249,22 @@ private final class Capture: @unchecked Sendable {
     }
   }
 
+  /// Takes the engine down and empties the file, for another start.
+  private func halt() {
+    engine.inputNode.removeTap(onBus: 0)
+    engine.stop()
+    try? engine.inputNode.setVoiceProcessingEnabled(false)
+    lock.lock()
+    file?.close()
+    file = nil
+    frames = 0
+    lock.unlock()
+  }
+
   var elapsed: TimeInterval {
     lock.lock()
     defer { lock.unlock() }
+    guard rate > 0 else { return 0 }
     return min(Double(frames) / rate, Recorder.longest)
   }
 
