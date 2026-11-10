@@ -1,4 +1,5 @@
 import AVFoundation
+import ChangelogKit
 import Observation
 
 /// A voice memo: AAC in an .m4a, mono, which Release Notes keeps as
@@ -18,9 +19,10 @@ final class Recorder {
   private var starting = false
   private var stopped = false
 
-  /// The microphone's loudness lately, oldest first, each 0 (silence) to
-  /// 1, one for every `meterInterval` of sound: what the waveform under
-  /// the clock draws, so a voice can see it's being heard.
+  /// The microphone's loudness lately, oldest first, each 0 (no louder
+  /// than the room, `VoiceMeter`) to 1, one for every `meterInterval` of
+  /// sound: what the waveform under the clock draws, so a voice can see
+  /// it's being heard.
   private(set) var levels: [Double] = []
   nonisolated static let meterInterval: TimeInterval = 0.05
   nonisolated static let levelsKept = 120
@@ -61,16 +63,6 @@ final class Recorder {
     guard capture != nil else { return }
     levels.append(contentsOf: new)
     if levels.count > Self.levelsKept { levels.removeFirst(levels.count - Self.levelsKept) }
-  }
-
-  /// A level in decibels (-160 to 0) as 0 to 1. A quiet room sits near
-  /// -50 dB and speech near -20, so the 50 dB below full scale make the
-  /// span, and the square root lifts a soft voice off the floor. The web
-  /// reads its level the same way.
-  nonisolated static func level(decibels: Float) -> Double {
-    let floor: Float = -50
-    guard decibels.isFinite, decibels > floor else { return 0 }
-    return Double(min(1, (decibels - floor) / -floor)).squareRoot()
   }
 
   /// Wakes the audio session and starts the microphone off the main
@@ -118,6 +110,8 @@ private final class Capture: @unchecked Sendable {
   private var file: AVAudioFile?
   private var frames: AVAudioFramePosition = 0
   private let rate: Double
+  /// The tap's alone, and it runs on one thread at a time.
+  private var meter = VoiceMeter()
   private let stopping = NSLock()
   private var ended = false
 
@@ -160,7 +154,7 @@ private final class Capture: @unchecked Sendable {
         var sum: Float = 0
         for i in at..<end { sum += samples[i] * samples[i] }
         let rms = (sum / Float(end - at)).squareRoot()
-        new.append(Recorder.level(decibels: 20 * log10(rms)))
+        new.append(self.meter.level(decibels: 20 * log10(rms)))
         at = end
       }
 
