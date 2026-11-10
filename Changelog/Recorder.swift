@@ -118,6 +118,8 @@ private final class Capture: @unchecked Sendable {
   private var file: AVAudioFile?
   private var frames: AVAudioFramePosition = 0
   private let rate: Double
+  private let stopping = NSLock()
+  private var ended = false
 
   init(url: URL, heard: @escaping @Sendable ([Double]) -> Void) throws {
     self.url = url
@@ -163,12 +165,20 @@ private final class Capture: @unchecked Sendable {
       }
 
       self.lock.lock()
-      if let file = self.file, self.frames < limit {
-        try? file.write(from: out)
-        self.frames += AVAudioFramePosition(count)
+      guard let file = self.file, self.frames < limit else {
+        self.lock.unlock()
+        return
       }
+      try? file.write(from: out)
+      self.frames += AVAudioFramePosition(count)
+      let full = self.frames >= limit
       self.lock.unlock()
       heard(new)
+      // At the longest a memo may be, the microphone goes off, as
+      // AVAudioRecorder's did, so no bars move for sound Add won't keep.
+      // An engine mustn't be stopped from its own tap, so another thread
+      // does it.
+      if full { DispatchQueue.global().async { self.stop() } }
     }
     engine.prepare()
     do {
@@ -193,7 +203,12 @@ private final class Capture: @unchecked Sendable {
   }
 
   /// Stops the microphone and closes the file, so it's whole on disk.
+  /// Twice is once: the limit and Add or Cancel may both ask.
   func stop() {
+    stopping.lock()
+    defer { stopping.unlock() }
+    guard !ended else { return }
+    ended = true
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
     lock.lock()
