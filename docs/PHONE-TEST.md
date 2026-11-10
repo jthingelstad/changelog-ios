@@ -53,8 +53,8 @@ memo and a transcript.
 4. **Photos.** "Add photos" (two or three) and "Take a photo" on one
    note, then Commit. The web note has every photo.
 5. **A voice memo.** The microphone, ten seconds: the bars under the clock
-   rise as you speak and lie flat when you stop, a room's hum included.
-   Stop, Commit. It plays on the web.
+   move along steadily, rise as you speak and lie flat when you stop, a
+   room's hum included. Stop, Commit. It plays on the web, the voice clear.
 6. **Here.** The location button; allow While Using. The place shows by
    Commit: tap it to pick a business nearby or "Leave the place off". Then
    Settings, Place, "Add where I am" on: the next note finds it by itself.

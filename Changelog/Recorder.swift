@@ -9,7 +9,9 @@ import Observation
 /// The microphone's own samples go two ways, as the web's recorder does:
 /// into the file, and into the levels the waveform draws. AVAudioRecorder's
 /// meter smooths its average over a long window, so its bars trailed a
-/// voice; these are each 50 ms of sound as it was.
+/// voice; these are each 50 ms of sound as it was. The microphone comes
+/// through Apple's voice processing, as a browser's does through its noise
+/// suppression: a room's hum is taken out of the bars and the memo alike.
 @MainActor @Observable
 final class Recorder {
   enum State: Equatable { case idle, recording, denied, failed }
@@ -18,11 +20,13 @@ final class Recorder {
   private var capture: Capture?
   private var starting = false
   private var stopped = false
+  /// Levels heard but not yet drawn, and the beat that draws them.
+  private var pending: [Double] = []
+  private var pacing: Task<Void, Never>?
 
-  /// The microphone's loudness lately, oldest first, each 0 (no louder
-  /// than the room, `VoiceMeter`) to 1, one for every `meterInterval` of
-  /// sound: what the waveform under the clock draws, so a voice can see
-  /// it's being heard.
+  /// The microphone's loudness lately, oldest first, each 0 (silence) to 1
+  /// (`VoiceLevel`), one for every `meterInterval` of sound: what the
+  /// waveform under the clock draws, so a voice can see it's being heard.
   private(set) var levels: [Double] = []
   nonisolated static let meterInterval: TimeInterval = 0.05
   nonisolated static let levelsKept = 120
@@ -57,11 +61,29 @@ final class Recorder {
     }
     self.capture = capture
     state = .recording
+    pacing = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(Self.meterInterval))
+        self?.draw()
+      }
+    }
   }
 
+  /// iOS hands the tap its sound some 100 ms at a time, so levels come two
+  /// or more together; drawn as they came, the bars lurched. They wait
+  /// here and go on the waveform one a beat.
   private func keep(_ new: [Double]) {
     guard capture != nil else { return }
-    levels.append(contentsOf: new)
+    pending.append(contentsOf: new)
+  }
+
+  private func draw() {
+    guard !pending.isEmpty else { return }
+    // Fallen behind (a slow beat adds up): catch up at once, so the bars
+    // never trail the voice.
+    let take = pending.count > 4 ? pending.count - 1 : 1
+    levels.append(contentsOf: pending.prefix(take))
+    pending.removeFirst(take)
     if levels.count > Self.levelsKept { levels.removeFirst(levels.count - Self.levelsKept) }
   }
 
@@ -71,7 +93,9 @@ final class Recorder {
   @concurrent private nonisolated static func record(to url: URL, heard: @escaping @Sendable ([Double]) -> Void) async -> Capture? {
     do {
       let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.record, mode: .default)
+      // Voice processing is a play-and-record unit, so the session is one
+      // too; nothing plays.
+      try session.setCategory(.playAndRecord, mode: .default)
       try session.setActive(true)
       return try Capture(url: url, heard: heard)
     } catch {
@@ -88,6 +112,9 @@ final class Recorder {
     guard let capture else { return nil }
     capture.stop()
     self.capture = nil
+    pacing?.cancel()
+    pacing = nil
+    pending = []
     state = .idle
     Self.deactivate()
     defer { try? FileManager.default.removeItem(at: capture.url) }
@@ -110,14 +137,20 @@ private final class Capture: @unchecked Sendable {
   private var file: AVAudioFile?
   private var frames: AVAudioFramePosition = 0
   private let rate: Double
-  /// The tap's alone, and it runs on one thread at a time.
-  private var meter = VoiceMeter()
   private let stopping = NSLock()
   private var ended = false
 
   init(url: URL, heard: @escaping @Sendable ([Double]) -> Void) throws {
     self.url = url
     let input = engine.inputNode
+    // Apple's voice processing: noise suppression and gain control, as on a
+    // call. Its format is the input's from here on, so it goes first. A
+    // microphone without it (a simulator's, say) records as it is.
+    if (try? input.setVoiceProcessingEnabled(true)) != nil {
+      // It runs the output too, which must be in the graph for the engine
+      // to start: the main mixer joins it, with nothing to play.
+      _ = engine.mainMixerNode
+    }
     let format = input.outputFormat(forBus: 0)
     guard format.sampleRate > 0, format.channelCount > 0 else { throw CocoaError(.featureUnsupported) }
     rate = format.sampleRate
@@ -154,7 +187,7 @@ private final class Capture: @unchecked Sendable {
         var sum: Float = 0
         for i in at..<end { sum += samples[i] * samples[i] }
         let rms = (sum / Float(end - at)).squareRoot()
-        new.append(self.meter.level(decibels: 20 * log10(rms)))
+        new.append(VoiceLevel.level(decibels: 20 * log10(rms)))
         at = end
       }
 
