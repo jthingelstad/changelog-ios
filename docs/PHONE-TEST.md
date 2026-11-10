@@ -52,7 +52,8 @@ memo and a transcript.
    Edit a note: its tags are chips, and Save keeps a changed list.
 4. **Photos.** "Add photos" (two or three) and "Take a photo" on one
    note, then Commit. The web note has every photo.
-5. **A voice memo.** The microphone, ten seconds, stop, Commit. It plays
+5. **A voice memo.** The microphone, ten seconds: the bars under the clock
+   rise as you speak and lie flat when you stop. Stop, Commit. It plays
    on the web.
 6. **Here.** The location button; allow While Using. The place shows by
    Commit: tap it to pick a business nearby or "Leave the place off". Then

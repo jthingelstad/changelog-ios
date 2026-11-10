@@ -291,6 +291,8 @@ struct RecorderView: View {
               .foregroundStyle(Color.ink)
               .accessibilityLabel("Recording")
           }
+          Waveform(levels: recorder.levels)
+            .frame(height: 64)
           Button {
             if let data = recorder.finish() { done(data) }
             dismiss()
@@ -318,6 +320,31 @@ struct RecorderView: View {
       .onDisappear { recorder.cancel() }
       .interactiveDismissDisabled(recorder.state == .recording)
     }
+  }
+}
+
+/// The voice memo's sound as it comes in: a bar for each of the recorder's
+/// recent levels, the newest at the right edge, older ones moving off to
+/// the left. Silence is a row of dots, so a flat line says the microphone
+/// hears nothing, not that the app stopped.
+private struct Waveform: View {
+  let levels: [Double]
+
+  var body: some View {
+    Canvas { context, size in
+      let step: CGFloat = 5
+      let bar: CGFloat = 3
+      let count = Int(size.width / step)
+      let shown = levels.suffix(count)
+      let gap = count - shown.count
+      for i in 0..<count {
+        let level = i < gap ? 0 : shown[shown.startIndex + i - gap]
+        let height = max(bar, size.height * level)
+        let rect = CGRect(x: CGFloat(i) * step + (step - bar) / 2, y: (size.height - height) / 2, width: bar, height: height)
+        context.fill(Path(roundedRect: rect, cornerRadius: bar / 2), with: .color(i < gap ? Color.ink.opacity(0.15) : Color.cobalt))
+      }
+    }
+    .accessibilityHidden(true)
   }
 }
 

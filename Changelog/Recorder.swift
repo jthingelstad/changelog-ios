@@ -13,6 +13,14 @@ final class Recorder {
   private var file: URL?
   private var starting = false
   private var stopped = false
+  private var metering: Task<Void, Never>?
+
+  /// The microphone's loudness lately, oldest first, each 0 (silence) to
+  /// 1, one every `meterInterval`: what the waveform under the clock draws,
+  /// so a voice can see it's being heard.
+  private(set) var levels: [Double] = []
+  nonisolated static let meterInterval: Duration = .milliseconds(50)
+  nonisolated static let levelsKept = 120
 
   nonisolated static let longest: TimeInterval = 100 * 60
 
@@ -42,6 +50,33 @@ final class Recorder {
     self.recorder = recorder
     file = url
     state = .recording
+    meter(recorder)
+  }
+
+  /// Reads the recorder's level every `meterInterval` until it stops.
+  private func meter(_ recorder: AVAudioRecorder) {
+    recorder.isMeteringEnabled = true
+    metering = Task { [weak self] in
+      while !Task.isCancelled {
+        recorder.updateMeters()
+        self?.keep(Self.level(decibels: recorder.averagePower(forChannel: 0)))
+        try? await Task.sleep(for: Self.meterInterval)
+      }
+    }
+  }
+
+  private func keep(_ level: Double) {
+    levels.append(level)
+    if levels.count > Self.levelsKept { levels.removeFirst(levels.count - Self.levelsKept) }
+  }
+
+  /// A meter's decibels (-160 to 0) as 0 to 1. A quiet room sits near
+  /// -50 dB and speech near -20, so the 50 dB below full scale make the
+  /// span, and the square root lifts a soft voice off the floor.
+  nonisolated static func level(decibels: Float) -> Double {
+    let floor: Float = -50
+    guard decibels.isFinite, decibels > floor else { return 0 }
+    return Double(min(1, (decibels - floor) / -floor)).squareRoot()
   }
 
   /// Wakes the audio session and starts recording off the main thread: it
@@ -72,6 +107,8 @@ final class Recorder {
   /// Stops and answers the recording's bytes; nil if there was none.
   func finish() -> Data? {
     guard let recorder, let file else { return nil }
+    metering?.cancel()
+    metering = nil
     recorder.stop()
     self.recorder = nil
     self.file = nil
